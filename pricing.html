@@ -20,7 +20,7 @@
 
   <main class="hero" role="main">
     <header>
-      <h1>Mason Sex — Pricing</h1>
+      <h1>Mason — Pricing</h1>
       <p class="muted">Low Quality Service, for a Low Low Price</p>
     </header>
 
@@ -33,7 +33,7 @@
           <li>Quick Top</li>
           <li>2 minutes max</li>
         </ul>
-        <a class="cta" href="contact.html">Book Basic</a>
+        <button class="cta place-order-btn" data-plan="Basic" data-amount="2.5" data-label="Book Basic">Book Basic</button>
       </article>
 
       <article class="card">
@@ -44,7 +44,7 @@
           <li>Mason will get it done QUICK!</li>
           <li>Max 10 Strokes</li>
         </ul>
-        <a class="cta" href="contact.html">Book Standard</a>
+        <button class="cta place-order-btn" data-plan="Standard" data-amount="10" data-label="Book Standard">Book Standard</button>
       </article>
 
       <article class="card">
@@ -55,17 +55,20 @@
           <li>Priority scheduling</li>
           <li>Full Stroke Experience</li>
         </ul>
-        <a class="cta" href="contact.html">Request Quote</a>
+        <button class="cta place-order-btn" data-plan="Premium" data-amount="100" data-label="Request Quote">Request Quote</button>
       </article>
     </section>
 
     <section style="margin-top:20px">
-      <h3>Need a custom fuck session?</h3>
+      <h3>Need a custom session?</h3>
       <p class="muted">Contact mason for volume discounts and enterprise offerings.</p>
       <a class="cta" href="contact.html">Contact Sales</a>
     </section>
   </main>
 
+  <!-- Supabase client (UMD) required by order.js and chat scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script src="order.js"></script>
   <script src="chatuser.js"></script>
 </body>
 </html>

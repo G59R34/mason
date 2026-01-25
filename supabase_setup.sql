@@ -41,6 +41,25 @@ CREATE TABLE IF NOT EXISTS public.messages (
 CREATE INDEX IF NOT EXISTS reviews_created_idx ON public.reviews (created_at);
 CREATE INDEX IF NOT EXISTS messages_created_idx ON public.messages (created_at);
 
+-- Orders & Announcements (for site-wide order notifications)
+CREATE TABLE IF NOT EXISTS public.orders (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  customer_name text,
+  email text,
+  plan text,
+  amount numeric,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.announcements (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  message text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS orders_created_idx ON public.orders (created_at);
+CREATE INDEX IF NOT EXISTS announcements_created_idx ON public.announcements (created_at);
+
 -- 5) Row Level Security (RLS)
 -- Enable RLS so policies are enforced. If you don't want RLS, skip enabling it.
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;

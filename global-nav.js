@@ -119,4 +119,20 @@
         injectStyles(); createNav();
     }
 
+    // Load site-wide announcement listener so banners appear on every page
+    function loadAnnouncementScript() {
+        if (document.getElementById('ms-announcement-script')) return;
+        const s = document.createElement('script');
+        s.id = 'ms-announcement-script';
+        s.src = 'announcement.js';
+        s.async = true;
+        document.head.appendChild(s);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadAnnouncementScript);
+    } else {
+        loadAnnouncementScript();
+    }
+
 })();
