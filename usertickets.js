@@ -73,6 +73,7 @@
     const { error } = await sb.from('messages').insert([{ ticket_id: ticketId, name, message: text, sender_role: 'user' }]);
     if (error) return console.error('send', error);
     textInput.value = '';
+    await loadMessages();
   });
 
   // Realtime updates for this ticket

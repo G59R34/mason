@@ -100,12 +100,12 @@
 
   async function openTicket(id) {
     // set selected ticket immediately so UI actions know which ticket is active
-    currentTicket = id;
+    currentTicket = String(id);
     ticketTitle.textContent = `Ticket: ${id}`;
     listEl.innerHTML = '';
     empty.style.display = '';
     try {
-      const { data, error } = await sb.from('messages').select('*').eq('ticket_id', id).order('created_at', { ascending: true });
+      const { data, error } = await sb.from('messages').select('*').eq('ticket_id', currentTicket).order('created_at', { ascending: true });
       if (error) {
         console.error('open ticket', error);
         // common cause: messages table doesn't have ticket_id column (DB not migrated)
@@ -186,8 +186,27 @@
     const adminName = adminNameInput.value.trim() || 'Admin';
     const text = replyText.value.trim();
     if (!text) return;
-    const { error } = await sb.from('messages').insert([{ ticket_id: currentTicket, name: adminName, message: text, sender_role: 'admin' }]);
-    if (error) return alert('Send failed');
+    const { data, error } = await sb
+      .from('messages')
+      .insert([{ ticket_id: currentTicket, name: adminName, message: text, sender_role: 'admin' }])
+      .select('*')
+      .limit(1);
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('row-level') || msg.includes('rls') || msg.includes('permission')) {
+        return alert('Send failed: Supabase RLS is blocking inserts. Allow INSERT on public.messages for the anon key or authenticate admins.');
+      }
+      if (msg.includes('ticket_id')) {
+        return alert('Send failed: messages table is missing ticket_id. Run migrate_messages_to_tickets.sql in Supabase.');
+      }
+      return alert('Send failed');
+    }
+    // Fallback UI update in case realtime isn’t enabled
+    if (data && data[0]) {
+      empty.style.display = 'none';
+      listEl.appendChild(renderRow(data[0]));
+      listEl.scrollTop = listEl.scrollHeight;
+    }
     replyText.value = '';
   });
 })();

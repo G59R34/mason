@@ -92,6 +92,9 @@
       if (terr || !tdata || tdata.length === 0) { console.error('ticket create error', terr); return; }
       ticket_id = tdata[0].id;
       localStorage.setItem('ms_ticket_id', ticket_id);
+      // Insert the initial message so the ticket has context for admins.
+      const { error: mErr } = await sb.from('messages').insert([{ ticket_id, name, message: text, sender_role: 'user' }]);
+      if (mErr) console.error('send', mErr);
       // Redirect user to the dedicated ticket page
       try {
         window.location.href = `usertickets.html?ticket=${ticket_id}`;
@@ -141,6 +144,6 @@
   });
 
   // initial load
-  loadMessages();
+  if (ticketId) loadMessages(ticketId);
 
 })();
