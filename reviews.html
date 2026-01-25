@@ -34,7 +34,7 @@
     <main class="container" aria-labelledby="title">
         <header>
             <div>
-                <h1 id="title">Mason Sex Reviews</h1>
+                <h1 id="title">Mason Reviews</h1>
                 <div class="rating-summary">
                     <div class="avg" id="avgRating">0.0</div>
                     <div id="avgStars" class="stars" aria-hidden="true">☆☆☆☆☆</div>
@@ -43,6 +43,18 @@
             </div>
             <div style="text-align:right;color:var(--muted);font-size:0.9rem">
                 Share feedback — it helps improve masons drive.
+            </div>
+        </header>
+
+        <div id="reviewsDebug" style="max-width:900px;margin:8px auto 0;color:#b91c1c;font-size:0.95rem;display:none"></div>
+
+        <div style="max-width:900px;margin:8px auto;display:flex;gap:8px;justify-content:flex-end;">
+            <button id="seedReviewsBtn" style="background:#06b6d4;color:#042028;padding:8px 10px;border-radius:8px;border:0;cursor:pointer">Restore demo reviews</button>
+        </div>
+
+        <section aria-label="submit review" style="margin-top:18px">
+            <div style="text-align:right;color:var(--muted);font-size:0.9rem">
+                
             </div>
         </header>
 
@@ -91,6 +103,29 @@
 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+        // Detect whether optional tables exist (review_replies, review_votes)
+        let reviewsExtraTablesAvailable = { replies: false, votes: false };
+        async function detectExtraTables() {
+            try {
+                // try lightweight selects to see if tables exist
+                const r1 = await sb.from('review_replies').select('id').limit(1);
+                reviewsExtraTablesAvailable.replies = !r1.error;
+            } catch (e) { reviewsExtraTablesAvailable.replies = false; }
+            try {
+                const r2 = await sb.from('review_votes').select('id').limit(1);
+                reviewsExtraTablesAvailable.votes = !r2.error;
+            } catch (e) { reviewsExtraTablesAvailable.votes = false; }
+            // If any missing, show a short instruction
+            if (!reviewsExtraTablesAvailable.replies || !reviewsExtraTablesAvailable.votes) {
+                const dbg = document.getElementById('reviewsDebug');
+                if (dbg) {
+                    dbg.style.display = 'block';
+                    dbg.innerHTML = 'Some optional review features are not available because database tables are missing. Run the SQL migration <code>add_review_replies_and_votes.sql</code> in Supabase to enable replies & voting.';
+                }
+            }
+        }
+        detectExtraTables();
+
         const form = document.getElementById('reviewForm');
         const reviewsList = document.getElementById('reviewsList');
         const avgRatingEl = document.getElementById('avgRating');
@@ -105,17 +140,67 @@
         }
 
         async function loadReviewsFromSupabase() {
-            // try ordering by numeric timestamp column 't' if present, otherwise created_at
-            let res = await sb.from('reviews').select('*').order('t', { ascending: true });
+            // select id so we can attach replies and votes
+            // don't request optional column `t` (many installs don't have it)
+            const res = await sb.from('reviews').select('id,name,comment,rating,created_at').order('created_at', { ascending: true });
             if (res.error) {
-                // fallback to created_at
-                res = await sb.from('reviews').select('*').order('created_at', { ascending: true });
+                console.error('loadReviews failed', res.error);
+                const dbg = document.getElementById('reviewsDebug'); if (dbg) { dbg.style.display = 'block'; dbg.textContent = 'Error loading reviews: ' + (res.error.message || JSON.stringify(res.error)); }
+                return [];
             }
-            if (res.error) return [];
+            console.debug('loadReviews result', res.data && res.data.length ? `${res.data.length} rows` : '0 rows');
             return (res.data || []).map(r => {
-                const t = r.t ? Number(r.t) : (r.created_at ? Date.parse(r.created_at) : Date.now());
-                return { name: r.name, comment: r.comment, rating: Number(r.rating), t };
+                const t = r.created_at ? Date.parse(r.created_at) : Date.now();
+                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t };
             });
+        }
+
+        // insert demo seed reviews (client-side) — only for testing when DB is empty
+        async function seedDemoReviews() {
+            const c = confirm('Insert two demo reviews into the database for testing? This will write to your Supabase project.');
+            if (!c) return;
+            const samples = [
+                { name: 'Alex', comment: 'Great work!', rating: 4.5 },
+                { name: 'Sam', comment: 'Good communication.', rating: 3.5 }
+            ];
+            const { error } = await sb.from('reviews').insert(samples);
+            if (error) {
+                alert('Seed failed — check console');
+                console.error('seed error', error);
+                return;
+            }
+            alert('Seed inserted — reloading reviews');
+            await render();
+        }
+
+        // load replies for a review
+        async function loadReplies(reviewId) {
+            const { data, error } = await sb.from('review_replies').select('id,name,message,created_at').eq('review_id', reviewId).order('created_at', { ascending: true });
+            if (error) { console.warn('loadReplies', error); return []; }
+            return data || [];
+        }
+
+        async function insertReplyToSupabase(reviewId, reply) {
+            const payload = { review_id: reviewId, name: reply.name, message: reply.message };
+            const { error } = await sb.from('review_replies').insert([payload]);
+            return error;
+        }
+
+        // load vote counts for a set of review ids
+        async function loadVotesMap(reviewIds) {
+            if (!reviewIds || reviewIds.length === 0) return {};
+            const { data, error } = await sb.from('review_votes').select('review_id,vote').in('review_id', reviewIds);
+            if (error) { console.warn('loadVotesMap', error); return {}; }
+            const map = {};
+            (data || []).forEach(v => { map[v.review_id] = (map[v.review_id] || 0) + Number(v.vote); });
+            return map;
+        }
+
+        async function voteReview(reviewId, voter, vote) {
+            // vote: 1 or -1
+            const payload = { review_id: reviewId, voter: voter || null, vote: vote };
+            const { error } = await sb.from('review_votes').insert([payload]);
+            return error;
         }
 
         async function insertReviewToSupabase(review) {
@@ -141,8 +226,12 @@
             }
             const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
             avgRatingEl.textContent = avg.toFixed(1);
-            avgStarsEl.textContent = renderStars(Math.round(avg));
+            avgStarsEl.textContent = renderStars(avg);
             countEl.textContent = `(${reviews.length} review${reviews.length>1?'s':''})`;
+
+            // pre-load votes for all reviews
+            const ids = reviews.map(r => r.id);
+            const votesMap = await loadVotesMap(ids);
 
             reviews.slice().reverse().forEach(r => {
                 const card = document.createElement('article');
@@ -167,8 +256,85 @@
                 text.style.margin = '8px 0 0';
                 text.textContent = r.comment;
 
+                // votes UI
+                const votesWrap = document.createElement('div');
+                votesWrap.style.marginTop = '8px';
+                const score = document.createElement('span');
+                let vcount = votesMap[r.id] || 0;
+                score.textContent = `Score: ${vcount}`;
+                score.style.marginRight = '12px';
+                const up = document.createElement('button'); up.textContent = '👍'; up.style.marginRight = '6px';
+                const down = document.createElement('button'); down.textContent = '👎';
+                up.addEventListener('click', async () => {
+                    up.disabled = true; down.disabled = true;
+                    const voter = prompt('Your name (optional):','Guest') || null;
+                    const err = await voteReview(r.id, voter, 1);
+                    if (err) console.error('vote err', err);
+                    else { vcount = (votesMap[r.id] = (votesMap[r.id]||0) + 1); score.textContent = `Score: ${votesMap[r.id]}`; }
+                    up.disabled = false; down.disabled = false;
+                });
+                down.addEventListener('click', async () => {
+                    up.disabled = true; down.disabled = true;
+                    const voter = prompt('Your name (optional):','Guest') || null;
+                    const err = await voteReview(r.id, voter, -1);
+                    if (err) console.error('vote err', err);
+                    else { vcount = (votesMap[r.id] = (votesMap[r.id]||0) - 1); score.textContent = `Score: ${votesMap[r.id]}`; }
+                    up.disabled = false; down.disabled = false;
+                });
+                votesWrap.appendChild(score);
+                votesWrap.appendChild(up);
+                votesWrap.appendChild(down);
+
+                // replies container
+                const repliesContainer = document.createElement('div');
+                repliesContainer.style.marginTop = '10px';
+                repliesContainer.className = 'replies-container';
+
+                // reply form (collapsed by default)
+                const replyForm = document.createElement('div');
+                replyForm.style.marginTop = '8px';
+                const replyBtn = document.createElement('button'); replyBtn.textContent = 'Reply';
+                const replyFields = document.createElement('div');
+                replyFields.style.display = 'none';
+                replyFields.innerHTML = `<input placeholder="Your name" class="reply-name" style="margin-bottom:6px;width:100%;padding:8px;border:1px solid #ddd;border-radius:6px"><textarea placeholder="Write a reply..." class="reply-message" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;margin-top:6px"></textarea><div style="text-align:right;margin-top:6px"><button class="reply-submit">Send</button></div>`;
+                replyBtn.addEventListener('click', () => { replyFields.style.display = replyFields.style.display === 'none' ? 'block' : 'none'; });
+                replyForm.appendChild(replyBtn);
+                replyForm.appendChild(replyFields);
+
+                // wire reply submit
+                replyFields.querySelector('.reply-submit').addEventListener('click', async (ev) => {
+                    const rname = replyFields.querySelector('.reply-name').value.trim() || 'Guest';
+                    const rmsg = replyFields.querySelector('.reply-message').value.trim();
+                    if (!rmsg) return;
+                    const err = await insertReplyToSupabase(r.id, { name: rname, message: rmsg });
+                    if (err) { console.error('reply err', err); return; }
+                    replyFields.querySelector('.reply-name').value = '';
+                    replyFields.querySelector('.reply-message').value = '';
+                    // reload replies
+                    const items = await loadReplies(r.id);
+                    renderReplies(items, repliesContainer);
+                });
+
+                function renderReplies(items, container) {
+                    container.innerHTML = '';
+                    if (!items || items.length === 0) return;
+                    items.forEach(it => {
+                        const el = document.createElement('div');
+                        el.style.padding = '8px';
+                        el.style.borderTop = '1px solid #eef2ff';
+                        el.innerHTML = `<strong>${it.name||'Guest'}</strong> <span style="color:var(--muted);font-size:0.9rem;margin-left:8px">${new Date(it.created_at).toLocaleString()}</span><div style="margin-top:6px">${it.message}</div>`;
+                        container.appendChild(el);
+                    });
+                }
+
+                // initial load of replies
+                (async () => { const items = await loadReplies(r.id); renderReplies(items, repliesContainer); })();
+
                 card.appendChild(meta);
                 card.appendChild(text);
+                card.appendChild(votesWrap);
+                card.appendChild(repliesContainer);
+                card.appendChild(replyForm);
                 reviewsList.appendChild(card);
             });
         }
@@ -178,7 +344,7 @@
             const name = document.getElementById('name').value.trim();
             const comment = document.getElementById('comment').value.trim();
             const rating = parseFloat(document.getElementById('rating').value);
-            if (!name || !comment || !rating) return;
+            if (!name || !comment || isNaN(rating)) return;
 
             // don't send a millisecond timestamp to the DB (may overflow integer columns);
             // rely on created_at and insert only the necessary fields
@@ -191,6 +357,8 @@
             form.reset();
             await render();
         });
+
+        document.getElementById('seedReviewsBtn').addEventListener('click', seedDemoReviews);
 
         // initial render
         render();
