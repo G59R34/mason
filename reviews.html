@@ -48,9 +48,7 @@
 
         <div id="reviewsDebug" style="max-width:900px;margin:8px auto 0;color:#b91c1c;font-size:0.95rem;display:none"></div>
 
-        <div style="max-width:900px;margin:8px auto;display:flex;gap:8px;justify-content:flex-end;">
-            <button id="seedReviewsBtn" style="background:#06b6d4;color:#042028;padding:8px 10px;border-radius:8px;border:0;cursor:pointer">Restore demo reviews</button>
-        </div>
+        
 
         <section aria-label="submit review" style="margin-top:18px">
             <div style="text-align:right;color:var(--muted);font-size:0.9rem">
@@ -155,23 +153,7 @@
             });
         }
 
-        // insert demo seed reviews (client-side) — only for testing when DB is empty
-        async function seedDemoReviews() {
-            const c = confirm('Insert two demo reviews into the database for testing? This will write to your Supabase project.');
-            if (!c) return;
-            const samples = [
-                { name: 'Alex', comment: 'Great work!', rating: 4.5 },
-                { name: 'Sam', comment: 'Good communication.', rating: 3.5 }
-            ];
-            const { error } = await sb.from('reviews').insert(samples);
-            if (error) {
-                alert('Seed failed — check console');
-                console.error('seed error', error);
-                return;
-            }
-            alert('Seed inserted — reloading reviews');
-            await render();
-        }
+        
 
         // load replies for a review
         async function loadReplies(reviewId) {
@@ -358,7 +340,7 @@
             await render();
         });
 
-        document.getElementById('seedReviewsBtn').addEventListener('click', seedDemoReviews);
+        
 
         // initial render
         render();
