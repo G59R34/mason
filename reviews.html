@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Reviews</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        :root{--accent:#2563eb;--muted:#6b7280;--bg:#f7f7fb}
+        html,body{height:100%}
+        body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#111}
+        .container{max-width:900px;margin:32px auto;padding:20px;background:#fff;border-radius:10px;box-shadow:0 6px 18px rgba(18,23,38,0.06)}
+        header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+        h1{margin:0;font-size:1.25rem}
+        .rating-summary{display:flex;gap:12px;align-items:center;color:var(--muted)}
+        .avg{font-weight:700;font-size:1.5rem;color:var(--accent)}
+        .reviews{margin-top:18px;display:grid;gap:12px}
+        .card{padding:12px;border-radius:8px;border:1px solid #eef2ff;background:linear-gradient(180deg,#fff,#fbfdff)}
+        .meta{display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted)}
+        .stars{color:#f59e0b}
+        form{margin-top:18px;display:grid;gap:8px}
+        input[type="text"],textarea,select{padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem}
+        textarea{min-height:88px;resize:vertical}
+        .row{display:flex;gap:8px}
+        .row > *{flex:1}
+        button{background:var(--accent);color:#fff;padding:10px 12px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
+        .empty{color:var(--muted);font-style:italic}
+        @media(max-width:520px){.row{flex-direction:column}}
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="index.html"> Home </a>
+        <a href="gallery.html"> Gallery </a>
+        <a href="why.html"> Why? </a>
+        <a href="reviews.html"> Reviews </a>
+    <main class="container" aria-labelledby="title">
+        <header>
+            <div>
+                <h1 id="title">Mason Sex Reviews</h1>
+                <div class="rating-summary">
+                    <div class="avg" id="avgRating">0.0</div>
+                    <div id="avgStars" class="stars" aria-hidden="true">☆☆☆☆☆</div>
+                    <div class="meta" id="count">(0 reviews)</div>
+                </div>
+            </div>
+            <div style="text-align:right;color:var(--muted);font-size:0.9rem">
+                Share feedback — it helps improve masons drive.
+            </div>
+        </header>
+
+        <section aria-label="submit review" style="margin-top:18px">
+            <form id="reviewForm">
+                <div class="row">
+                    <input id="name" name="name" type="text" placeholder="Your name" required />
+                    <select id="rating" name="rating" required>
+                        <option value="">Rating</option>
+                        <option value="5">5 — Excellent</option>
+                        <option value="4">4 — Good</option>
+                        <option value="3">3 — Okay</option>
+                        <option value="2">2 — Poor</option>
+                        <option value="1">1 — Terrible</option>
+                    </select>
+                </div>
+                <textarea id="comment" name="comment" placeholder="Write your review..." required></textarea>
+                <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
+                    <button type="submit">Submit Review</button>
+                </div>
+            </form>
+        </section>
+
+        <section id="reviewsSection" aria-label="reviews list">
+            <div class="reviews" id="reviewsList">
+                <div class="empty">No reviews yet. Be the first to leave feedback.</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Supabase JS (UMD build) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
+    <script>
+        // Replace with your Supabase project values
+        const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const form = document.getElementById('reviewForm');
+        const reviewsList = document.getElementById('reviewsList');
+        const avgRatingEl = document.getElementById('avgRating');
+        const avgStarsEl = document.getElementById('avgStars');
+        const countEl = document.getElementById('count');
+
+        function renderStars(n) {
+            const full = '★'.repeat(n);
+            const empty = '☆'.repeat(5 - n);
+            return full + empty;
+        }
+
+        async function loadReviewsFromSupabase() {
+            // try ordering by numeric timestamp column 't' if present, otherwise created_at
+            let res = await sb.from('reviews').select('*').order('t', { ascending: true });
+            if (res.error) {
+                // fallback to created_at
+                res = await sb.from('reviews').select('*').order('created_at', { ascending: true });
+            }
+            if (res.error) return [];
+            return (res.data || []).map(r => {
+                const t = r.t ? Number(r.t) : (r.created_at ? Date.parse(r.created_at) : Date.now());
+                return { name: r.name, comment: r.comment, rating: Number(r.rating), t };
+            });
+        }
+
+        async function insertReviewToSupabase(review) {
+            // avoid sending a millisecond timestamp that can overflow integer DB columns;
+            // rely on the table's created_at column instead and only insert the fields we need
+            const payload = { name: review.name, comment: review.comment, rating: review.rating };
+            const { error } = await sb.from('reviews').insert([payload]);
+            return error;
+        }
+
+        async function render() {
+            const reviews = await loadReviewsFromSupabase();
+            reviewsList.innerHTML = '';
+            if (reviews.length === 0) {
+                const el = document.createElement('div');
+                el.className = 'empty';
+                el.textContent = 'No reviews yet. Be the first to leave feedback.';
+                reviewsList.appendChild(el);
+                avgRatingEl.textContent = '0.0';
+                avgStarsEl.textContent = '☆☆☆☆☆';
+                countEl.textContent = '(0 reviews)';
+                return;
+            }
+            const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
+            avgRatingEl.textContent = avg.toFixed(1);
+            avgStarsEl.textContent = renderStars(Math.round(avg));
+            countEl.textContent = `(${reviews.length} review${reviews.length>1?'s':''})`;
+
+            reviews.slice().reverse().forEach(r => {
+                const card = document.createElement('article');
+                card.className = 'card';
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                const name = document.createElement('strong');
+                name.textContent = r.name;
+                const stars = document.createElement('span');
+                stars.className = 'stars';
+                stars.textContent = renderStars(r.rating);
+                const time = document.createElement('time');
+                time.style.marginLeft = 'auto';
+                time.style.color = 'var(--muted)';
+                time.style.fontSize = '0.85rem';
+                time.textContent = new Date(r.t).toLocaleString();
+                meta.appendChild(name);
+                meta.appendChild(stars);
+                meta.appendChild(time);
+
+                const text = document.createElement('p');
+                text.style.margin = '8px 0 0';
+                text.textContent = r.comment;
+
+                card.appendChild(meta);
+                card.appendChild(text);
+                reviewsList.appendChild(card);
+            });
+        }
+
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const name = document.getElementById('name').value.trim();
+            const comment = document.getElementById('comment').value.trim();
+            const rating = parseInt(document.getElementById('rating').value, 10);
+            if (!name || !comment || !rating) return;
+
+            // don't send a millisecond timestamp to the DB (may overflow integer columns);
+            // rely on created_at and insert only the necessary fields
+            const review = { name, comment, rating };
+            const err = await insertReviewToSupabase(review);
+            if (err) {
+                console.error('Insert error', err);
+                return;
+            }
+            form.reset();
+            await render();
+        });
+
+        // initial render
+        render();
+    </script>
+</body>
+</html>
