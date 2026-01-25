@@ -26,6 +26,7 @@
         button{background:var(--accent);color:#fff;padding:10px 12px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
         .empty{color:var(--muted);font-style:italic}
         @media(max-width:520px){.row{flex-direction:column}}
+        .admin-badge{display:inline-block;margin-left:8px;background:#ef4444;color:#fff;padding:4px 8px;border-radius:6px;font-weight:700;font-size:0.8rem}
     </style>
 </head>
 <body>
@@ -47,6 +48,11 @@
         </header>
 
         <div id="reviewsDebug" style="max-width:900px;margin:8px auto 0;color:#b91c1c;font-size:0.95rem;display:none"></div>
+
+        <div id="adminControls" style="max-width:900px;margin:8px auto;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+            <div id="adminStatus" style="color:var(--muted);font-size:0.95rem"></div>
+            <button id="adminLoginBtn" style="background:#111827;color:#fff;padding:8px 10px;border-radius:8px;border:0;cursor:pointer">Admin Sign In</button>
+        </div>
 
         
 
@@ -101,8 +107,9 @@
 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Detect whether optional tables exist (review_replies, review_votes)
+        // Detect whether optional tables exist (review_replies, review_votes) and owner column
         let reviewsExtraTablesAvailable = { replies: false, votes: false };
+        let ownerColumnExists = false;
         async function detectExtraTables() {
             try {
                 // try lightweight selects to see if tables exist
@@ -123,6 +130,95 @@
             }
         }
         detectExtraTables();
+        // detect owner column on reviews (some installs don't have it)
+        async function detectOwnerColumn() {
+            try {
+                const probe = await sb.from('reviews').select('owner').limit(1);
+                ownerColumnExists = !probe.error;
+            } catch (e) { ownerColumnExists = false; }
+            // update debug instruction
+            if (!ownerColumnExists) {
+                const dbg = document.getElementById('reviewsDebug');
+                if (dbg) {
+                    dbg.style.display = 'block';
+                    dbg.innerHTML = dbg.innerHTML + '<div style="margin-top:6px;color:#b91c1c">Note: optional column <code>owner</code> missing — run <code>create_admins_and_owner_columns.sql</code> to enable admin badges.</div>';
+                }
+            }
+        }
+        detectOwnerColumn();
+
+        // Supabase Auth based admin login
+        let currentUser = null;
+        let currentUserIsAdmin = false;
+        let currentAdminDisplayName = null;
+        let adminIdSet = new Set();
+
+        async function refreshAdminSet() {
+            try {
+                const { data, error } = await sb.from('admins').select('user_id');
+                if (error) throw error;
+                adminIdSet = new Set((data || []).map(row => row.user_id));
+            } catch (e) {
+                console.warn('load admins failed', e);
+                adminIdSet = new Set();
+            }
+        }
+
+        async function refreshAuthState() {
+            try {
+                const { data } = await sb.auth.getUser();
+                currentUser = data && data.user ? data.user : null;
+            } catch (e) { currentUser = null; }
+            if (currentUser) {
+                // check admins table
+                try {
+                    const { data: admin, error } = await sb.from('admins').select('display_name').eq('user_id', currentUser.id).maybeSingle();
+                    if (admin && admin.display_name) {
+                        currentUserIsAdmin = true;
+                        currentAdminDisplayName = admin.display_name;
+                    } else {
+                        currentUserIsAdmin = false;
+                        currentAdminDisplayName = null;
+                    }
+                } catch (e) { currentUserIsAdmin = false; currentAdminDisplayName = null; }
+            } else {
+                currentUserIsAdmin = false; currentAdminDisplayName = null;
+            }
+            updateAdminUI();
+        }
+
+        function updateAdminUI() {
+            const status = document.getElementById('adminStatus');
+            const btn = document.getElementById('adminLoginBtn');
+            if (!status || !btn) return;
+            if (currentUser) {
+                status.textContent = `Signed in as ${currentAdminDisplayName || currentUser.email}`;
+                btn.textContent = 'Sign Out';
+            } else {
+                status.textContent = '';
+                btn.textContent = 'Admin Sign In';
+            }
+        }
+
+        // wire auth state changes
+        sb.auth.onAuthStateChange(() => { refreshAuthState(); });
+        document.addEventListener('DOMContentLoaded', async () => {
+            await refreshAuthState();
+            const btn = document.getElementById('adminLoginBtn');
+            if (!btn) return;
+            btn.addEventListener('click', async () => {
+                if (currentUser) {
+                    await sb.auth.signOut();
+                    await refreshAuthState();
+                    return;
+                }
+                const email = prompt('Admin sign-in email (magic link will be sent):', 'admin@example.com');
+                if (!email) return;
+                const { error } = await sb.auth.signInWithOtp({ email });
+                if (error) { alert('Sign-in failed, check console.'); console.error(error); return; }
+                alert('Check your email for a magic link to sign in.');
+            });
+        });
 
         const form = document.getElementById('reviewForm');
         const reviewsList = document.getElementById('reviewsList');
@@ -139,8 +235,19 @@
 
         async function loadReviewsFromSupabase() {
             // select id so we can attach replies and votes
-            // don't request optional column `t` (many installs don't have it)
-            const res = await sb.from('reviews').select('id,name,comment,rating,created_at').order('created_at', { ascending: true });
+            // choose whether to request owner depending on schema
+            let res;
+            try {
+                if (ownerColumnExists) {
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner').order('created_at', { ascending: true });
+                } else {
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at').order('created_at', { ascending: true });
+                }
+            } catch (e) {
+                console.error('loadReviews failed', e);
+                const dbg = document.getElementById('reviewsDebug'); if (dbg) { dbg.style.display = 'block'; dbg.textContent = 'Error loading reviews: ' + (e.message || JSON.stringify(e)); }
+                return [];
+            }
             if (res.error) {
                 console.error('loadReviews failed', res.error);
                 const dbg = document.getElementById('reviewsDebug'); if (dbg) { dbg.style.display = 'block'; dbg.textContent = 'Error loading reviews: ' + (res.error.message || JSON.stringify(res.error)); }
@@ -149,7 +256,7 @@
             console.debug('loadReviews result', res.data && res.data.length ? `${res.data.length} rows` : '0 rows');
             return (res.data || []).map(r => {
                 const t = r.created_at ? Date.parse(r.created_at) : Date.now();
-                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t };
+                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner: ownerColumnExists ? (r.owner || null) : null };
             });
         }
 
@@ -157,13 +264,14 @@
 
         // load replies for a review
         async function loadReplies(reviewId) {
-            const { data, error } = await sb.from('review_replies').select('id,name,message,created_at').eq('review_id', reviewId).order('created_at', { ascending: true });
+            const { data, error } = await sb.from('review_replies').select('id,name,message,created_at,owner').eq('review_id', reviewId).order('created_at', { ascending: true });
             if (error) { console.warn('loadReplies', error); return []; }
             return data || [];
         }
 
         async function insertReplyToSupabase(reviewId, reply) {
             const payload = { review_id: reviewId, name: reply.name, message: reply.message };
+            if (currentUser && currentUser.id) payload.owner = currentUser.id;
             const { error } = await sb.from('review_replies').insert([payload]);
             return error;
         }
@@ -181,6 +289,7 @@
         async function voteReview(reviewId, voter, vote) {
             // vote: 1 or -1
             const payload = { review_id: reviewId, voter: voter || null, vote: vote };
+            if (currentUser && currentUser.id) payload.owner = currentUser.id;
             const { error } = await sb.from('review_votes').insert([payload]);
             return error;
         }
@@ -189,6 +298,7 @@
             // avoid sending a millisecond timestamp that can overflow integer DB columns;
             // rely on the table's created_at column instead and only insert the fields we need
             const payload = { name: review.name, comment: review.comment, rating: review.rating };
+            if (currentUser && currentUser.id) payload.owner = currentUser.id;
             const { error } = await sb.from('reviews').insert([payload]);
             return error;
         }
@@ -196,6 +306,7 @@
         async function render() {
             const reviews = await loadReviewsFromSupabase();
             reviewsList.innerHTML = '';
+            await refreshAdminSet();
             if (reviews.length === 0) {
                 const el = document.createElement('div');
                 el.className = 'empty';
@@ -231,6 +342,13 @@
                 time.style.fontSize = '0.85rem';
                 time.textContent = new Date(r.t).toLocaleString();
                 meta.appendChild(name);
+                // if signed-in user is an admin and is the owner of this review, show ADMIN badge
+                if (r.owner && adminIdSet.has(r.owner)) {
+                    const ab = document.createElement('span');
+                    ab.className = 'admin-badge';
+                    ab.textContent = 'ADMIN';
+                    meta.appendChild(ab);
+                }
                 meta.appendChild(stars);
                 meta.appendChild(time);
 
@@ -279,7 +397,12 @@
                 const replyFields = document.createElement('div');
                 replyFields.style.display = 'none';
                 replyFields.innerHTML = `<input placeholder="Your name" class="reply-name" style="margin-bottom:6px;width:100%;padding:8px;border:1px solid #ddd;border-radius:6px"><textarea placeholder="Write a reply..." class="reply-message" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;margin-top:6px"></textarea><div style="text-align:right;margin-top:6px"><button class="reply-submit">Send</button></div>`;
-                replyBtn.addEventListener('click', () => { replyFields.style.display = replyFields.style.display === 'none' ? 'block' : 'none'; });
+                replyBtn.addEventListener('click', () => { 
+                    // prefill reply name if admin signed in
+                    const nameField = replyFields.querySelector('.reply-name');
+                    if (currentUserIsAdmin && currentAdminDisplayName && nameField) nameField.value = currentAdminDisplayName;
+                    replyFields.style.display = replyFields.style.display === 'none' ? 'block' : 'none'; 
+                });
                 replyForm.appendChild(replyBtn);
                 replyForm.appendChild(replyFields);
 
@@ -304,7 +427,8 @@
                         const el = document.createElement('div');
                         el.style.padding = '8px';
                         el.style.borderTop = '1px solid #eef2ff';
-                        el.innerHTML = `<strong>${it.name||'Guest'}</strong> <span style="color:var(--muted);font-size:0.9rem;margin-left:8px">${new Date(it.created_at).toLocaleString()}</span><div style="margin-top:6px">${it.message}</div>`;
+                        const nameHtml = `<strong>${it.name||'Guest'}</strong>${(it.owner && adminIdSet.has(it.owner)) ? ' <span class="admin-badge">ADMIN</span>' : ''}`;
+                        el.innerHTML = `${nameHtml} <span style="color:var(--muted);font-size:0.9rem;margin-left:8px">${new Date(it.created_at).toLocaleString()}</span><div style="margin-top:6px">${it.message}</div>`;
                         container.appendChild(el);
                     });
                 }
