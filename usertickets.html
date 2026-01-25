@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Your Tickets — Mason Support</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .container{max-width:900px;margin:28px auto;padding:18px;background:#fff;border-radius:10px}
+    .ticket-meta{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .msgs{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
+    .msg{padding:10px;border-radius:8px;border:1px solid #eef2ff}
+    .meta{font-size:0.9rem;color:#6b7280}
+    form{display:flex;gap:8px;margin-top:12px}
+    input[type="text"]{flex:1;padding:8px;border:1px solid #e5e7eb;border-radius:6px}
+  </style>
+</head>
+<body>
+  <script src="global-nav.js"></script>
+  <main class="container">
+    <h1>Your Ticket</h1>
+    <div id="ticketInfo" class="ticket-meta"><div id="subject"></div><div id="status" class="meta"></div></div>
+    <ul id="messages" class="msgs"></ul>
+    <div id="empty" class="meta">No messages yet.</div>
+
+    <form id="userReply">
+      <input id="yourName" placeholder="Your name" type="text" style="flex:0 0 160px" />
+      <input id="yourMessage" placeholder="Write your message..." type="text" />
+      <button type="submit">Send</button>
+    </form>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script src="usertickets.js"></script>
+</body>
+</html>
