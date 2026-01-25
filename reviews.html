@@ -53,10 +53,16 @@
                     <select id="rating" name="rating" required>
                         <option value="">Rating</option>
                         <option value="5">5 — Excellent</option>
+                        <option value="4.5">4.5 — Very Good</option>
                         <option value="4">4 — Good</option>
+                        <option value="3.5">3.5 — Above Average</option>
                         <option value="3">3 — Okay</option>
+                        <option value="2.5">2.5 — Below Average</option>
                         <option value="2">2 — Poor</option>
+                        <option value="1.5">1.5 — Very Poor</option>
                         <option value="1">1 — Terrible</option>
+                        <option value="0.5">0.5 — Abysmal</option>
+                        <option value="0">0 — No Stars</option>
                     </select>
                 </div>
                 <textarea id="comment" name="comment" placeholder="Write your review..." required></textarea>
@@ -92,9 +98,10 @@
         const countEl = document.getElementById('count');
 
         function renderStars(n) {
-            const full = '★'.repeat(n);
-            const empty = '☆'.repeat(5 - n);
-            return full + empty;
+            const fullCount = Math.floor(n);
+            const half = Math.abs(n - fullCount - 0.5) < 0.001;
+            const emptyCount = 5 - fullCount - (half ? 1 : 0);
+            return '★'.repeat(fullCount) + (half ? '½' : '') + '☆'.repeat(emptyCount);
         }
 
         async function loadReviewsFromSupabase() {
@@ -170,7 +177,7 @@
             e.preventDefault();
             const name = document.getElementById('name').value.trim();
             const comment = document.getElementById('comment').value.trim();
-            const rating = parseInt(document.getElementById('rating').value, 10);
+            const rating = parseFloat(document.getElementById('rating').value);
             if (!name || !comment || !rating) return;
 
             // don't send a millisecond timestamp to the DB (may overflow integer columns);
