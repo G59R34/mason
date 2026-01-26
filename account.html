@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Your Account — Mason</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--ink:#0f172a;--muted:#64748b;--accent:#0ea5a4;--ring:#e2e8f0}
+    body{margin:0;font-family:"Space Grotesk",system-ui,-apple-system,sans-serif;background:#f8fafc;color:var(--ink)}
+    .wrap{max-width:1100px;margin:36px auto 64px;padding:0 20px}
+    .card{background:#fff;border:1px solid var(--ring);border-radius:14px;padding:18px;box-shadow:0 10px 28px rgba(2,6,23,0.06)}
+    h1{margin:0 0 8px}
+    h2{margin:0 0 10px}
+    label{display:block;color:var(--muted);margin:10px 0 6px}
+    input,textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:inherit}
+    textarea{min-height:90px;resize:vertical}
+    button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+    .list{display:grid;gap:10px;margin-top:10px}
+    .item{border:1px solid var(--ring);border-radius:10px;padding:12px;background:#fff}
+  </style>
+</head>
+<body>
+  <script src="global-nav.js"></script>
+
+  <main class="wrap">
+    <section class="card" id="authCard">
+      <h1>Your Account</h1>
+      <p class="muted">Log in to book and view your sessions.</p>
+      <div class="row" style="margin-top:10px">
+        <button id="showLoginBtn">Log in</button>
+        <button id="showSignupBtn" style="background:#111827">Sign up</button>
+      </div>
+      <div id="authStatus" class="muted" style="margin-top:8px"></div>
+
+      <div id="loginPane" style="margin-top:12px">
+        <h2>Log in</h2>
+        <form id="loginForm">
+          <label for="liEmail">Email</label>
+          <input id="liEmail" type="email" required />
+          <label for="liPassword">Password</label>
+          <input id="liPassword" type="password" required />
+          <button type="submit" style="margin-top:10px">Log in</button>
+        </form>
+      </div>
+
+      <div id="signupPane" style="margin-top:12px;display:none">
+        <h2>Sign up</h2>
+        <form id="signupForm">
+          <label for="suEmail">Email</label>
+          <input id="suEmail" type="email" required />
+          <label for="suPassword">Password</label>
+          <input id="suPassword" type="password" required />
+          <button type="submit" style="margin-top:10px">Create account</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card" id="accountCard" style="margin-top:16px;display:none">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <h2>Account</h2>
+          <div id="accountEmail" class="muted"></div>
+        </div>
+        <button id="logoutBtn">Sign out</button>
+      </div>
+    </section>
+
+    <section class="card" id="bookingCard" style="margin-top:16px;display:none">
+      <h2>Book a session</h2>
+      <form id="bookingForm">
+        <label for="bkName">Name</label>
+        <input id="bkName" required />
+        <label for="bkContact">Contact</label>
+        <input id="bkContact" required />
+        <label for="bkDetails">Details</label>
+        <textarea id="bkDetails"></textarea>
+        <label for="bkLocation">Location</label>
+        <input id="bkLocation" />
+        <label for="bkWhen">When (ISO or plain text)</label>
+        <input id="bkWhen" placeholder="2026-02-01 18:00" />
+        <label for="bkDuration">Duration (minutes)</label>
+        <input id="bkDuration" type="number" min="15" step="15" placeholder="60" />
+        <label for="bkPrice">Price</label>
+        <input id="bkPrice" type="number" step="0.01" placeholder="0" />
+        <div class="row" style="margin-top:10px">
+          <button type="submit">Book session</button>
+          <span id="bookingStatus" class="muted"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card" id="sessionsCard" style="margin-top:16px;display:none">
+      <h2>Your sessions</h2>
+      <div id="sessionsList" class="list"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script src="account.js"></script>
+</body>
+</html>

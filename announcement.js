@@ -11,7 +11,8 @@
       s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
     }).catch(() => console.warn('Could not load Supabase script'));
   }
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Reuse a single client if already created to avoid GoTrue conflicts
+  const sb = window.msSupabase || (window.msSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }));
 
   // LocalStorage key to remember which announcements the user has already seen
   const SEEN_KEY = 'ms_seen_announcements_v1';

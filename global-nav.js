@@ -23,6 +23,7 @@
                         <li><a href="why.html">Why Mason</a></li>
                         <li><a href="reviews.html">Reviews</a></li>
                         <li><a href="pricing.html">Pricing</a></li>
+                        <li><a href="account.html">Account</a></li>
                     </ul>
                     <div class="gn-actions">
                         

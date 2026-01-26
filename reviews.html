@@ -105,7 +105,7 @@
         const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
 
-        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const sb = window.msSupabase || (window.msSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }));
 
         // Detect whether optional tables exist (review_replies, review_votes) and owner column
         let reviewsExtraTablesAvailable = { replies: false, votes: false };
@@ -239,9 +239,9 @@
             let res;
             try {
                 if (ownerColumnExists) {
-                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner').order('created_at', { ascending: true });
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner,mason_reply').order('created_at', { ascending: true });
                 } else {
-                    res = await sb.from('reviews').select('id,name,comment,rating,created_at').order('created_at', { ascending: true });
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,mason_reply').order('created_at', { ascending: true });
                 }
             } catch (e) {
                 console.error('loadReviews failed', e);
@@ -256,7 +256,7 @@
             console.debug('loadReviews result', res.data && res.data.length ? `${res.data.length} rows` : '0 rows');
             return (res.data || []).map(r => {
                 const t = r.created_at ? Date.parse(r.created_at) : Date.now();
-                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner: ownerColumnExists ? (r.owner || null) : null };
+                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner: ownerColumnExists ? (r.owner || null) : null, mason_reply: r.mason_reply || '' };
             });
         }
 
@@ -355,6 +355,11 @@
                 const text = document.createElement('p');
                 text.style.margin = '8px 0 0';
                 text.textContent = r.comment;
+                const masonReply = document.createElement('div');
+                if (r.mason_reply) {
+                    masonReply.className = 'meta';
+                    masonReply.innerHTML = `<strong>Mason</strong> <span class="admin-badge">CEO</span> — ${r.mason_reply}`;
+                }
 
                 // votes UI
                 const votesWrap = document.createElement('div');
@@ -438,6 +443,7 @@
 
                 card.appendChild(meta);
                 card.appendChild(text);
+                if (r.mason_reply) card.appendChild(masonReply);
                 card.appendChild(votesWrap);
                 card.appendChild(repliesContainer);
                 card.appendChild(replyForm);

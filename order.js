@@ -2,10 +2,11 @@
 // order.js — handles order form and creates an announcement site-wide
 const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Reuse a single client if already created to avoid GoTrue conflicts
+const sb = window.msSupabase || (window.msSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }));
 
 // placeOrder API: call with { name, email, plan, amount }
-window.placeOrder = async function placeOrder({ name, email, plan, amount, customAnnouncement } = {}) {
+window.placeOrder = async function placeOrder({ name, email, plan, amount, customAnnouncement, booking } = {}) {
   if (!plan) throw new Error('missing plan');
   const payload = { customer_name: name || 'Guest', email: email || '', plan, amount: amount || null };
   const { error: oer, data: odata } = await sb.from('orders').insert([payload]).select('id').limit(1);
@@ -16,6 +17,27 @@ window.placeOrder = async function placeOrder({ name, email, plan, amount, custo
     : `New order: ${plan} by ${payload.customer_name}`;
   const { error: aerr } = await sb.from('announcements').insert([{ message: announcementMessage }]);
   if (aerr) return { success: false, orderId, error: aerr };
+  // Create a session booking tied to this order
+  try {
+    const { data: userData } = await sb.auth.getUser();
+    const user_id = userData && userData.user ? userData.user.id : null;
+    const sessionPayload = {
+      customer_name: payload.customer_name,
+      contact: payload.email || (booking && booking.contact) || '',
+      details: booking && booking.details ? booking.details : `Booked via pricing — ${plan}`,
+      location: booking && booking.location ? booking.location : null,
+      duration_minutes: booking && booking.duration_minutes ? booking.duration_minutes : null,
+      price: amount || null,
+      scheduled_for: booking && booking.scheduled_for ? booking.scheduled_for : null,
+      status: 'requested',
+      user_id
+    };
+    await sb.from('sessions').insert([sessionPayload]);
+  } catch (e) {
+    // ignore booking errors so order still succeeds
+    console.warn('session booking failed', e);
+  }
+
   return { success: true, orderId };
 };
 
@@ -48,14 +70,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.place-order-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const plan = btn.dataset.plan || btn.innerText || 'Custom';
-      const amount = btn.dataset_amount || btn.dataset.amount || null;
+      const amount = btn.dataset.amount || null;
       const name = window.prompt('Your name (optional):', 'Guest') || 'Guest';
       const email = window.prompt('Email (optional, for receipt):', '') || '';
+      const when = window.prompt('When do you want to book? (e.g. 2026-02-01 18:00)', '') || '';
+      const duration = window.prompt('Session duration (minutes):', '60') || '';
+      const location = window.prompt('Location (optional):', '') || '';
+      const details = window.prompt('Notes / details (optional):', '') || '';
       const customAnnouncement = window.prompt('Custom announcement message to send site-wide (optional):', '') || '';
       try {
         btn.disabled = true;
         btn.textContent = 'Placing...';
-        const res = await window.placeOrder({ name, email, plan, amount, customAnnouncement });
+        const booking = {
+          scheduled_for: when || null,
+          duration_minutes: duration ? Number(duration) : null,
+          location: location || null,
+          details: details || null,
+          contact: email || null
+        };
+        const res = await window.placeOrder({ name, email, plan, amount, customAnnouncement, booking });
         if (res.success) {
           alert('Order placed — thank you!');
         } else {

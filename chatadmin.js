@@ -2,7 +2,7 @@
 (async () => {
   const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const sb = window.msSupabase || (window.msSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }));
 
   const listEl = document.getElementById('messages');
   const ticketsEl = document.getElementById('tickets');
