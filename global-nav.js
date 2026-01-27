@@ -453,8 +453,12 @@
                 }
                 setIntroLoop(Boolean(map.get('intro_loop')?.enabled));
                 const jumpscare = map.get('jumpscare');
-                if (jumpscare?.enabled) {
-                    triggerJumpscare(Number(jumpscare?.nonce || 0));
+                if (jumpscare?.nonce) {
+                    const nonce = Number(jumpscare?.nonce || 0);
+                    if (nonce > lastJumpscareNonce) {
+                        lastJumpscareNonce = nonce;
+                        sessionStorage.setItem('ms_jumpscare_nonce', String(nonce));
+                    }
                 }
             };
 

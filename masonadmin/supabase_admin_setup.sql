@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.admins (
 ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS admin_self_select ON public.admins;
-CREATE POLICY admin_self_select ON public.admins
+CREATE POLICY admin_self_select ON public.adminsa
   FOR SELECT USING (auth.uid() = user_id);
 DROP POLICY IF EXISTS admin_self_upsert ON public.admins;
 CREATE POLICY admin_self_upsert ON public.admins
@@ -86,71 +86,4 @@ CREATE POLICY admin_update_sessions ON public.sessions
   FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
 DROP POLICY IF EXISTS admin_delete_sessions ON public.sessions;
 CREATE POLICY admin_delete_sessions ON public.sessions
-  FOR DELETE USING (public.is_admin());
-
--- Pricing content policies (admin only for write)
-DROP POLICY IF EXISTS admin_select_pricing_plans ON public.pricing_plans;
-CREATE POLICY admin_select_pricing_plans ON public.pricing_plans
-  FOR SELECT USING (public.is_admin());
-DROP POLICY IF EXISTS admin_insert_pricing_plans ON public.pricing_plans;
-CREATE POLICY admin_insert_pricing_plans ON public.pricing_plans
-  FOR INSERT WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_update_pricing_plans ON public.pricing_plans;
-CREATE POLICY admin_update_pricing_plans ON public.pricing_plans
-  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_delete_pricing_plans ON public.pricing_plans;
-CREATE POLICY admin_delete_pricing_plans ON public.pricing_plans
-  FOR DELETE USING (public.is_admin());
-
-DROP POLICY IF EXISTS admin_select_pricing_page_content ON public.pricing_page_content;
-CREATE POLICY admin_select_pricing_page_content ON public.pricing_page_content
-  FOR SELECT USING (public.is_admin());
-DROP POLICY IF EXISTS admin_insert_pricing_page_content ON public.pricing_page_content;
-CREATE POLICY admin_insert_pricing_page_content ON public.pricing_page_content
-  FOR INSERT WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_update_pricing_page_content ON public.pricing_page_content;
-CREATE POLICY admin_update_pricing_page_content ON public.pricing_page_content
-  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_delete_pricing_page_content ON public.pricing_page_content;
-CREATE POLICY admin_delete_pricing_page_content ON public.pricing_page_content
-  FOR DELETE USING (public.is_admin());
-
--- Why Mason content policies (admin only for write)
-DROP POLICY IF EXISTS admin_select_why_value_cards ON public.why_value_cards;
-CREATE POLICY admin_select_why_value_cards ON public.why_value_cards
-  FOR SELECT USING (public.is_admin());
-DROP POLICY IF EXISTS admin_insert_why_value_cards ON public.why_value_cards;
-CREATE POLICY admin_insert_why_value_cards ON public.why_value_cards
-  FOR INSERT WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_update_why_value_cards ON public.why_value_cards;
-CREATE POLICY admin_update_why_value_cards ON public.why_value_cards
-  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_delete_why_value_cards ON public.why_value_cards;
-CREATE POLICY admin_delete_why_value_cards ON public.why_value_cards
-  FOR DELETE USING (public.is_admin());
-
-DROP POLICY IF EXISTS admin_select_why_quotes ON public.why_quotes;
-CREATE POLICY admin_select_why_quotes ON public.why_quotes
-  FOR SELECT USING (public.is_admin());
-DROP POLICY IF EXISTS admin_insert_why_quotes ON public.why_quotes;
-CREATE POLICY admin_insert_why_quotes ON public.why_quotes
-  FOR INSERT WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_update_why_quotes ON public.why_quotes;
-CREATE POLICY admin_update_why_quotes ON public.why_quotes
-  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_delete_why_quotes ON public.why_quotes;
-CREATE POLICY admin_delete_why_quotes ON public.why_quotes
-  FOR DELETE USING (public.is_admin());
-
-DROP POLICY IF EXISTS admin_select_why_measurements ON public.why_measurements;
-CREATE POLICY admin_select_why_measurements ON public.why_measurements
-  FOR SELECT USING (public.is_admin());
-DROP POLICY IF EXISTS admin_insert_why_measurements ON public.why_measurements;
-CREATE POLICY admin_insert_why_measurements ON public.why_measurements
-  FOR INSERT WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_update_why_measurements ON public.why_measurements;
-CREATE POLICY admin_update_why_measurements ON public.why_measurements
-  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS admin_delete_why_measurements ON public.why_measurements;
-CREATE POLICY admin_delete_why_measurements ON public.why_measurements
   FOR DELETE USING (public.is_admin());

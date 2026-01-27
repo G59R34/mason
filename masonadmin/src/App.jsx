@@ -394,6 +394,12 @@ export default function App() {
       setJumpscareStatus(`Failed: ${error.message}`);
       return;
     }
+    // Auto-reset so it won't replay on page load
+    setTimeout(() => {
+      supabase.from('site_settings').upsert([
+        { key: 'jumpscare', value: { enabled: false, nonce }, updated_at: new Date().toISOString() }
+      ]);
+    }, 500);
     setJumpscareStatus('Triggered.');
     setTimeout(() => setJumpscareStatus(''), 2000);
   }
