@@ -83,6 +83,29 @@
             padding:12px 14px;
             color:var(--muted);
         }
+        .lightbox{
+            position:fixed;
+            inset:0;
+            background:rgba(15,23,42,0.75);
+            display:none;
+            align-items:center;
+            justify-content:center;
+            padding:24px;
+            z-index:20000;
+        }
+        .lightbox.open{display:flex}
+        .lightbox img{
+            max-width:min(100%,1000px);
+            max-height:85vh;
+            border-radius:16px;
+            box-shadow:0 24px 60px rgba(2,6,23,0.4);
+            background:#fff;
+        }
+        .lightbox .caption{
+            color:#e2e8f0;
+            margin-top:12px;
+            text-align:center;
+        }
     </style>
 </head>
 <body>
@@ -103,6 +126,12 @@
             <a class="cta" href="contact.html">Contact Mason</a>
         </section>
         <section class="grid" id="galleryGrid" style="display:none" aria-label="gallery"></section>
+        <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
+            <div>
+                <img id="lightboxImg" alt="Gallery preview" />
+                <div id="lightboxCaption" class="caption"></div>
+            </div>
+        </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
@@ -119,6 +148,9 @@
 
             const grid = document.getElementById('galleryGrid');
             const empty = document.getElementById('galleryEmpty');
+            const lightbox = document.getElementById('lightbox');
+            const lightboxImg = document.getElementById('lightboxImg');
+            const lightboxCaption = document.getElementById('lightboxCaption');
 
             async function loadGallery() {
                 const { data } = await sb
@@ -141,11 +173,25 @@
                         <img src="${img.public_url}" alt="${img.caption || 'Gallery image'}" loading="lazy">
                         ${img.caption ? `<figcaption>${img.caption}</figcaption>` : ''}
                     `;
+                    fig.addEventListener('click', () => {
+                        if (!lightbox || !lightboxImg) return;
+                        lightboxImg.src = img.public_url;
+                        lightboxImg.alt = img.caption || 'Gallery image';
+                        if (lightboxCaption) lightboxCaption.textContent = img.caption || '';
+                        lightbox.classList.add('open');
+                    });
                     grid.appendChild(fig);
                 });
             }
 
             loadGallery();
+
+            lightbox?.addEventListener('click', () => {
+                lightbox.classList.remove('open');
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') lightbox?.classList.remove('open');
+            });
         })();
     </script>
 </body>
