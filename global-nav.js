@@ -102,6 +102,8 @@
             .gn-announcement .gn-ann-bar{display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(90deg,#0f766e,#14b8a6);color:#fff;border-radius:16px;padding:12px 16px;font-weight:600;letter-spacing:0.01em;box-shadow:0 12px 24px rgba(15,23,42,0.14);border:1px solid rgba(255,255,255,0.35);text-align:center}
             .gn-announcement .gn-ann-bar .gn-ann-pill{background:rgba(255,255,255,0.18);padding:4px 10px;border-radius:999px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em}
             .gn-announcement .gn-ann-bar .gn-ann-text{line-height:1.35}
+            .ms-intro-video{position:fixed;inset:0;z-index:30000;background:#000;display:flex;align-items:center;justify-content:center}
+            .ms-intro-video video{width:100vw;height:100vh;object-fit:cover;display:block}
 
             /* Responsive */
             @media (max-width:850px){
@@ -126,6 +128,32 @@
         injectStyles(); createNav();
     }
 
+    function maybePlayIntroVideo() {
+        const KEY = 'ms_intro_video_seen';
+        if (localStorage.getItem(KEY) === '1') return;
+        localStorage.setItem(KEY, '1');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'ms-intro-video';
+        overlay.innerHTML = `
+          <video autoplay muted playsinline preload="auto">
+            <source src="/img/comp 1.mp4" type="video/mp4" />
+          </video>
+        `;
+        document.body.appendChild(overlay);
+
+        const video = overlay.querySelector('video');
+        const cleanup = () => {
+            overlay.remove();
+        };
+        video.addEventListener('ended', cleanup);
+        video.addEventListener('error', cleanup);
+        // Safety timeout in case autoplay is blocked
+        setTimeout(() => {
+            if (overlay.isConnected) cleanup();
+        }, 15000);
+    }
+
     // Load site-wide announcement listener so banners appear on every page
     function loadAnnouncementScript() {
         if (document.getElementById('ms-announcement-script')) return;
@@ -137,9 +165,13 @@
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', loadAnnouncementScript);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAnnouncementScript();
+            maybePlayIntroVideo();
+        });
     } else {
         loadAnnouncementScript();
+        maybePlayIntroVideo();
     }
 
 })();
