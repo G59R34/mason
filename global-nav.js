@@ -109,7 +109,7 @@
             .ms-maintenance{position:fixed;inset:0;z-index:40000;background:#0b0f1a;display:flex;align-items:center;justify-content:center}
             .ms-maintenance-inner{font-family:Space Grotesk,system-ui,sans-serif;font-size:2rem;color:#f8fafc;text-align:center;padding:2rem;border:1px solid rgba(148,163,184,0.35);border-radius:16px;background:rgba(15,23,42,0.6);box-shadow:0 30px 80px rgba(2,6,23,0.6)}
             .ms-jumpscare{position:fixed;inset:0;z-index:50000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.8)}
-            .ms-jumpscare img{max-width:100vw;max-height:100vh;object-fit:contain;animation:ms-jumpscare-flash 0.12s steps(2) 10}
+            .ms-jumpscare img{width:100%;height:100%;object-fit:cover;object-position:center;animation:ms-jumpscare-flash 0.12s steps(2) 10}
             .ms-jumpscare.shake{animation:ms-jumpscare-shake 0.12s infinite}
             @keyframes ms-jumpscare-flash{0%{opacity:0}50%{opacity:1}100%{opacity:0}}
             @keyframes ms-jumpscare-shake{0%{transform:translate(0)}25%{transform:translate(6px,-6px)}50%{transform:translate(-6px,6px)}75%{transform:translate(6px,6px)}100%{transform:translate(0)}}
