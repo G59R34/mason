@@ -131,6 +131,49 @@
         });
       }
 
+      function playBookVideo() {
+        return new Promise((resolve) => {
+          const overlay = document.createElement('div');
+          overlay.className = 'ms-intro-video ms-book-video';
+          overlay.innerHTML = `
+            <video autoplay playsinline preload="auto">
+              <source src="img/book.mp4" type="video/mp4" />
+            </video>
+          `;
+          document.body.appendChild(overlay);
+          const video = overlay.querySelector('video');
+          const cleanup = () => {
+            overlay.remove();
+            resolve();
+          };
+          if (video) {
+            video.muted = false;
+            video.volume = 1;
+            video.addEventListener('ended', cleanup);
+            video.addEventListener('error', cleanup);
+            video.addEventListener('click', cleanup);
+            video.play().catch(() => {});
+          }
+          setTimeout(() => {
+            if (overlay.isConnected) cleanup();
+          }, 15000);
+        });
+      }
+
+      document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.place-order-btn');
+        if (!btn) return;
+        if (btn.dataset.bookVideoBypass === '1') {
+          btn.removeAttribute('data-book-video-bypass');
+          return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        await playBookVideo();
+        btn.setAttribute('data-book-video-bypass', '1');
+        btn.click();
+      }, true);
+
       loadPricing();
     })();
   </script>
