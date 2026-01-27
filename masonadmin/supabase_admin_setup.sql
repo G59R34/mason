@@ -141,3 +141,16 @@ CREATE POLICY admin_update_why_quotes ON public.why_quotes
 DROP POLICY IF EXISTS admin_delete_why_quotes ON public.why_quotes;
 CREATE POLICY admin_delete_why_quotes ON public.why_quotes
   FOR DELETE USING (public.is_admin());
+
+DROP POLICY IF EXISTS admin_select_why_measurements ON public.why_measurements;
+CREATE POLICY admin_select_why_measurements ON public.why_measurements
+  FOR SELECT USING (public.is_admin());
+DROP POLICY IF EXISTS admin_insert_why_measurements ON public.why_measurements;
+CREATE POLICY admin_insert_why_measurements ON public.why_measurements
+  FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS admin_update_why_measurements ON public.why_measurements;
+CREATE POLICY admin_update_why_measurements ON public.why_measurements
+  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS admin_delete_why_measurements ON public.why_measurements;
+CREATE POLICY admin_delete_why_measurements ON public.why_measurements
+  FOR DELETE USING (public.is_admin());

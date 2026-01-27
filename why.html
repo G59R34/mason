@@ -145,6 +145,84 @@
             padding:10px 14px;
             border-radius:9px;
         }
+        .chart-card{
+            background:var(--card);
+            border:1px solid var(--ring);
+            border-radius:16px;
+            padding:20px;
+            margin-top:24px;
+            box-shadow:0 18px 40px rgba(2,6,23,0.08);
+        }
+        .chart-header{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            flex-wrap:wrap;
+        }
+        .chart-controls{
+            display:flex;
+            align-items:center;
+            gap:12px;
+            flex-wrap:wrap;
+        }
+        .chart-controls label{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            font-size:0.95rem;
+            color:var(--muted);
+        }
+        .chart-area{
+            margin-top:18px;
+            position:relative;
+            overflow:hidden;
+        }
+        .chart-legend{
+            display:flex;
+            gap:14px;
+            flex-wrap:wrap;
+            margin-top:16px;
+            color:var(--muted);
+            font-size:0.95rem;
+        }
+        .legend-pill{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            padding:6px 10px;
+            border-radius:999px;
+            background:#f1f5f9;
+            border:1px solid var(--ring);
+        }
+        .legend-dot{
+            width:10px;
+            height:10px;
+            border-radius:999px;
+        }
+        .tooltip{
+            position:absolute;
+            background:#0f172a;
+            color:#f8fafc;
+            padding:6px 10px;
+            border-radius:8px;
+            font-size:0.85rem;
+            pointer-events:none;
+            opacity:0;
+            transform:translate(-50%, -120%);
+            transition:opacity 0.2s ease;
+        }
+        .tooltip.show{opacity:1}
+        .toggle{
+            display:inline-flex;
+            align-items:center;
+            gap:8px;
+            background:#f8fafc;
+            border:1px solid var(--ring);
+            border-radius:999px;
+            padding:6px 10px;
+            font-size:0.9rem;
+        }
         @media (max-width:900px){
             .hero{grid-template-columns:1fr}
             h1{font-size:2.2rem}
@@ -180,6 +258,33 @@
             <div id="quotesList" class="quotes"></div>
         </section>
 
+        <section class="chart-card" aria-label="Arm length comparison">
+            <div class="chart-header">
+                <div>
+                    <h2>Weiner length comparison</h2>
+                    <p class="muted">Compare Mason, an ant, and an average human. Hover or tap the bars.</p>
+                </div>
+                <div class="chart-controls">
+                    <label class="toggle">
+                        Units:
+                        <select id="unitSelect">
+                            <option value="cm">cm</option>
+                            <option value="in">in</option>
+                        </select>
+                    </label>
+                    <label>
+                        Zoom
+                        <input id="scaleSlider" type="range" min="1" max="5" step="0.1" value="1.8" />
+                    </label>
+                </div>
+            </div>
+            <div class="chart-area">
+                <svg id="armChart" width="100%" height="240" viewBox="0 0 900 240" role="img" aria-label="Arm length chart"></svg>
+                <div id="chartTooltip" class="tooltip"></div>
+            </div>
+            <div class="chart-legend" id="chartLegend"></div>
+        </section>
+
         <section class="cta">
             <div>Want Mason to FUCK you?  book a session.</div>
             <a href="pricing.html">View Pricing</a>
@@ -207,6 +312,12 @@
                 { quote: '"Your quote here."', author: 'Client Name, Company/Role' },
                 { quote: '"Your quote here."', author: 'Client Name, Company/Role' },
                 { quote: '"Your quote here."', author: 'Client Name, Company/Role' }
+            ];
+            const fallbackChart = [
+                { label: 'Mason', value_cm: 0.1, color: '#0ea5a4' },
+                { label: 'Average human', value_cm: 13, color: '#6366f1' },
+                { label: 'Ant', value_cm: 0.3, color: '#f97316' },
+                { label: 'Molecular Atom', value_cm: 0.00001, color: '#f43f5e' }
             ];
 
             const valueCardsEl = document.getElementById('valueCards');
@@ -255,11 +366,129 @@
                     if (quoteData && quoteData.length) quotes = quoteData;
                 } catch (e) {}
 
+                let chartItems = fallbackChart;
+                try {
+                    const { data: measurementData } = await sb
+                        .from('why_measurements')
+                        .select('label,value_cm,color,sort_order,created_at')
+                        .order('sort_order', { ascending: true })
+                        .order('created_at', { ascending: true });
+                    if (measurementData && measurementData.length) chartItems = measurementData;
+                } catch (e) {}
+
                 renderCards(cards);
                 renderQuotes(quotes);
+                window.whyChartData = chartItems;
+                if (typeof window.renderWhyChart === 'function') {
+                    window.renderWhyChart();
+                }
             }
 
             loadContent();
+        })();
+    </script>
+    <script>
+        (() => {
+            const svg = document.getElementById('armChart');
+            const tooltip = document.getElementById('chartTooltip');
+            const unitSelect = document.getElementById('unitSelect');
+            const scaleSlider = document.getElementById('scaleSlider');
+            const legend = document.getElementById('chartLegend');
+
+            if (!svg || !tooltip || !unitSelect || !scaleSlider || !legend) return;
+
+            const toUnit = (cm, unit) => unit === 'in' ? cm / 2.54 : cm;
+            const formatValue = (val, unit) => `${val.toFixed(unit === 'in' ? 2 : 1)} ${unit}`;
+
+            function renderLegend(items) {
+                legend.innerHTML = '';
+                items.forEach((item) => {
+                    const pill = document.createElement('span');
+                    pill.className = 'legend-pill';
+                    const dot = document.createElement('span');
+                    dot.className = 'legend-dot';
+                    dot.style.background = item.color || '#0ea5a4';
+                    pill.appendChild(dot);
+                    pill.appendChild(document.createTextNode(item.label));
+                    legend.appendChild(pill);
+                });
+            }
+
+            function render() {
+                const data = (window.whyChartData || []).map((item) => ({
+                    label: item.label,
+                    valueCm: Number(item.value_cm),
+                    color: item.color || '#0ea5a4'
+                }));
+                if (!data.length) return;
+                const unit = unitSelect.value;
+                const scale = Number(scaleSlider.value);
+                const width = 880;
+                const height = 200;
+                const barHeight = 38;
+                const gap = 20;
+                const maxValue = Math.max(...data.map(d => d.valueCm));
+                const scaleFactor = (width - 160) / (maxValue * scale);
+
+                svg.innerHTML = '';
+                svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                renderLegend(data);
+
+                data.forEach((d, i) => {
+                    const y = 20 + i * (barHeight + gap);
+                    const value = toUnit(d.valueCm, unit);
+                    const barWidth = Math.max(6, d.valueCm * scaleFactor);
+
+                    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    label.setAttribute('x', '0');
+                    label.setAttribute('y', `${y + 26}`);
+                    label.setAttribute('fill', '#0f172a');
+                    label.setAttribute('font-size', '15');
+                    label.setAttribute('font-family', 'Space Grotesk, sans-serif');
+                    label.textContent = d.label;
+
+                    const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    bar.setAttribute('x', '140');
+                    bar.setAttribute('y', `${y}`);
+                    bar.setAttribute('rx', '12');
+                    bar.setAttribute('ry', '12');
+                    bar.setAttribute('width', `${barWidth}`);
+                    bar.setAttribute('height', `${barHeight}`);
+                    bar.setAttribute('fill', d.color);
+                    bar.style.cursor = 'pointer';
+                    bar.style.transition = 'width 0.4s ease';
+
+                    const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    valueText.setAttribute('x', `${140 + barWidth + 12}`);
+                    valueText.setAttribute('y', `${y + 26}`);
+                    valueText.setAttribute('fill', '#64748b');
+                    valueText.setAttribute('font-size', '14');
+                    valueText.setAttribute('font-family', 'Space Grotesk, sans-serif');
+                    valueText.textContent = formatValue(value, unit);
+
+                    const showTip = (evt) => {
+                        const rect = svg.getBoundingClientRect();
+                        tooltip.textContent = `${d.label}: ${formatValue(value, unit)}`;
+                        tooltip.style.left = `${evt.clientX - rect.left}px`;
+                        tooltip.style.top = `${evt.clientY - rect.top}px`;
+                        tooltip.classList.add('show');
+                    };
+                    const hideTip = () => tooltip.classList.remove('show');
+
+                    bar.addEventListener('mousemove', showTip);
+                    bar.addEventListener('mouseleave', hideTip);
+                    bar.addEventListener('click', showTip);
+
+                    svg.appendChild(label);
+                    svg.appendChild(bar);
+                    svg.appendChild(valueText);
+                });
+            }
+
+            unitSelect.addEventListener('change', render);
+            scaleSlider.addEventListener('input', render);
+            window.renderWhyChart = render;
+            render();
         })();
     </script>
 </body>

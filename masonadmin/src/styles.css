@@ -222,6 +222,27 @@ button.danger {
   gap: 0.6rem;
 }
 
+.gravity-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-weight: 600;
+}
+
+.gravity-toggle input {
+  accent-color: var(--primary);
+}
+
+.gravity-item {
+  transition: transform var(--gravityDur, 1.6s) cubic-bezier(0.2, 0.7, 0.2, 1);
+  transform: translateY(var(--gravityY, 0px)) rotate(var(--gravityR, 0deg));
+  will-change: transform;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

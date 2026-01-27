@@ -10,6 +10,7 @@ const TABS = [
   { id: 'gallery', label: 'Gallery' },
   { id: 'why', label: 'Why Editor' },
   { id: 'pricing', label: 'Pricing' },
+  { id: 'super', label: 'SUPER ADMIN STUFF' },
   { id: 'settings', label: 'Settings' }
 ];
 
@@ -78,8 +79,15 @@ export default function App() {
   const [settingsStatus, setSettingsStatus] = useState('');
   const [valueCards, setValueCards] = useState([]);
   const [quotes, setQuotes] = useState([]);
+  const [whyMeasurements, setWhyMeasurements] = useState([]);
   const [newValueCard, setNewValueCard] = useState({ title: '', body: '', sort_order: 0 });
   const [newQuote, setNewQuote] = useState({ quote: '', author: '', sort_order: 0 });
+  const [newWhyMeasurement, setNewWhyMeasurement] = useState({
+    label: '',
+    value_cm: '',
+    color: '#0ea5a4',
+    sort_order: 0
+  });
   const [whyStatus, setWhyStatus] = useState('');
   const [typingStatus, setTypingStatus] = useState('');
   const [pricingPlans, setPricingPlans] = useState([]);
@@ -112,6 +120,11 @@ export default function App() {
   const [galleryStatus, setGalleryStatus] = useState('');
   const typingChannelRef = useRef(null);
   const typingDebounceRef = useRef(null);
+  const [gravityEnabled, setGravityEnabled] = useState(false);
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [introLoopEnabled, setIntroLoopEnabled] = useState(false);
+  const [jumpscareStatus, setJumpscareStatus] = useState('');
+  const gravityTimeoutRef = useRef(null);
 
   const isReady = useMemo(
     () => session && adminState.status === 'allowed',
@@ -315,6 +328,76 @@ export default function App() {
     };
   }, [isReady, currentConversation]);
 
+  useEffect(() => {
+    if (!isReady) return;
+    let mounted = true;
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'physics_mode')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setGravityEnabled(Boolean(data?.value?.enabled));
+      });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'maintenance_mode')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setMaintenanceEnabled(Boolean(data?.value?.enabled));
+      });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'intro_loop')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setIntroLoopEnabled(Boolean(data?.value?.enabled));
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isReady]);
+
+  async function updatePhysicsMode(enabled) {
+    setGravityEnabled(enabled);
+    await supabase.from('site_settings').upsert([
+      { key: 'physics_mode', value: { enabled }, updated_at: new Date().toISOString() }
+    ]);
+  }
+
+  async function updateMaintenanceMode(enabled) {
+    setMaintenanceEnabled(enabled);
+    await supabase.from('site_settings').upsert([
+      { key: 'maintenance_mode', value: { enabled }, updated_at: new Date().toISOString() }
+    ]);
+  }
+
+  async function updateIntroLoop(enabled) {
+    setIntroLoopEnabled(enabled);
+    await supabase.from('site_settings').upsert([
+      { key: 'intro_loop', value: { enabled }, updated_at: new Date().toISOString() }
+    ]);
+  }
+
+  async function triggerJumpscare() {
+    setJumpscareStatus('Triggering...');
+    const nonce = Date.now();
+    const { error } = await supabase.from('site_settings').upsert([
+      { key: 'jumpscare', value: { enabled: true, nonce }, updated_at: new Date().toISOString() }
+    ]);
+    if (error) {
+      setJumpscareStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setJumpscareStatus('Triggered.');
+    setTimeout(() => setJumpscareStatus(''), 2000);
+  }
+
   async function loadDashboard() {
     const tables = [
       ['reviews', 'Reviews'],
@@ -390,6 +473,13 @@ export default function App() {
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
     setQuotes(quoteData || []);
+
+    const { data: measurementData } = await supabase
+      .from('why_measurements')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setWhyMeasurements(measurementData || []);
   }
 
   async function loadPricingContent() {
@@ -762,6 +852,60 @@ export default function App() {
   async function deleteQuote(id) {
     if (!window.confirm('Delete this quote?')) return;
     const { error } = await supabase.from('why_quotes').delete().eq('id', id);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    loadWhyContent();
+  }
+
+  function updateWhyMeasurementField(id, field, value) {
+    setWhyMeasurements((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  }
+
+  async function createWhyMeasurement(event) {
+    event.preventDefault();
+    if (!newWhyMeasurement.label.trim() || newWhyMeasurement.value_cm === '') return;
+    setWhyStatus('Saving...');
+    const payload = {
+      label: newWhyMeasurement.label.trim(),
+      value_cm: Number(newWhyMeasurement.value_cm),
+      color: newWhyMeasurement.color.trim() || null,
+      sort_order: Number(newWhyMeasurement.sort_order) || 0
+    };
+    const { error } = await supabase.from('why_measurements').insert([payload]);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setNewWhyMeasurement({ label: '', value_cm: '', color: '#0ea5a4', sort_order: 0 });
+    setWhyStatus('Saved.');
+    loadWhyContent();
+  }
+
+  async function saveWhyMeasurement(item) {
+    if (!item.id) return;
+    setWhyStatus('Saving...');
+    const payload = {
+      label: item.label,
+      value_cm: Number(item.value_cm),
+      color: item.color || null,
+      sort_order: Number(item.sort_order) || 0
+    };
+    const { error } = await supabase.from('why_measurements').update(payload).eq('id', item.id);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setWhyStatus('Saved.');
+    loadWhyContent();
+  }
+
+  async function deleteWhyMeasurement(id) {
+    if (!window.confirm('Delete this comparator?')) return;
+    const { error } = await supabase.from('why_measurements').delete().eq('id', id);
     if (error) {
       setWhyStatus(`Failed: ${error.message}`);
       return;
@@ -1641,6 +1785,44 @@ export default function App() {
           </section>
         )}
 
+        {activeTab === 'super' && (
+          <section className="stack">
+            <div className="card form">
+              <h3>Site controls</h3>
+              <label className="gravity-toggle">
+                <input
+                  type="checkbox"
+                  checked={maintenanceEnabled}
+                  onChange={(event) => updateMaintenanceMode(event.target.checked)}
+                />
+                Site Down
+              </label>
+              <label className="gravity-toggle">
+                <input
+                  type="checkbox"
+                  checked={introLoopEnabled}
+                  onChange={(event) => updateIntroLoop(event.target.checked)}
+                />
+                Intro Loop
+              </label>
+              <label className="gravity-toggle">
+                <input
+                  type="checkbox"
+                  checked={gravityEnabled}
+                  onChange={(event) => updatePhysicsMode(event.target.checked)}
+                />
+                Physics Mode (website)
+              </label>
+              <div className="review-actions" style={{ marginTop: '0.75rem' }}>
+                <button type="button" className="danger" onClick={triggerJumpscare}>
+                  Trigger Jumpscare
+                </button>
+                {jumpscareStatus && <span className="muted">{jumpscareStatus}</span>}
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeTab === 'gallery' && (
           <section className="stack">
             <form className="card form" onSubmit={uploadGalleryImages}>
@@ -1846,6 +2028,98 @@ export default function App() {
                   <div className="review-actions">
                     <button type="button" onClick={() => saveQuote(quote)}>Save</button>
                     <button type="button" className="danger" onClick={() => deleteQuote(quote.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="card form">
+              <h3>Weiner length chart</h3>
+              <form onSubmit={createWhyMeasurement} className="form">
+                <label>
+                  Label
+                  <input
+                    type="text"
+                    value={newWhyMeasurement.label}
+                    onChange={(event) =>
+                      setNewWhyMeasurement((prev) => ({ ...prev, label: event.target.value }))
+                    }
+                    placeholder="Comparator name"
+                  />
+                </label>
+                <label>
+                  Length (cm)
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newWhyMeasurement.value_cm}
+                    onChange={(event) =>
+                      setNewWhyMeasurement((prev) => ({ ...prev, value_cm: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Color
+                  <input
+                    type="color"
+                    value={newWhyMeasurement.color}
+                    onChange={(event) =>
+                      setNewWhyMeasurement((prev) => ({ ...prev, color: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Sort order
+                  <input
+                    type="number"
+                    value={newWhyMeasurement.sort_order}
+                    onChange={(event) =>
+                      setNewWhyMeasurement((prev) => ({ ...prev, sort_order: event.target.value }))
+                    }
+                  />
+                </label>
+                <button type="submit">Add comparator</button>
+              </form>
+              {whyMeasurements.map((item) => (
+                <div key={item.id} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <label>
+                      Label
+                      <input
+                        type="text"
+                        value={item.label}
+                        onChange={(event) => updateWhyMeasurementField(item.id, 'label', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Length (cm)
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={item.value_cm ?? 0}
+                        onChange={(event) => updateWhyMeasurementField(item.id, 'value_cm', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Color
+                      <input
+                        type="color"
+                        value={item.color || '#0ea5a4'}
+                        onChange={(event) => updateWhyMeasurementField(item.id, 'color', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={item.sort_order ?? 0}
+                        onChange={(event) => updateWhyMeasurementField(item.id, 'sort_order', event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" onClick={() => saveWhyMeasurement(item)}>Save</button>
+                    <button type="button" className="danger" onClick={() => deleteWhyMeasurement(item.id)}>Delete</button>
                   </div>
                 </div>
               ))}
