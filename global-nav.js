@@ -137,7 +137,7 @@
         overlay.className = 'ms-intro-video';
         overlay.innerHTML = `
           <video autoplay muted playsinline preload="auto">
-            <source src="/img/comp 1.mp4" type="video/mp4" />
+            <source src="img/comp%201.mp4" type="video/mp4" />
           </video>
         `;
         document.body.appendChild(overlay);
