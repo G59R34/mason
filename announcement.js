@@ -98,6 +98,41 @@
     markSeen(item.id);
   }
 
+  function showStaticBar(item) {
+    if (!item || !item.message) return;
+
+    const host = document.querySelector('.gn-announcement');
+    if (!host) return;
+    host.innerHTML = '';
+    const bar = document.createElement('div');
+    bar.className = 'gn-ann-bar';
+    const label = item.label ? String(item.label) : 'NOTICE';
+    const color = item.color ? String(item.color) : '#0f766e';
+    bar.innerHTML = `
+      <span class="gn-ann-pill">${escapeHTML(label)}</span>
+      <span class="gn-ann-text">${escapeHTML(item.message)}</span>
+    `;
+    bar.style.background = color;
+    host.appendChild(bar);
+  }
+
+  async function loadStaticBar() {
+    try {
+      const { data } = await sb
+        .from('announcements')
+        .select('id,message,created_at,is_static,label,color')
+        .eq('is_static', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (data && data.length) {
+        showStaticBar(data[0]);
+      } else {
+        const host = document.querySelector('.gn-announcement');
+        if (host) host.innerHTML = '';
+      }
+    } catch (e) { console.warn('static announcements load failed', e); }
+  }
+
   // Load most recent unseen announcement and show it
   async function loadAndShow() {
     try {
@@ -105,25 +140,27 @@
       if (!data || !data.length) return;
       const seen = getSeen();
       // find latest that hasn't been seen
-      const next = data.find(a => !seen.includes(a.id));
+      const next = data.find(a => !a.is_static && !seen.includes(a.id));
       if (next) showBanner(next);
     } catch (e) { console.warn('announcements load failed', e); }
   }
 
-  // subscribe to new announcements and show if unseen
+  // subscribe to announcement changes and show if unseen
   try {
     sb.channel('public:announcements')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, payload => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, payload => {
         const m = payload.new;
-        if (m && m.id) {
+        if (m && m.id && !m.is_static) {
           const seen = getSeen();
           if (!seen.includes(m.id)) showBanner(m);
         }
+        loadStaticBar();
       })
       .subscribe();
   } catch (err) { console.warn('announcement subscribe failed', err); }
 
   // initial run
+  loadStaticBar();
   loadAndShow();
 
 })();

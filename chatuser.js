@@ -44,7 +44,16 @@
   panel.setAttribute('role','dialog');
   panel.setAttribute('aria-label','Mason Support');
   panel.innerHTML = `
-    <div class="ms-chat-header"><strong>Mason Support</strong><button id="ms-close">_</button></div>
+    <div class="ms-chat-header">
+      <div>
+        <strong>Mason Support</strong>
+        <div id="ms-ticket-status" class="ms-chat-meta" style="margin-top:4px"></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="ms-new-ticket" style="background:#0f766e;color:#fff;border:0;padding:6px 10px;border-radius:8px">New Ticket</button>
+        <button id="ms-close">_</button>
+      </div>
+    </div>
     <div class="ms-chat-body" id="ms-body"></div>
     <form class="ms-chat-form" id="ms-form"><input name="name" placeholder="Name" type="text" required style="flex:0 0 90px" /><input name="text" placeholder="Type a message..." type="text" required /><button type="submit" style="background:#06b6d4;color:#fff;border:0;padding:8px 10px;border-radius:8px">Send</button></form>
   `;
@@ -53,6 +62,8 @@
   const countEl = bubble.querySelector('.count');
   const body = panel.querySelector('#ms-body');
   const form = panel.querySelector('#ms-form');
+  const statusEl = panel.querySelector('#ms-ticket-status');
+  const newTicketBtn = panel.querySelector('#ms-new-ticket');
   const nameInput = form.elements['name'];
   const storedName = localStorage.getItem('ms_customer_name');
   if (storedName && nameInput) {
@@ -89,6 +100,39 @@
     body.scrollTop = body.scrollHeight;
   }
 
+  async function loadConversationMeta(conversation_id) {
+    if (!conversation_id) return null;
+    const { data, error } = await sb.from('conversations').select('id,status,customer_name').eq('id', conversation_id).maybeSingle();
+    if (error) { console.warn('load conversation meta', error); return null; }
+    return data || null;
+  }
+
+  function getTicketIds() {
+    try { return JSON.parse(localStorage.getItem('ms_ticket_ids') || '[]').filter(Boolean); }
+    catch { return []; }
+  }
+
+  function addTicketId(id) {
+    const ids = getTicketIds();
+    if (!ids.includes(id)) ids.unshift(id);
+    localStorage.setItem('ms_ticket_ids', JSON.stringify(ids.slice(0, 20)));
+  }
+
+  async function createNewTicket(name) {
+    const customer = (name || localStorage.getItem('ms_customer_name') || '').trim();
+    if (!customer) return null;
+    const { data: cdata, error: cerr } = await sb
+      .from('conversations')
+      .insert([{ customer_name: customer, status: 'open' }])
+      .select('id')
+      .limit(1);
+    if (cerr || !cdata || cdata.length === 0) { console.error('conversation create error', cerr); return null; }
+    const newId = cdata[0].id;
+    localStorage.setItem('ms_conversation_id', newId);
+    addTicketId(newId);
+    return newId;
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const stored = localStorage.getItem('ms_customer_name');
@@ -103,18 +147,18 @@
 
     let conversation_id = localStorage.getItem('ms_conversation_id');
     if (!conversation_id) {
-      const { data: cdata, error: cerr } = await sb
-        .from('conversations')
-        .insert([{ customer_name: name }])
-        .select('id')
-        .limit(1);
-      if (cerr || !cdata || cdata.length === 0) { console.error('conversation create error', cerr); return; }
-      conversation_id = cdata[0].id;
-      localStorage.setItem('ms_conversation_id', conversation_id);
+      conversation_id = await createNewTicket(name);
+      if (!conversation_id) return;
+      addTicketId(conversation_id);
 
       const { error: mErr } = await sb.from('conversation_messages')
         .insert([{ conversation_id, sender: name, body: text, sender_role: 'user' }]);
       if (mErr) console.error('send', mErr);
+      try {
+        await sb.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation_id);
+      } catch (e) {
+        console.warn('last_message_at update failed', e);
+      }
 
       try {
         window.location.href = `usertickets.html?conversation=${conversation_id}`;
@@ -124,14 +168,26 @@
       }
     }
 
+    const meta = await loadConversationMeta(conversation_id);
+    if (meta && meta.status === 'closed') {
+      alert('This ticket is closed. Click "New Ticket" to start a new one.');
+      return;
+    }
+
     const { error } = await sb.from('conversation_messages')
       .insert([{ conversation_id, sender: name, body: text, sender_role: 'user' }]);
     if (error) return console.error('send', error);
+    try {
+      await sb.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation_id);
+    } catch (e) {
+      console.warn('last_message_at update failed', e);
+    }
     form.elements['text'].value = '';
     await loadMessages(conversation_id);
   });
 
   const conversationId = localStorage.getItem('ms_conversation_id');
+  if (conversationId) addTicketId(conversationId);
   const msChannel = sb.channel('public:conversation_messages')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_messages' }, (payload) => {
       const m = payload.new;
@@ -143,6 +199,16 @@
     })
     .subscribe();
 
+  const convoChannel = sb.channel('public:conversations')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, async (payload) => {
+      const updatedId = payload.new?.id || payload.old?.id;
+      const currentId = localStorage.getItem('ms_conversation_id');
+      if (updatedId && currentId && updatedId === currentId) {
+        await refreshStatus();
+      }
+    })
+    .subscribe();
+
   if (conversationId) {
     loadMessages(conversationId);
   }
@@ -150,4 +216,26 @@
   document.addEventListener('click', (e) => {
     if (!panel.contains(e.target) && !bubble.contains(e.target) && panel.style.display === 'flex') closePanel();
   });
+
+  async function refreshStatus() {
+    const id = localStorage.getItem('ms_conversation_id');
+    const meta = await loadConversationMeta(id);
+    if (!statusEl) return;
+    if (!meta) {
+      statusEl.textContent = 'No active ticket';
+      return;
+    }
+    statusEl.textContent = `Ticket ${meta.id.slice(0, 6)} • ${meta.status || 'open'}`;
+  }
+
+  newTicketBtn?.addEventListener('click', async () => {
+    const name = localStorage.getItem('ms_customer_name') || form.elements['name'].value || '';
+    const newId = await createNewTicket(name);
+    if (!newId) return;
+    form.elements['text'].value = '';
+    await refreshStatus();
+    await loadMessages(newId);
+  });
+
+  refreshStatus();
 })();

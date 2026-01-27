@@ -239,9 +239,9 @@
             let res;
             try {
                 if (ownerColumnExists) {
-                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner').order('created_at', { ascending: true });
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner,mason_reply').order('created_at', { ascending: true });
                 } else {
-                    res = await sb.from('reviews').select('id,name,comment,rating,created_at').order('created_at', { ascending: true });
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,mason_reply').order('created_at', { ascending: true });
                 }
             } catch (e) {
                 console.error('loadReviews failed', e);
@@ -256,7 +256,7 @@
             console.debug('loadReviews result', res.data && res.data.length ? `${res.data.length} rows` : '0 rows');
             return (res.data || []).map(r => {
                 const t = r.created_at ? Date.parse(r.created_at) : Date.now();
-                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner: ownerColumnExists ? (r.owner || null) : null };
+                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner: ownerColumnExists ? (r.owner || null) : null, mason_reply: r.mason_reply || '' };
             });
         }
 
@@ -356,6 +356,15 @@
                 text.style.margin = '8px 0 0';
                 text.textContent = r.comment;
 
+                const masonReply = document.createElement('div');
+                masonReply.style.marginTop = '8px';
+                masonReply.style.padding = '8px';
+                masonReply.style.borderRadius = '6px';
+                masonReply.style.background = '#fff7ed';
+                masonReply.style.border = '1px solid #fed7aa';
+                masonReply.style.display = r.mason_reply ? 'block' : 'none';
+                masonReply.innerHTML = `<strong>Mason</strong> <span class="admin-badge">ADMIN</span><div style="margin-top:4px">${r.mason_reply}</div>`;
+
                 // votes UI
                 const votesWrap = document.createElement('div');
                 votesWrap.style.marginTop = '8px';
@@ -438,6 +447,7 @@
 
                 card.appendChild(meta);
                 card.appendChild(text);
+                card.appendChild(masonReply);
                 card.appendChild(votesWrap);
                 card.appendChild(repliesContainer);
                 card.appendChild(replyForm);
@@ -468,6 +478,15 @@
 
         // initial render
         render();
+
+        // real-time updates
+        try {
+            sb.channel('public:reviews')
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => {
+                  render();
+              })
+              .subscribe();
+        } catch (e) { console.warn('reviews realtime failed', e); }
     </script>
 </body>
 </html>

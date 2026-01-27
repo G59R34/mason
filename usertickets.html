@@ -18,8 +18,17 @@
 <body>
   <script src="global-nav.js"></script>
   <main class="container">
-    <h1>Your Conversation</h1>
-    <div id="ticketInfo" class="ticket-meta"><div id="subject"></div><div id="status" class="meta"></div></div>
+    <h1>Your Ticket</h1>
+    <div class="ticket-meta">
+      <div>
+        <div id="subject"></div>
+        <div id="status" class="meta"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="ticketSelect" style="padding:8px;border:1px solid #e5e7eb;border-radius:6px"></select>
+        <button id="newTicketBtn" type="button">New Ticket</button>
+      </div>
+    </div>
     <ul id="messages" class="msgs"></ul>
     <div id="empty" class="meta">No messages yet.</div>
 

@@ -158,32 +158,44 @@
             const list = document.getElementById('recentReviews');
             if (!list) return;
 
-            const { data, error } = await sb
-                .from('reviews')
-                .select('name, comment, rating, created_at')
-                .order('created_at', { ascending: false })
-                .limit(3);
+            async function loadRecentReviews() {
+                const { data, error } = await sb
+                    .from('reviews')
+                    .select('name, comment, rating, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(3);
 
-            if (error || !data || data.length === 0) {
-                list.innerHTML = '<div class=\"review-empty\">No reviews yet.</div>';
-                return;
+                if (error || !data || data.length === 0) {
+                    list.innerHTML = '<div class=\"review-empty\">No reviews yet.</div>';
+                    return;
+                }
+
+                list.innerHTML = '';
+                data.forEach(r => {
+                    const card = document.createElement('div');
+                    card.className = 'review-card';
+                    const meta = document.createElement('div');
+                    meta.className = 'review-meta';
+                    meta.innerHTML = `<span>${r.name || 'Anonymous'}</span><span class=\"review-stars\">${r.rating || 0}★</span>`;
+                    const text = document.createElement('div');
+                    text.className = 'review-text';
+                    const comment = (r.comment || '').trim();
+                    text.textContent = comment.length > 140 ? comment.slice(0, 137) + '...' : comment;
+                    card.appendChild(meta);
+                    card.appendChild(text);
+                    list.appendChild(card);
+                });
             }
 
-            list.innerHTML = '';
-            data.forEach(r => {
-                const card = document.createElement('div');
-                card.className = 'review-card';
-                const meta = document.createElement('div');
-                meta.className = 'review-meta';
-                meta.innerHTML = `<span>${r.name || 'Anonymous'}</span><span class=\"review-stars\">${r.rating || 0}★</span>`;
-                const text = document.createElement('div');
-                text.className = 'review-text';
-                const comment = (r.comment || '').trim();
-                text.textContent = comment.length > 140 ? comment.slice(0, 137) + '...' : comment;
-                card.appendChild(meta);
-                card.appendChild(text);
-                list.appendChild(card);
-            });
+            await loadRecentReviews();
+
+            try {
+                sb.channel('public:reviews')
+                  .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => {
+                      loadRecentReviews();
+                  })
+                  .subscribe();
+            } catch (e) { console.warn('reviews realtime failed', e); }
         })();
     </script>
 </body>

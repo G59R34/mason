@@ -31,6 +31,7 @@
                     </div>
                 </nav>
             </div>
+            <div class="gn-announcement" aria-live="polite"></div>
         `;
 
         document.body.insertBefore(header, document.body.firstChild);
@@ -97,6 +98,10 @@
             .gn-search input{border:0;background:transparent;outline:none;padding:6px 8px;width:140px}
             .gn-search button{background:transparent;border:0;padding:0;font-size:1rem}
             .gn-cta{display:inline-block;background:#0ea5a4;color:white;padding:8px 12px;border-radius:8px;text-decoration:none}
+            .gn-announcement{max-width:1100px;margin:0 auto;padding:0 18px 10px}
+            .gn-announcement .gn-ann-bar{display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(90deg,#0f766e,#14b8a6);color:#fff;border-radius:16px;padding:12px 16px;font-weight:600;letter-spacing:0.01em;box-shadow:0 12px 24px rgba(15,23,42,0.14);border:1px solid rgba(255,255,255,0.35);text-align:center}
+            .gn-announcement .gn-ann-bar .gn-ann-pill{background:rgba(255,255,255,0.18);padding:4px 10px;border-radius:999px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em}
+            .gn-announcement .gn-ann-bar .gn-ann-text{line-height:1.35}
 
             /* Responsive */
             @media (max-width:850px){
@@ -106,6 +111,7 @@
                 .gn-list{flex-direction:column;gap:8px}
                 .gn-actions{margin-top:auto;flex-direction:column;gap:12px;width:100%}
                 .gn-search input{width:100%}
+                .gn-announcement{padding:0 12px 12px}
             }
         `;
         const s = document.createElement('style');
