@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase.js';
 
 const TABS = [
@@ -6,7 +6,11 @@ const TABS = [
   { id: 'announcements', label: 'Announcements' },
   { id: 'conversations', label: 'Conversations' },
   { id: 'reviews', label: 'Reviews' },
-  { id: 'sessions', label: 'Sessions' }
+  { id: 'sessions', label: 'Sessions' },
+  { id: 'gallery', label: 'Gallery' },
+  { id: 'why', label: 'Why Editor' },
+  { id: 'pricing', label: 'Pricing' },
+  { id: 'settings', label: 'Settings' }
 ];
 
 const emptyCounts = {
@@ -51,6 +55,8 @@ export default function App() {
   const [announcementLabel, setAnnouncementLabel] = useState('NOTICE');
   const [announcementColor, setAnnouncementColor] = useState('#0f766e');
   const [announcementStatus, setAnnouncementStatus] = useState('');
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState(null);
+  const [editAnnouncement, setEditAnnouncement] = useState({ message: '', label: '', color: '' });
   const [conversations, setConversations] = useState([]);
   const [conversationMessages, setConversationMessages] = useState([]);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -68,10 +74,44 @@ export default function App() {
     details: '',
     scheduled_for: ''
   });
+  const [adminDisplayName, setAdminDisplayName] = useState('');
+  const [settingsStatus, setSettingsStatus] = useState('');
+  const [valueCards, setValueCards] = useState([]);
+  const [quotes, setQuotes] = useState([]);
+  const [newValueCard, setNewValueCard] = useState({ title: '', body: '', sort_order: 0 });
+  const [newQuote, setNewQuote] = useState({ quote: '', author: '', sort_order: 0 });
+  const [whyStatus, setWhyStatus] = useState('');
+  const [typingStatus, setTypingStatus] = useState('');
+  const [pricingPlans, setPricingPlans] = useState([]);
+  const [newPricingPlan, setNewPricingPlan] = useState({
+    title: '',
+    price: '',
+    price_subtitle: '',
+    features: '',
+    cta_label: '',
+    cta_plan: '',
+    cta_amount: '',
+    sort_order: 0
+  });
+  const [pricingPage, setPricingPage] = useState({
+    title: '',
+    subtitle: '',
+    custom_title: '',
+    custom_body: '',
+    custom_cta_label: '',
+    custom_cta_url: ''
+  });
+  const [pricingStatus, setPricingStatus] = useState('');
   const [ticketForm, setTicketForm] = useState({
     customer_name: '',
     subject: ''
   });
+  const [galleryImages, setGalleryImages] = useState([]);
+  const [galleryCaption, setGalleryCaption] = useState('');
+  const [gallerySort, setGallerySort] = useState(0);
+  const [galleryStatus, setGalleryStatus] = useState('');
+  const typingChannelRef = useRef(null);
+  const typingDebounceRef = useRef(null);
 
   const isReady = useMemo(
     () => session && adminState.status === 'allowed',
@@ -115,6 +155,10 @@ export default function App() {
     loadSessions();
     detectConversationColumns();
     detectAnnouncementColumns();
+    loadAdminProfile();
+    loadWhyContent();
+    loadPricingContent();
+    loadGalleryContent();
   }, [isReady]);
 
   useEffect(() => {
@@ -240,6 +284,37 @@ export default function App() {
     setCurrentConversationMeta(meta);
   }, [conversations, currentConversation]);
 
+  useEffect(() => {
+    if (!isReady || !currentConversation) return;
+    if (typingChannelRef.current) {
+      supabase.removeChannel(typingChannelRef.current);
+      typingChannelRef.current = null;
+    }
+    let timeout = null;
+    const channel = supabase
+      .channel(`typing:conversation:${currentConversation}`)
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const data = payload.payload || {};
+        if (data.role === 'admin') return;
+        if (timeout) clearTimeout(timeout);
+        if (data.typing) {
+          setTypingStatus(`${data.name || 'User'} is typing...`);
+          timeout = setTimeout(() => setTypingStatus(''), 2000);
+        } else {
+          setTypingStatus('');
+        }
+      })
+      .subscribe();
+    typingChannelRef.current = channel;
+    return () => {
+      if (timeout) clearTimeout(timeout);
+      if (typingChannelRef.current) {
+        supabase.removeChannel(typingChannelRef.current);
+        typingChannelRef.current = null;
+      }
+    };
+  }, [isReady, currentConversation]);
+
   async function loadDashboard() {
     const tables = [
       ['reviews', 'Reviews'],
@@ -301,6 +376,67 @@ export default function App() {
     setSessions(data || []);
   }
 
+  async function loadWhyContent() {
+    const { data: cardData } = await supabase
+      .from('why_value_cards')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setValueCards(cardData || []);
+
+    const { data: quoteData } = await supabase
+      .from('why_quotes')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setQuotes(quoteData || []);
+  }
+
+  async function loadPricingContent() {
+    const { data: plans } = await supabase
+      .from('pricing_plans')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setPricingPlans(plans || []);
+
+    const { data: page } = await supabase
+      .from('pricing_page_content')
+      .select('*')
+      .limit(1);
+    if (page && page.length) {
+      const row = page[0];
+      setPricingPage({
+        title: row.title || '',
+        subtitle: row.subtitle || '',
+        custom_title: row.custom_title || '',
+        custom_body: row.custom_body || '',
+        custom_cta_label: row.custom_cta_label || '',
+        custom_cta_url: row.custom_cta_url || ''
+      });
+    }
+  }
+
+  async function loadGalleryContent() {
+    const { data } = await supabase
+      .from('gallery_images')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setGalleryImages(data || []);
+  }
+
+  async function loadAdminProfile() {
+    if (!session?.user?.id) return;
+    const { data, error } = await supabase
+      .from('admins')
+      .select('display_name')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if (error) return;
+    setAdminDisplayName(data?.display_name || '');
+  }
+
   async function handleLogin(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -354,6 +490,40 @@ export default function App() {
     loadAnnouncements();
   }
 
+    function startEditAnnouncement(item) {
+    setEditingAnnouncementId(item.id);
+    setEditAnnouncement({
+      message: item.message || '',
+      label: item.label || '',
+      color: item.color || ''
+    });
+  }
+
+  function cancelEditAnnouncement() {
+    setEditingAnnouncementId(null);
+    setEditAnnouncement({ message: '', label: '', color: '' });
+  }
+
+  async function saveEditAnnouncement(id) {
+    if (!id) return;
+    const payload = { message: editAnnouncement.message.trim() };
+    if (hasAnnouncementStatic) {
+      payload.label = editAnnouncement.label.trim() || null;
+      payload.color = editAnnouncement.color.trim() || null;
+    }
+    const { error } = await supabase
+      .from('announcements')
+      .update(payload)
+      .eq('id', id);
+    if (error) {
+      setAnnouncementStatus(`Failed: ${error.message}`);
+      return;
+    }
+    cancelEditAnnouncement();
+    loadAnnouncements();
+  }
+
+
   async function openConversation(conversationId) {
     setCurrentConversation(conversationId);
     const meta = conversations.find((item) => item.id === conversationId) || null;
@@ -384,7 +554,7 @@ export default function App() {
     await supabase.from('conversation_messages').insert([
       {
         conversation_id: currentConversation,
-        sender: session?.user?.email || 'Mason Admin',
+        sender: adminDisplayName || session?.user?.email || 'Mason Admin',
         body: replyText.trim(),
         sender_role: 'admin'
       }
@@ -397,6 +567,20 @@ export default function App() {
     }
     setReplyText('');
     await loadConversationMessages(currentConversation);
+    sendAdminTyping(false);
+  }
+
+  function sendAdminTyping(isTyping) {
+    if (!typingChannelRef.current || !currentConversation) return;
+    typingChannelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: {
+        role: 'admin',
+        name: adminDisplayName || session?.user?.email || 'Admin',
+        typing: Boolean(isTyping)
+      }
+    });
   }
 
   async function updateReviewReply(reviewId) {
@@ -471,6 +655,303 @@ export default function App() {
     });
     loadSessions();
   }
+
+  async function saveAdminProfile(event) {
+    event.preventDefault();
+    if (!session?.user?.id) return;
+    setSettingsStatus('Saving...');
+    const payload = { user_id: session.user.id, display_name: adminDisplayName.trim() || null };
+    const { error } = await supabase.from('admins').upsert([payload], { onConflict: 'user_id' });
+    if (error) {
+      setSettingsStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setSettingsStatus('Saved.');
+  }
+
+  function updateValueCardField(id, field, value) {
+    setValueCards((prev) => prev.map((card) => (card.id === id ? { ...card, [field]: value } : card)));
+  }
+
+  function updateQuoteField(id, field, value) {
+    setQuotes((prev) => prev.map((quote) => (quote.id === id ? { ...quote, [field]: value } : quote)));
+  }
+
+  async function createValueCard(event) {
+    event.preventDefault();
+    if (!newValueCard.title.trim() || !newValueCard.body.trim()) return;
+    setWhyStatus('Saving...');
+    const { error } = await supabase.from('why_value_cards').insert([{
+      title: newValueCard.title.trim(),
+      body: newValueCard.body.trim(),
+      sort_order: Number(newValueCard.sort_order) || 0
+    }]);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setNewValueCard({ title: '', body: '', sort_order: 0 });
+    setWhyStatus('Saved.');
+    loadWhyContent();
+  }
+
+  async function saveValueCard(card) {
+    if (!card.id) return;
+    setWhyStatus('Saving...');
+    const { error } = await supabase.from('why_value_cards')
+      .update({
+        title: card.title,
+        body: card.body,
+        sort_order: Number(card.sort_order) || 0
+      })
+      .eq('id', card.id);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setWhyStatus('Saved.');
+    loadWhyContent();
+  }
+
+  async function deleteValueCard(id) {
+    if (!window.confirm('Delete this value card?')) return;
+    const { error } = await supabase.from('why_value_cards').delete().eq('id', id);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    loadWhyContent();
+  }
+
+  async function createQuote(event) {
+    event.preventDefault();
+    if (!newQuote.quote.trim() || !newQuote.author.trim()) return;
+    setWhyStatus('Saving...');
+    const { error } = await supabase.from('why_quotes').insert([{
+      quote: newQuote.quote.trim(),
+      author: newQuote.author.trim(),
+      sort_order: Number(newQuote.sort_order) || 0
+    }]);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setNewQuote({ quote: '', author: '', sort_order: 0 });
+    setWhyStatus('Saved.');
+    loadWhyContent();
+  }
+
+  async function saveQuote(quote) {
+    if (!quote.id) return;
+    setWhyStatus('Saving...');
+    const { error } = await supabase.from('why_quotes')
+      .update({
+        quote: quote.quote,
+        author: quote.author,
+        sort_order: Number(quote.sort_order) || 0
+      })
+      .eq('id', quote.id);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setWhyStatus('Saved.');
+    loadWhyContent();
+  }
+
+  async function deleteQuote(id) {
+    if (!window.confirm('Delete this quote?')) return;
+    const { error } = await supabase.from('why_quotes').delete().eq('id', id);
+    if (error) {
+      setWhyStatus(`Failed: ${error.message}`);
+      return;
+    }
+    loadWhyContent();
+  }
+  function updatePricingPlanField(id, field, value) {
+    setPricingPlans((prev) => prev.map((plan) => (plan.id === id ? { ...plan, [field]: value } : plan)));
+  }
+
+  async function createPricingPlan(event) {
+    event.preventDefault();
+    if (!newPricingPlan.title.trim() || !newPricingPlan.price.trim()) return;
+    setPricingStatus('Saving...');
+    const payload = {
+      title: newPricingPlan.title.trim(),
+      price: newPricingPlan.price.trim(),
+      price_subtitle: newPricingPlan.price_subtitle.trim(),
+      features: newPricingPlan.features.split('\n').map((f) => f.trim()).filter(Boolean),
+      cta_label: newPricingPlan.cta_label.trim(),
+      cta_plan: newPricingPlan.cta_plan.trim(),
+      cta_amount: newPricingPlan.cta_amount ? Number(newPricingPlan.cta_amount) : null,
+      sort_order: Number(newPricingPlan.sort_order) || 0
+    };
+    const { error } = await supabase.from('pricing_plans').insert([payload]);
+    if (error) {
+      setPricingStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setNewPricingPlan({
+      title: '',
+      price: '',
+      price_subtitle: '',
+      features: '',
+      cta_label: '',
+      cta_plan: '',
+      cta_amount: '',
+      sort_order: 0
+    });
+    setPricingStatus('Saved.');
+    loadPricingContent();
+  }
+
+  async function savePricingPlan(plan) {
+    if (!plan.id) return;
+    setPricingStatus('Saving...');
+    const payload = {
+      title: plan.title,
+      price: plan.price,
+      price_subtitle: plan.price_subtitle,
+      features: Array.isArray(plan.features)
+        ? plan.features
+        : String(plan.features || '').split('\n').map((f) => f.trim()).filter(Boolean),
+      cta_label: plan.cta_label,
+      cta_plan: plan.cta_plan,
+      cta_amount: plan.cta_amount ? Number(plan.cta_amount) : null,
+      sort_order: Number(plan.sort_order) || 0
+    };
+    const { error } = await supabase.from('pricing_plans').update(payload).eq('id', plan.id);
+    if (error) {
+      setPricingStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setPricingStatus('Saved.');
+    loadPricingContent();
+  }
+
+  async function deletePricingPlan(id) {
+    if (!window.confirm('Delete this plan?')) return;
+    const { error } = await supabase.from('pricing_plans').delete().eq('id', id);
+    if (error) {
+      setPricingStatus(`Failed: ${error.message}`);
+      return;
+    }
+    loadPricingContent();
+  }
+
+  function updatePricingPageField(field, value) {
+    setPricingPage((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function savePricingPage(event) {
+    event.preventDefault();
+    setPricingStatus('Saving...');
+    const payload = {
+      title: pricingPage.title.trim() || null,
+      subtitle: pricingPage.subtitle.trim() || null,
+      custom_title: pricingPage.custom_title.trim() || null,
+      custom_body: pricingPage.custom_body.trim() || null,
+      custom_cta_label: pricingPage.custom_cta_label.trim() || null,
+      custom_cta_url: pricingPage.custom_cta_url.trim() || null,
+      updated_at: new Date().toISOString()
+    };
+    const existing = await supabase.from('pricing_page_content').select('id').limit(1);
+    if (existing.data && existing.data.length) {
+      const { error } = await supabase
+        .from('pricing_page_content')
+        .update(payload)
+        .eq('id', existing.data[0].id);
+      if (error) {
+        setPricingStatus(`Failed: ${error.message}`);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from('pricing_page_content').insert([payload]);
+      if (error) {
+        setPricingStatus(`Failed: ${error.message}`);
+        return;
+      }
+    }
+    setPricingStatus('Saved.');
+    loadPricingContent();
+  }
+  async function uploadGalleryImages(event) {
+    event.preventDefault();
+    const files = Array.from(event.target.elements.images.files || []);
+    if (files.length === 0) return;
+    if (files.length > 5) {
+      setGalleryStatus('Max 5 images at a time.');
+      return;
+    }
+    setGalleryStatus('Uploading...');
+
+    for (const file of files) {
+      const pathName = `${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase
+        .storage
+        .from('gallery')
+        .upload(pathName, file, { contentType: file.type, upsert: true });
+      if (uploadError) {
+        setGalleryStatus(`Upload failed: ${uploadError.message}`);
+        return;
+      }
+      const { data } = supabase.storage.from('gallery').getPublicUrl(pathName);
+      const publicUrl = data?.publicUrl || '';
+      const { error: insertError } = await supabase.from('gallery_images').insert([{
+        storage_path: pathName,
+        public_url: publicUrl,
+        caption: galleryCaption.trim() || null,
+        sort_order: Number(gallerySort) || 0,
+        uploaded_by: session?.user?.id || null
+      }]);
+      if (insertError) {
+        setGalleryStatus(`Save failed: ${insertError.message}`);
+        return;
+      }
+    }
+
+    event.target.reset();
+    setGalleryCaption('');
+    setGallerySort(0);
+    setGalleryStatus('Uploaded.');
+    loadGalleryContent();
+  }
+
+  async function deleteGalleryImage(img) {
+    if (!window.confirm('Delete this image?')) return;
+    const { error: storageError } = await supabase
+      .storage
+      .from('gallery')
+      .remove([img.storage_path]);
+    if (storageError) {
+      setGalleryStatus(`Storage delete failed: ${storageError.message}`);
+      return;
+    }
+    const { error } = await supabase.from('gallery_images').delete().eq('id', img.id);
+    if (error) {
+      setGalleryStatus(`Delete failed: ${error.message}`);
+      return;
+    }
+    loadGalleryContent();
+  }
+
+  function updateGalleryField(id, field, value) {
+    setGalleryImages((prev) => prev.map((img) => (img.id === id ? { ...img, [field]: value } : img)));
+  }
+
+  async function saveGalleryImage(img) {
+    const { error } = await supabase.from('gallery_images')
+      .update({ caption: img.caption, sort_order: Number(img.sort_order) || 0 })
+      .eq('id', img.id);
+    if (error) {
+      setGalleryStatus(`Save failed: ${error.message}`);
+      return;
+    }
+    setGalleryStatus('Saved.');
+    loadGalleryContent();
+  }
+
+
 
   if (authLoading) {
     return (
@@ -563,7 +1044,7 @@ export default function App() {
         <div className="profile">
           <div>
             <p className="muted">Signed in</p>
-            <p className="profile-name">{session.user.email}</p>
+            <p className="profile-name">{adminDisplayName || session.user.email}</p>
           </div>
           <button type="button" onClick={handleLogout} className="ghost">
             Sign out
@@ -651,14 +1132,60 @@ export default function App() {
                 <div key={item.id} className="list-row">
                   <div>
                     <p>{item.message}</p>
+                    {editingAnnouncementId === item.id && (
+                      <div className="form" style={{ marginTop: '0.75rem' }}>
+                        <label>
+                          Message
+                          <textarea
+                            rows={3}
+                            value={editAnnouncement.message}
+                            onChange={(event) => setEditAnnouncement((prev) => ({ ...prev, message: event.target.value }))}
+                          />
+                        </label>
+                        <label>
+                          Label
+                          <input
+                            type="text"
+                            value={editAnnouncement.label}
+                            onChange={(event) => setEditAnnouncement((prev) => ({ ...prev, label: event.target.value }))}
+                          />
+                        </label>
+                        <label>
+                          Color
+                          <input
+                            type="color"
+                            value={editAnnouncement.color || '#0f766e'}
+                            onChange={(event) => setEditAnnouncement((prev) => ({ ...prev, color: event.target.value }))}
+                          />
+                        </label>
+                        <div className="review-actions">
+                          <button type="button" onClick={() => saveEditAnnouncement(item.id)}>Save</button>
+                          <button type="button" className="ghost" onClick={cancelEditAnnouncement}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
                     <p className="muted">
                       {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
                     </p>
                     {item.is_static && <span className="pill">Static bar</span>}
+                    {item.label && <span className="pill" style={{ marginLeft: '0.4rem' }}>{item.label}</span>}
+                    {item.color && (
+                      <span
+                        className="pill"
+                        style={{ marginLeft: '0.4rem', background: item.color, color: '#fff' }}
+                      >
+                        {item.color}
+                      </span>
+                    )}
                   </div>
-                  <button type="button" className="danger" onClick={() => deleteAnnouncement(item.id)}>
-                    Delete
-                  </button>
+                  <div className="review-actions">
+                    <button type="button" className="ghost" onClick={() => startEditAnnouncement(item)}>
+                      Edit
+                    </button>
+                    <button type="button" className="danger" onClick={() => deleteAnnouncement(item.id)}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -720,6 +1247,7 @@ export default function App() {
                     <p className="muted">
                       {currentConversationMeta?.status || 'open'}
                     </p>
+                    {typingStatus && <p className="muted">{typingStatus}</p>}
                   </div>
                   <div className="review-actions">
                     {currentConversationMeta?.status === 'closed' ? (
@@ -769,7 +1297,14 @@ export default function App() {
                 <form className="reply" onSubmit={sendReply}>
                   <textarea
                     value={replyText}
-                    onChange={(event) => setReplyText(event.target.value)}
+                    onChange={(event) => {
+                      setReplyText(event.target.value);
+                      sendAdminTyping(true);
+                      if (typingDebounceRef.current) {
+                        window.clearTimeout(typingDebounceRef.current);
+                      }
+                      typingDebounceRef.current = window.setTimeout(() => sendAdminTyping(false), 1200);
+                    }}
                     rows={3}
                     placeholder={
                       currentConversationMeta?.status === 'closed'
@@ -777,6 +1312,7 @@ export default function App() {
                         : 'Reply as admin...'
                     }
                     disabled={currentConversationMeta?.status === 'closed'}
+                    onBlur={() => sendAdminTyping(false)}
                   />
                   <button type="submit" disabled={currentConversationMeta?.status === 'closed'}>
                     Send reply
@@ -880,6 +1416,442 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {activeTab === 'pricing' && (
+          <section className="stack">
+            <form className="card form" onSubmit={savePricingPage}>
+              <h3>Pricing page content</h3>
+              <label>
+                Title
+                <input
+                  type="text"
+                  value={pricingPage.title}
+                  onChange={(event) => updatePricingPageField('title', event.target.value)}
+                />
+              </label>
+              <label>
+                Subtitle
+                <input
+                  type="text"
+                  value={pricingPage.subtitle}
+                  onChange={(event) => updatePricingPageField('subtitle', event.target.value)}
+                />
+              </label>
+              <label>
+                Custom section title
+                <input
+                  type="text"
+                  value={pricingPage.custom_title}
+                  onChange={(event) => updatePricingPageField('custom_title', event.target.value)}
+                />
+              </label>
+              <label>
+                Custom section body
+                <textarea
+                  rows={3}
+                  value={pricingPage.custom_body}
+                  onChange={(event) => updatePricingPageField('custom_body', event.target.value)}
+                />
+              </label>
+              <label>
+                CTA label
+                <input
+                  type="text"
+                  value={pricingPage.custom_cta_label}
+                  onChange={(event) => updatePricingPageField('custom_cta_label', event.target.value)}
+                />
+              </label>
+              <label>
+                CTA URL
+                <input
+                  type="text"
+                  value={pricingPage.custom_cta_url}
+                  onChange={(event) => updatePricingPageField('custom_cta_url', event.target.value)}
+                />
+              </label>
+              {pricingStatus && <p className="muted">{pricingStatus}</p>}
+              <button type="submit">Save page content</button>
+            </form>
+
+            <div className="card form">
+              <h3>Pricing plans</h3>
+              <form onSubmit={createPricingPlan} className="form">
+                <label>
+                  Title
+                  <input
+                    type="text"
+                    value={newPricingPlan.title}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, title: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Price
+                  <input
+                    type="text"
+                    value={newPricingPlan.price}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, price: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Price subtitle
+                  <input
+                    type="text"
+                    value={newPricingPlan.price_subtitle}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, price_subtitle: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Features (one per line)
+                  <textarea
+                    rows={3}
+                    value={newPricingPlan.features}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, features: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  CTA label
+                  <input
+                    type="text"
+                    value={newPricingPlan.cta_label}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, cta_label: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  CTA plan
+                  <input
+                    type="text"
+                    value={newPricingPlan.cta_plan}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, cta_plan: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  CTA amount
+                  <input
+                    type="number"
+                    value={newPricingPlan.cta_amount}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, cta_amount: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Sort order
+                  <input
+                    type="number"
+                    value={newPricingPlan.sort_order}
+                    onChange={(event) => setNewPricingPlan((prev) => ({ ...prev, sort_order: event.target.value }))}
+                  />
+                </label>
+                <button type="submit">Add plan</button>
+              </form>
+              {pricingPlans.map((plan) => (
+                <div key={plan.id} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <label>
+                      Title
+                      <input
+                        type="text"
+                        value={plan.title}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'title', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Price
+                      <input
+                        type="text"
+                        value={plan.price}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'price', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Price subtitle
+                      <input
+                        type="text"
+                        value={plan.price_subtitle || ''}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'price_subtitle', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Features (one per line)
+                      <textarea
+                        rows={3}
+                        value={Array.isArray(plan.features) ? plan.features.join('\n') : (plan.features || '')}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'features', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      CTA label
+                      <input
+                        type="text"
+                        value={plan.cta_label || ''}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'cta_label', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      CTA plan
+                      <input
+                        type="text"
+                        value={plan.cta_plan || ''}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'cta_plan', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      CTA amount
+                      <input
+                        type="number"
+                        value={plan.cta_amount ?? ''}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'cta_amount', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={plan.sort_order ?? 0}
+                        onChange={(event) => updatePricingPlanField(plan.id, 'sort_order', event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" onClick={() => savePricingPlan(plan)}>Save</button>
+                    <button type="button" className="danger" onClick={() => deletePricingPlan(plan.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'settings' && (
+          <section className="stack">
+            <form className="card form" onSubmit={saveAdminProfile}>
+              <h3>User settings</h3>
+              <label>
+                Display name
+                <input
+                  type="text"
+                  value={adminDisplayName}
+                  onChange={(event) => setAdminDisplayName(event.target.value)}
+                  placeholder="Your name"
+                />
+              </label>
+              {settingsStatus && <p className="muted">{settingsStatus}</p>}
+              <button type="submit">Save</button>
+            </form>
+          </section>
+        )}
+
+        {activeTab === 'gallery' && (
+          <section className="stack">
+            <form className="card form" onSubmit={uploadGalleryImages}>
+              <h3>Upload gallery images</h3>
+              <label>
+                Images (max 5)
+                <input type="file" name="images" accept="image/*" multiple />
+              </label>
+              <label>
+                Caption (applies to all uploads)
+                <input
+                  type="text"
+                  value={galleryCaption}
+                  onChange={(event) => setGalleryCaption(event.target.value)}
+                />
+              </label>
+              <label>
+                Sort order
+                <input
+                  type="number"
+                  value={gallerySort}
+                  onChange={(event) => setGallerySort(event.target.value)}
+                />
+              </label>
+              {galleryStatus && <p className="muted">{galleryStatus}</p>}
+              <button type="submit">Upload</button>
+            </form>
+
+            <div className="card list">
+              <h3>Existing images</h3>
+              {galleryImages.length === 0 && <p className="muted">No images yet.</p>}
+              {galleryImages.map((img) => (
+                <div key={img.id} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, display: 'grid', gap: '0.6rem' }}>
+                    <img src={img.public_url} alt={img.caption || 'Gallery image'} style={{ width: '160px', borderRadius: '10px', border: '1px solid #eee' }} />
+                    <label>
+                      Caption
+                      <input
+                        type="text"
+                        value={img.caption || ''}
+                        onChange={(event) => updateGalleryField(img.id, 'caption', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={img.sort_order ?? 0}
+                        onChange={(event) => updateGalleryField(img.id, 'sort_order', event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" onClick={() => saveGalleryImage(img)}>Save</button>
+                    <button type="button" className="danger" onClick={() => deleteGalleryImage(img)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'why' && (
+          <section className="stack">
+            <div className="card form">
+              <h3>What clients value most</h3>
+              <form onSubmit={createValueCard} className="form">
+                <label>
+                  Title
+                  <input
+                    type="text"
+                    value={newValueCard.title}
+                    onChange={(event) =>
+                      setNewValueCard((prev) => ({ ...prev, title: event.target.value }))
+                    }
+                    placeholder="Card title"
+                  />
+                </label>
+                <label>
+                  Body
+                  <textarea
+                    rows={3}
+                    value={newValueCard.body}
+                    onChange={(event) =>
+                      setNewValueCard((prev) => ({ ...prev, body: event.target.value }))
+                    }
+                    placeholder="Card description"
+                  />
+                </label>
+                <label>
+                  Sort order
+                  <input
+                    type="number"
+                    value={newValueCard.sort_order}
+                    onChange={(event) =>
+                      setNewValueCard((prev) => ({ ...prev, sort_order: event.target.value }))
+                    }
+                  />
+                </label>
+                <button type="submit">Add card</button>
+              </form>
+              {valueCards.map((card) => (
+                <div key={card.id} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <label>
+                      Title
+                      <input
+                        type="text"
+                        value={card.title}
+                        onChange={(event) => updateValueCardField(card.id, 'title', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Body
+                      <textarea
+                        rows={3}
+                        value={card.body}
+                        onChange={(event) => updateValueCardField(card.id, 'body', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={card.sort_order ?? 0}
+                        onChange={(event) => updateValueCardField(card.id, 'sort_order', event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" onClick={() => saveValueCard(card)}>Save</button>
+                    <button type="button" className="danger" onClick={() => deleteValueCard(card.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="card form">
+              <h3>Client quotes</h3>
+              <form onSubmit={createQuote} className="form">
+                <label>
+                  Quote
+                  <textarea
+                    rows={3}
+                    value={newQuote.quote}
+                    onChange={(event) =>
+                      setNewQuote((prev) => ({ ...prev, quote: event.target.value }))
+                    }
+                    placeholder="Quote text"
+                  />
+                </label>
+                <label>
+                  Author
+                  <input
+                    type="text"
+                    value={newQuote.author}
+                    onChange={(event) =>
+                      setNewQuote((prev) => ({ ...prev, author: event.target.value }))
+                    }
+                    placeholder="Client Name, Company/Role"
+                  />
+                </label>
+                <label>
+                  Sort order
+                  <input
+                    type="number"
+                    value={newQuote.sort_order}
+                    onChange={(event) =>
+                      setNewQuote((prev) => ({ ...prev, sort_order: event.target.value }))
+                    }
+                  />
+                </label>
+                <button type="submit">Add quote</button>
+              </form>
+              {quotes.map((quote) => (
+                <div key={quote.id} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <label>
+                      Quote
+                      <textarea
+                        rows={3}
+                        value={quote.quote}
+                        onChange={(event) => updateQuoteField(quote.id, 'quote', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Author
+                      <input
+                        type="text"
+                        value={quote.author}
+                        onChange={(event) => updateQuoteField(quote.id, 'author', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={quote.sort_order ?? 0}
+                        onChange={(event) => updateQuoteField(quote.id, 'sort_order', event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" onClick={() => saveQuote(quote)}>Save</button>
+                    <button type="button" className="danger" onClick={() => deleteQuote(quote.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {whyStatus && <p className="muted">{whyStatus}</p>}
           </section>
         )}
       </main>

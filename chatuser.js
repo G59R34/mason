@@ -48,6 +48,7 @@
       <div>
         <strong>Mason Support</strong>
         <div id="ms-ticket-status" class="ms-chat-meta" style="margin-top:4px"></div>
+        <div id="ms-typing" class="ms-chat-meta" style="margin-top:4px;display:none"></div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
         <button id="ms-new-ticket" style="background:#0f766e;color:#fff;border:0;padding:6px 10px;border-radius:8px">New Ticket</button>
@@ -63,6 +64,7 @@
   const body = panel.querySelector('#ms-body');
   const form = panel.querySelector('#ms-form');
   const statusEl = panel.querySelector('#ms-ticket-status');
+  const typingEl = panel.querySelector('#ms-typing');
   const newTicketBtn = panel.querySelector('#ms-new-ticket');
   const nameInput = form.elements['name'];
   const storedName = localStorage.getItem('ms_customer_name');
@@ -72,6 +74,52 @@
   }
 
   function sanitize(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+  let typingChannel = null;
+  let typingTimeout = null;
+  let localTypingTimeout = null;
+
+  function setTyping(text) {
+    if (!typingEl) return;
+    if (!text) {
+      typingEl.style.display = 'none';
+      typingEl.textContent = '';
+      return;
+    }
+    typingEl.style.display = 'block';
+    typingEl.textContent = text;
+  }
+
+  function setupTypingChannel(conversation_id) {
+    if (!conversation_id) return;
+    if (typingChannel) {
+      sb.removeChannel(typingChannel);
+      typingChannel = null;
+    }
+    typingChannel = sb
+      .channel(`typing:conversation:${conversation_id}`)
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const data = payload.payload || {};
+        if (data.role === 'user') return;
+        if (typingTimeout) clearTimeout(typingTimeout);
+        if (data.typing) {
+          setTyping(`${data.name || 'Admin'} is typing...`);
+          typingTimeout = setTimeout(() => setTyping(''), 2000);
+        } else {
+          setTyping('');
+        }
+      })
+      .subscribe();
+  }
+
+  function sendTyping(conversation_id, typing) {
+    if (!typingChannel || !conversation_id) return;
+    typingChannel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { role: 'user', typing: Boolean(typing) }
+    });
+  }
 
   let unread = 0;
   function setUnread(n){ unread = n; if (unread>0){ countEl.style.display='inline-block'; countEl.textContent = String(unread);} else { countEl.style.display='none'; }}
@@ -130,6 +178,7 @@
     const newId = cdata[0].id;
     localStorage.setItem('ms_conversation_id', newId);
     addTicketId(newId);
+    setupTypingChannel(newId);
     return newId;
   }
 
@@ -150,6 +199,7 @@
       conversation_id = await createNewTicket(name);
       if (!conversation_id) return;
       addTicketId(conversation_id);
+      setupTypingChannel(conversation_id);
 
       const { error: mErr } = await sb.from('conversation_messages')
         .insert([{ conversation_id, sender: name, body: text, sender_role: 'user' }]);
@@ -184,10 +234,14 @@
     }
     form.elements['text'].value = '';
     await loadMessages(conversation_id);
+    sendTyping(conversation_id, false);
   });
 
   const conversationId = localStorage.getItem('ms_conversation_id');
-  if (conversationId) addTicketId(conversationId);
+  if (conversationId) {
+    addTicketId(conversationId);
+    setupTypingChannel(conversationId);
+  }
   const msChannel = sb.channel('public:conversation_messages')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_messages' }, (payload) => {
       const m = payload.new;
@@ -235,6 +289,19 @@
     form.elements['text'].value = '';
     await refreshStatus();
     await loadMessages(newId);
+    setupTypingChannel(newId);
+  });
+
+  form.elements['text'].addEventListener('input', () => {
+    const conversation_id = localStorage.getItem('ms_conversation_id');
+    sendTyping(conversation_id, true);
+    if (localTypingTimeout) clearTimeout(localTypingTimeout);
+    localTypingTimeout = setTimeout(() => sendTyping(conversation_id, false), 1200);
+  });
+
+  form.elements['text'].addEventListener('blur', () => {
+    const conversation_id = localStorage.getItem('ms_conversation_id');
+    sendTyping(conversation_id, false);
   });
 
   refreshStatus();

@@ -36,8 +36,55 @@
   const textInput = document.getElementById('yourMessage');
   const ticketSelect = document.getElementById('ticketSelect');
   const newTicketBtn = document.getElementById('newTicketBtn');
+  const typingEl = document.getElementById('typing');
 
   function sanitize(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+  let typingChannel = null;
+  let typingTimeout = null;
+  let localTypingTimeout = null;
+
+  function setTyping(text) {
+    if (!typingEl) return;
+    if (!text) {
+      typingEl.style.display = 'none';
+      typingEl.textContent = '';
+      return;
+    }
+    typingEl.style.display = 'block';
+    typingEl.textContent = text;
+  }
+
+  function setupTypingChannel(conversation_id) {
+    if (!conversation_id) return;
+    if (typingChannel) {
+      sb.removeChannel(typingChannel);
+      typingChannel = null;
+    }
+    typingChannel = sb
+      .channel(`typing:conversation:${conversation_id}`)
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const data = payload.payload || {};
+        if (data.role === 'user') return;
+        if (typingTimeout) clearTimeout(typingTimeout);
+        if (data.typing) {
+          setTyping(`${data.name || 'Admin'} is typing...`);
+          typingTimeout = setTimeout(() => setTyping(''), 2000);
+        } else {
+          setTyping('');
+        }
+      })
+      .subscribe();
+  }
+
+  function sendTyping(conversation_id, typing) {
+    if (!typingChannel || !conversation_id) return;
+    typingChannel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { role: 'user', typing: Boolean(typing) }
+    });
+  }
 
   function getTicketIds() {
     try { return JSON.parse(localStorage.getItem(TICKET_LIST_KEY) || '[]').filter(Boolean); }
@@ -56,7 +103,10 @@
     if (ticketSelect) ticketSelect.value = id || '';
   }
 
-  if (currentTicketId) addTicketId(currentTicketId);
+  if (currentTicketId) {
+    addTicketId(currentTicketId);
+    setupTypingChannel(currentTicketId);
+  }
 
   async function loadConversation() {
     if (!currentTicketId) return null;
@@ -135,6 +185,7 @@
     const id = cdata[0].id;
     addTicketId(id);
     setCurrentTicket(id);
+    setupTypingChannel(id);
     await loadTicketList();
     await loadConversation();
     await loadMessages();
@@ -181,12 +232,26 @@
     }
     textInput.value = '';
     await loadMessages();
+    sendTyping(currentTicketId, false);
+  });
+
+  textInput.addEventListener('input', () => {
+    if (!currentTicketId) return;
+    sendTyping(currentTicketId, true);
+    if (localTypingTimeout) clearTimeout(localTypingTimeout);
+    localTypingTimeout = setTimeout(() => sendTyping(currentTicketId, false), 1200);
+  });
+
+  textInput.addEventListener('blur', () => {
+    if (!currentTicketId) return;
+    sendTyping(currentTicketId, false);
   });
 
   ticketSelect?.addEventListener('change', async (e) => {
     const nextId = e.target.value;
     if (!nextId) return;
     setCurrentTicket(nextId);
+    setupTypingChannel(nextId);
     await loadConversation();
     await loadMessages();
   });

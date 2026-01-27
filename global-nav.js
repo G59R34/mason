@@ -20,7 +20,7 @@
                     <ul class="gn-list">
                         <li><a href="index.html">Home</a></li>
                         <li><a href="gallery.html">Gallery</a></li>
-                        <li><a href="why.html">Why Mason</a></li>
+                        <li><a href="why.html">About</a></li>
                         <li><a href="reviews.html">Reviews</a></li>
                         <li><a href="pricing.html">Pricing</a></li>
                         <li><a href="account.html">Account</a></li>

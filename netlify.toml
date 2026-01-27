@@ -1,0 +1,9 @@
+[build]
+  base = "masonadmin"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  VITE_SUPABASE_URL = ""
+  VITE_SUPABASE_ANON_KEY = ""
+  VITE_STORAGE_KEY = "mason_auth"

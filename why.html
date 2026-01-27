@@ -172,38 +172,12 @@
 
         <section class="section">
             <h2>What clients value most</h2>
-            <div class="reasons">
-                <div class="card">
-                    <h3>Some good top</h3>
-                    <p>Clear expectations and straight gagging from day one.</p>
-                </div>
-                <div class="card">
-                    <h3>Hands-on quality</h3>
-                    <p>Every detail gets personal attention and fast iteration.</p>
-                </div>
-                <div class="card">
-                    <h3>Partial follow-through</h3>
-                    <p>Finishes sometimes</p>
-                </div>
-            </div>
+            <div id="valueCards" class="reasons"></div>
         </section>
 
         <section class="section client-quotes">
             <h2>Client quotes</h2>
-            <div class="quotes">
-                <blockquote class="quote">
-                    <p>"Your quote here."</p>
-                    <cite>— Client Name, Company/Role</cite>
-                </blockquote>
-                <blockquote class="quote">
-                    <p>"Your quote here."</p>
-                    <cite>— Client Name, Company/Role</cite>
-                </blockquote>
-                <blockquote class="quote">
-                    <p>"Your quote here."</p>
-                    <cite>— Client Name, Company/Role</cite>
-                </blockquote>
-            </div>
+            <div id="quotesList" class="quotes"></div>
         </section>
 
         <section class="cta">
@@ -211,5 +185,82 @@
             <a href="pricing.html">View Pricing</a>
         </section>
     </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+    <script>
+        (async () => {
+            const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+            const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+            if (typeof supabase === 'undefined') return;
+            const sb = window.msSupabase || (window.msSupabase = supabase.createClient(
+                SUPABASE_URL,
+                SUPABASE_ANON_KEY,
+                { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }
+            ));
+
+            const fallbackCards = [
+                { title: 'Some good top', body: 'Clear expectations and straight gagging from day one.' },
+                { title: 'Hands-on quality', body: 'Every detail gets personal attention and fast iteration.' },
+                { title: 'Partial follow-through', body: 'Finishes sometimes' }
+            ];
+            const fallbackQuotes = [
+                { quote: '"Your quote here."', author: 'Client Name, Company/Role' },
+                { quote: '"Your quote here."', author: 'Client Name, Company/Role' },
+                { quote: '"Your quote here."', author: 'Client Name, Company/Role' }
+            ];
+
+            const valueCardsEl = document.getElementById('valueCards');
+            const quotesListEl = document.getElementById('quotesList');
+
+            function renderCards(items) {
+                if (!valueCardsEl) return;
+                valueCardsEl.innerHTML = '';
+                items.forEach((item) => {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `<h3>${item.title}</h3><p>${item.body}</p>`;
+                    valueCardsEl.appendChild(card);
+                });
+            }
+
+            function renderQuotes(items) {
+                if (!quotesListEl) return;
+                quotesListEl.innerHTML = '';
+                items.forEach((item) => {
+                    const quote = document.createElement('blockquote');
+                    quote.className = 'quote';
+                    quote.innerHTML = `<p>${item.quote}</p><cite>— ${item.author}</cite>`;
+                    quotesListEl.appendChild(quote);
+                });
+            }
+
+            async function loadContent() {
+                let cards = fallbackCards;
+                let quotes = fallbackQuotes;
+                try {
+                    const { data: cardData } = await sb
+                        .from('why_value_cards')
+                        .select('title,body,sort_order,created_at')
+                        .order('sort_order', { ascending: true })
+                        .order('created_at', { ascending: true });
+                    if (cardData && cardData.length) cards = cardData;
+                } catch (e) {}
+
+                try {
+                    const { data: quoteData } = await sb
+                        .from('why_quotes')
+                        .select('quote,author,sort_order,created_at')
+                        .order('sort_order', { ascending: true })
+                        .order('created_at', { ascending: true });
+                    if (quoteData && quoteData.length) quotes = quoteData;
+                } catch (e) {}
+
+                renderCards(cards);
+                renderQuotes(quotes);
+            }
+
+            loadContent();
+        })();
+    </script>
 </body>
 </html>

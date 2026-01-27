@@ -20,50 +20,16 @@
 
   <main class="hero" role="main">
     <header>
-      <h1>Mason — Pricing</h1>
-      <p class="muted">Low Quality Service, for a Low Low Price</p>
+      <h1 id="pricingTitle">Mason — Pricing</h1>
+      <p id="pricingSubtitle" class="muted">Low Quality Service, for a Low Low Price</p>
     </header>
 
-    <section class="grid" aria-label="pricing plans">
-      <article class="card">
-        <h2>Basic</h2>
-        <div class="price">$2.50</div>
-        <div class="muted">Per session</div>
-        <ul>
-          <li>Will slap it around a bit</li>
-          <li>No bust is included</li>
-        </ul>
-        <button class="cta place-order-btn" data-plan="Basic" data-amount="2.5" data-label="Book Basic">Book Basic</button>
-      </article>
+    <section id="pricingPlans" class="grid" aria-label="pricing plans"></section>
 
-      <article class="card">
-        <h2>The "Happy Ending" Special</h2>
-        <div class="price">$5</div>
-        <div class="muted">Per Stroke</div>
-        <ul>
-          <li>Mason will get it done QUICK!</li>
-          <li>Max 10 Strokes</li>
-        </ul>
-        <button class="cta place-order-btn" data-plan="Standard" data-amount="10" data-label="Book Standard">Book Happy Ending</button>
-      </article>
-
-      <article class="card">
-        <h2>The "Finishing" Move</h2>
-        <div class="price">$100</div>
-        <div class="muted">Custom</div>
-        <ul>
-          <li>Priority scheduling</li>
-          <li>Full Stroke Experience</li>
-          <li>Gauranteed Bust!</li>
-        </ul>
-        <button class="cta place-order-btn" data-plan="Premium" data-amount="100" data-label="Request Quote">Book Finishing Move</button>
-      </article>
-    </section>
-
-    <section style="margin-top:20px">
-      <h3>Need a custom session?</h3>
-      <p class="muted">Contact mason for volume discounts and enterprise offerings.</p>
-      <a class="cta" href="contact.html">Contact Sales</a>
+    <section id="pricingCustom" style="margin-top:20px">
+      <h3 id="customTitle">Need a custom session?</h3>
+      <p id="customBody" class="muted">Contact mason for volume discounts and enterprise offerings.</p>
+      <a id="customCta" class="cta" href="contact.html">Contact Sales</a>
     </section>
   </main>
 
@@ -71,5 +37,102 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
   <script src="order.js"></script>
   <script src="chatuser.js"></script>
+  <script>
+    (async () => {
+      const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+      const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+      if (typeof supabase === 'undefined') return;
+      const sb = window.msSupabase || (window.msSupabase = supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }
+      ));
+
+      const titleEl = document.getElementById('pricingTitle');
+      const subtitleEl = document.getElementById('pricingSubtitle');
+      const plansEl = document.getElementById('pricingPlans');
+      const customTitleEl = document.getElementById('customTitle');
+      const customBodyEl = document.getElementById('customBody');
+      const customCtaEl = document.getElementById('customCta');
+
+      const fallbackPlans = [
+        {
+          title: 'Basic',
+          price: '$2.50',
+          price_subtitle: 'Per session',
+          features: ['Will slap it around a bit', 'No bust is included'],
+          cta_label: 'Book Basic',
+          cta_plan: 'Basic',
+          cta_amount: 2.5
+        },
+        {
+          title: 'The "Happy Ending" Special',
+          price: '$5',
+          price_subtitle: 'Per Stroke',
+          features: ['Mason will get it done QUICK!', 'Max 10 Strokes'],
+          cta_label: 'Book Happy Ending',
+          cta_plan: 'Standard',
+          cta_amount: 10
+        },
+        {
+          title: 'The "Finishing" Move',
+          price: '$100',
+          price_subtitle: 'Custom',
+          features: ['Priority scheduling', 'Full Stroke Experience', 'Gauranteed Bust!'],
+          cta_label: 'Book Finishing Move',
+          cta_plan: 'Premium',
+          cta_amount: 100
+        }
+      ];
+
+      async function loadPricing() {
+        try {
+          const { data: pageData } = await sb
+            .from('pricing_page_content')
+            .select('*')
+            .limit(1);
+          if (pageData && pageData.length) {
+            const page = pageData[0];
+            if (page.title && titleEl) titleEl.textContent = page.title;
+            if (page.subtitle && subtitleEl) subtitleEl.textContent = page.subtitle;
+            if (page.custom_title && customTitleEl) customTitleEl.textContent = page.custom_title;
+            if (page.custom_body && customBodyEl) customBodyEl.textContent = page.custom_body;
+            if (page.custom_cta_label && customCtaEl) customCtaEl.textContent = page.custom_cta_label;
+            if (page.custom_cta_url && customCtaEl) customCtaEl.setAttribute('href', page.custom_cta_url);
+          }
+        } catch (e) {}
+
+        let plans = fallbackPlans;
+        try {
+          const { data } = await sb
+            .from('pricing_plans')
+            .select('*')
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+          if (data && data.length) plans = data;
+        } catch (e) {}
+
+        if (!plansEl) return;
+        plansEl.innerHTML = '';
+        plans.forEach((plan) => {
+          const card = document.createElement('article');
+          card.className = 'card';
+          const features = Array.isArray(plan.features)
+            ? plan.features
+            : String(plan.features || '').split('\n').filter(Boolean);
+          card.innerHTML = `
+            <h2>${plan.title}</h2>
+            <div class="price">${plan.price}</div>
+            <div class="muted">${plan.price_subtitle || ''}</div>
+            <ul>${features.map((f) => `<li>${f}</li>`).join('')}</ul>
+            <button class="cta place-order-btn" data-plan="${plan.cta_plan || plan.title}" data-amount="${plan.cta_amount || ''}" data-label="${plan.cta_label || 'Book'}">${plan.cta_label || 'Book'}</button>
+          `;
+          plansEl.appendChild(card);
+        });
+      }
+
+      loadPricing();
+    })();
+  </script>
 </body>
 </html>

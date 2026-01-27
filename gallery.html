@@ -58,6 +58,31 @@
             color:white;
             text-decoration:none;
         }
+        .grid{
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+            gap:16px;
+            margin-top:18px;
+        }
+        .shot{
+            background:#ffffff;
+            border:1px solid var(--ring);
+            border-radius:14px;
+            overflow:hidden;
+            box-shadow:0 12px 24px rgba(2,6,23,0.08);
+            display:flex;
+            flex-direction:column;
+        }
+        .shot img{
+            width:100%;
+            height:220px;
+            object-fit:cover;
+            display:block;
+        }
+        .shot figcaption{
+            padding:12px 14px;
+            color:var(--muted);
+        }
     </style>
 </head>
 <body>
@@ -72,11 +97,56 @@
             </div>
         </section>
 
-        <section class="empty" aria-live="polite">
+        <section class="empty" aria-live="polite" id="galleryEmpty">
             <h2>No images yet</h2>
             <p>Check back soon for new shots. If you need access now, reach out.</p>
             <a class="cta" href="contact.html">Contact Mason</a>
         </section>
+        <section class="grid" id="galleryGrid" style="display:none" aria-label="gallery"></section>
     </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+    <script>
+        (async () => {
+            const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+            const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+            if (typeof supabase === 'undefined') return;
+            const sb = window.msSupabase || (window.msSupabase = supabase.createClient(
+                SUPABASE_URL,
+                SUPABASE_ANON_KEY,
+                { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }
+            ));
+
+            const grid = document.getElementById('galleryGrid');
+            const empty = document.getElementById('galleryEmpty');
+
+            async function loadGallery() {
+                const { data } = await sb
+                    .from('gallery_images')
+                    .select('*')
+                    .order('sort_order', { ascending: true })
+                    .order('created_at', { ascending: true });
+                if (!data || data.length === 0) {
+                    grid.style.display = 'none';
+                    empty.style.display = '';
+                    return;
+                }
+                empty.style.display = 'none';
+                grid.style.display = 'grid';
+                grid.innerHTML = '';
+                data.forEach((img) => {
+                    const fig = document.createElement('figure');
+                    fig.className = 'shot';
+                    fig.innerHTML = `
+                        <img src="${img.public_url}" alt="${img.caption || 'Gallery image'}" loading="lazy">
+                        ${img.caption ? `<figcaption>${img.caption}</figcaption>` : ''}
+                    `;
+                    grid.appendChild(fig);
+                });
+            }
+
+            loadGallery();
+        })();
+    </script>
 </body>
 </html>
