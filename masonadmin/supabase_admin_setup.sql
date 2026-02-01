@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.admins (
 ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS admin_self_select ON public.admins;
-CREATE POLICY admin_self_select ON public.adminsa
+CREATE POLICY admin_self_select ON public.admins
   FOR SELECT USING (auth.uid() = user_id);
 DROP POLICY IF EXISTS admin_self_upsert ON public.admins;
 CREATE POLICY admin_self_upsert ON public.admins
@@ -87,3 +87,7 @@ CREATE POLICY admin_update_sessions ON public.sessions
 DROP POLICY IF EXISTS admin_delete_sessions ON public.sessions;
 CREATE POLICY admin_delete_sessions ON public.sessions
   FOR DELETE USING (public.is_admin());
+
+DROP POLICY IF EXISTS admin_select_user_profiles ON public.user_profiles;
+CREATE POLICY admin_select_user_profiles ON public.user_profiles
+  FOR SELECT USING (public.is_admin());

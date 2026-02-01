@@ -6,235 +6,13 @@
     <title>Why Mason?</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
-    <style>
-        :root{
-            --ink:#0f172a;
-            --muted:#64748b;
-            --accent:#0ea5a4;
-            --card:#ffffff;
-            --ring:#e2e8f0;
-            --bg1:#eef6fb;
-            --bg2:#f7f3ff;
-        }
-        body{
-            margin:0;
-            font-family:"Space Grotesk", system-ui, -apple-system, sans-serif;
-            color:var(--ink);
-            background:
-              radial-gradient(900px 500px at 10% -10%, #dff7ff 0%, transparent 55%),
-              radial-gradient(900px 600px at 110% -10%, #f2e9ff 0%, transparent 55%),
-              linear-gradient(180deg,var(--bg1),#ffffff 40%,var(--bg2));
-        }
-        .wrap{
-            max-width:1100px;
-            margin:36px auto 64px;
-            padding:0 20px;
-        }
-        .hero{
-            display:grid;
-            grid-template-columns:1.2fr 0.8fr;
-            gap:24px;
-            background:var(--card);
-            border:1px solid var(--ring);
-            border-radius:16px;
-            padding:28px;
-            box-shadow:0 18px 40px rgba(2,6,23,0.08);
-        }
-        .eyebrow{
-            text-transform:uppercase;
-            letter-spacing:0.18em;
-            font-size:0.72rem;
-            color:var(--muted);
-        }
-        h1{
-            font-size:2.6rem;
-            margin:8px 0 10px;
-        }
-        .hero p{
-            font-size:1.1rem;
-            color:var(--muted);
-            margin:0 0 18px;
-        }
-        .pill{
-            display:inline-flex;
-            align-items:center;
-            gap:10px;
-            padding:10px 14px;
-            background:#f1f5f9;
-            border-radius:999px;
-            font-size:0.95rem;
-        }
-        .stats{
-            display:grid;
-            gap:12px;
-        }
-        .stat{
-            background:linear-gradient(180deg,#fff,#fbfdff);
-            border:1px solid var(--ring);
-            border-radius:12px;
-            padding:14px;
-        }
-        .stat b{
-            display:block;
-            font-size:1.3rem;
-            color:var(--accent);
-        }
-        .section{
-            margin-top:28px;
-        }
-        .section h2{
-            font-size:1.8rem;
-            margin:0 0 14px;
-        }
-        .reasons{
-            display:grid;
-            grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-            gap:16px;
-        }
-        .card{
-            background:var(--card);
-            border:1px solid var(--ring);
-            border-radius:14px;
-            padding:18px;
-        }
-        .card h3{
-            margin:0 0 6px;
-        }
-        .card p{
-            margin:0;
-            color:var(--muted);
-        }
-        .quotes{
-            display:grid;
-            grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-            gap:16px;
-        }
-        blockquote{
-            margin:0;
-            padding:18px;
-            border-radius:14px;
-            background:linear-gradient(180deg,#ffffff,#f8fafc);
-            border:1px solid var(--ring);
-            font-family:"Source Serif 4", Georgia, serif;
-        }
-        blockquote p{
-            margin:0 0 10px;
-            font-size:1.05rem;
-            color:#111827;
-        }
-        blockquote cite{
-            font-style:normal;
-            color:var(--muted);
-            font-size:0.95rem;
-        }
-        .cta{
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-            margin-top:26px;
-            padding:16px 18px;
-            background:#0f172a;
-            color:white;
-            border-radius:12px;
-        }
-        .cta a{
-            color:white;
-            text-decoration:none;
-            background:var(--accent);
-            padding:10px 14px;
-            border-radius:9px;
-        }
-        .chart-card{
-            background:var(--card);
-            border:1px solid var(--ring);
-            border-radius:16px;
-            padding:20px;
-            margin-top:24px;
-            box-shadow:0 18px 40px rgba(2,6,23,0.08);
-        }
-        .chart-header{
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-            flex-wrap:wrap;
-        }
-        .chart-controls{
-            display:flex;
-            align-items:center;
-            gap:12px;
-            flex-wrap:wrap;
-        }
-        .chart-controls label{
-            display:flex;
-            align-items:center;
-            gap:8px;
-            font-size:0.95rem;
-            color:var(--muted);
-        }
-        .chart-area{
-            margin-top:18px;
-            position:relative;
-            overflow:hidden;
-        }
-        .chart-legend{
-            display:flex;
-            gap:14px;
-            flex-wrap:wrap;
-            margin-top:16px;
-            color:var(--muted);
-            font-size:0.95rem;
-        }
-        .legend-pill{
-            display:flex;
-            align-items:center;
-            gap:8px;
-            padding:6px 10px;
-            border-radius:999px;
-            background:#f1f5f9;
-            border:1px solid var(--ring);
-        }
-        .legend-dot{
-            width:10px;
-            height:10px;
-            border-radius:999px;
-        }
-        .tooltip{
-            position:absolute;
-            background:#0f172a;
-            color:#f8fafc;
-            padding:6px 10px;
-            border-radius:8px;
-            font-size:0.85rem;
-            pointer-events:none;
-            opacity:0;
-            transform:translate(-50%, -120%);
-            transition:opacity 0.2s ease;
-        }
-        .tooltip.show{opacity:1}
-        .toggle{
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            background:#f8fafc;
-            border:1px solid var(--ring);
-            border-radius:999px;
-            padding:6px 10px;
-            font-size:0.9rem;
-        }
-        @media (max-width:900px){
-            .hero{grid-template-columns:1fr}
-            h1{font-size:2.2rem}
-        }
-    </style>
 </head>
 <body>
     <script src="global-nav.js"></script>
     <script src="chatuser.js"></script>
 
     <main class="wrap">
-        <section class="hero">
+        <section class="card hero">
             <div>
                 <div class="eyebrow">Why Mason</div>
                 <h1>Why Mason?</h1>
@@ -242,9 +20,9 @@
                 <div class="pill">Slow Ass response • No communication • Straight Business</div>
             </div>
             <div class="stats">
-                <div class="stat"><b>4 to 12 Business Days</b>Average response time</div>
-                <div class="stat"><b>3%</b>Happy clients</div>
-                <div class="stat"><b>12700+</b>Sessions delivered</div>
+                <div class="stat-card"><strong>4 to 12 Business Days</strong>Average response time</div>
+                <div class="stat-card"><strong>3%</strong>Happy clients</div>
+                <div class="stat-card"><strong>12700+</strong>Sessions delivered</div>
             </div>
         </section>
 
@@ -285,7 +63,7 @@
             <div class="chart-legend" id="chartLegend"></div>
         </section>
 
-        <section class="cta">
+        <section class="cta-banner">
             <div>Want Mason to FUCK you?  book a session.</div>
             <a href="pricing.html">View Pricing</a>
         </section>

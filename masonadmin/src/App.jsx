@@ -65,6 +65,12 @@ export default function App() {
   const [replyText, setReplyText] = useState('');
   const [reviews, setReviews] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [sessionFilter, setSessionFilter] = useState('all');
+  const [sessionNoteDrafts, setSessionNoteDrafts] = useState({});
+  const [sessionMessageDrafts, setSessionMessageDrafts] = useState({});
+  const [sessionActionStatus, setSessionActionStatus] = useState({});
+  const [editingSessionId, setEditingSessionId] = useState(null);
   const [hasConversationSubject, setHasConversationSubject] = useState(false);
   const [hasConversationClosedAt, setHasConversationClosedAt] = useState(false);
   const [hasConversationLastMessageAt, setHasConversationLastMessageAt] = useState(false);
@@ -73,7 +79,13 @@ export default function App() {
     customer_name: '',
     contact: '',
     details: '',
-    scheduled_for: ''
+    scheduled_for: '',
+    location: '',
+    duration_minutes: '',
+    price: '',
+    status: 'scheduled',
+    staff_name: '',
+    user_id: ''
   });
   const [adminDisplayName, setAdminDisplayName] = useState('');
   const [settingsStatus, setSettingsStatus] = useState('');
@@ -125,11 +137,42 @@ export default function App() {
   const [introLoopEnabled, setIntroLoopEnabled] = useState(false);
   const [jumpscareStatus, setJumpscareStatus] = useState('');
   const gravityTimeoutRef = useRef(null);
+  const [now, setNow] = useState(new Date());
 
   const isReady = useMemo(
     () => session && adminState.status === 'allowed',
     [session, adminState.status]
   );
+
+  const rangeStart = useMemo(() => {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }, [now]);
+  const rangeEnd = useMemo(() => new Date(rangeStart.getTime() + 7 * 24 * 60 * 60 * 1000), [rangeStart]);
+  const rangeMs = rangeEnd.getTime() - rangeStart.getTime();
+  const timelineSessions = useMemo(() => {
+    return sessions
+      .filter((s) => s.scheduled_for)
+      .map((sessionItem) => {
+        const start = new Date(sessionItem.scheduled_for);
+        const duration = sessionItem.duration_minutes || 60;
+        const end = new Date(start.getTime() + duration * 60000);
+        if (end < rangeStart || start > rangeEnd) return null;
+        return { sessionItem, start, end };
+      })
+      .filter(Boolean);
+  }, [sessions, rangeStart, rangeEnd]);
+  const staffBuckets = useMemo(() => {
+    const labels = ['Mason', 'Carter', 'Gilgy', 'Jade', 'Unassigned'];
+    const map = new Map(labels.map((name) => [name, []]));
+    timelineSessions.forEach(({ sessionItem, start, end }) => {
+      const staff = sessionItem.staff_name || 'Unassigned';
+      if (!map.has(staff)) map.set(staff, []);
+      map.get(staff).push({ sessionItem, start, end });
+    });
+    return Array.from(map.entries());
+  }, [timelineSessions]);
 
   useEffect(() => {
     if (!session) {
@@ -160,12 +203,18 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     if (!isReady) return;
     loadDashboard();
     loadAnnouncements();
     loadConversations();
     loadReviews();
     loadSessions();
+    loadClients();
     detectConversationColumns();
     detectAnnouncementColumns();
     loadAdminProfile();
@@ -465,6 +514,14 @@ export default function App() {
     setSessions(data || []);
   }
 
+  async function loadClients() {
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('user_id, display_name, email')
+      .order('created_at', { ascending: false });
+    setClients(data || []);
+  }
+
   async function loadWhyContent() {
     const { data: cardData } = await supabase
       .from('why_value_cards')
@@ -707,6 +764,121 @@ export default function App() {
     loadReviews();
   }
 
+  function clientLabel(client) {
+    if (!client) return 'Unassigned';
+    return client.display_name || client.email || client.user_id;
+  }
+
+  function sessionStatusLabel(status) {
+    return status || 'requested';
+  }
+
+  function formatDayLabel(date) {
+    return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function formatTime(date) {
+    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  async function updateSessionStatus(id, nextStatus) {
+    if (!id) return;
+    await supabase.from('sessions').update({ status: nextStatus }).eq('id', id);
+    loadSessions();
+  }
+
+  async function updateSessionAssignment(id, userId) {
+    if (!id) return;
+    await supabase.from('sessions').update({ user_id: userId || null }).eq('id', id);
+    loadSessions();
+  }
+
+  async function deleteSession(id) {
+    if (!id) return;
+    if (!window.confirm('Delete this session?')) return;
+    await supabase.from('sessions').delete().eq('id', id);
+    loadSessions();
+  }
+
+  function setSessionStatus(id, status) {
+    setSessionActionStatus((prev) => ({ ...prev, [id]: status }));
+  }
+
+  async function saveSessionFeedback(id) {
+    const note = (sessionNoteDrafts[id] || '').trim();
+    setSessionStatus(id, 'Saving feedback...');
+    const { error } = await supabase.from('sessions').update({ admin_feedback: note }).eq('id', id);
+    setSessionStatus(id, error ? `Error: ${error.message}` : 'Feedback saved.');
+    loadSessions();
+  }
+
+  async function ensureSessionConversation(sessionItem) {
+    if (sessionItem.session_chat_id) return sessionItem.session_chat_id;
+    if (!sessionItem.user_id) return null;
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert([{
+        customer_name: sessionItem.customer_name || sessionItem.contact || 'Client',
+        user_id: sessionItem.user_id,
+        status: 'open'
+      }])
+      .select('id')
+      .limit(1);
+    if (error || !data || !data.length) return null;
+    const convoId = data[0].id;
+    await supabase.from('sessions').update({ session_chat_id: convoId }).eq('id', sessionItem.id);
+    return convoId;
+  }
+
+  async function openSessionChat(sessionItem) {
+    const convoId = await ensureSessionConversation(sessionItem);
+    if (!convoId) {
+      setSessionStatus(sessionItem.id, 'Assign a client before opening chat.');
+      return;
+    }
+    const url = `${window.location.origin}/sessionchat.html?session=${sessionItem.id}&role=admin`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  async function sendSessionMessage(sessionItem) {
+    const message = (sessionMessageDrafts[sessionItem.id] || '').trim();
+    if (!message) return;
+    setSessionStatus(sessionItem.id, 'Sending message...');
+    const convoId = await ensureSessionConversation(sessionItem);
+    if (!convoId) {
+      setSessionStatus(sessionItem.id, 'Assign a client before messaging.');
+      return;
+    }
+    const payload = { admin_message: message, admin_message_sent_at: new Date().toISOString() };
+    const { error: sessionErr } = await supabase.from('sessions').update(payload).eq('id', sessionItem.id);
+    const { error: msgErr } = await supabase.from('conversation_messages').insert([{
+      conversation_id: convoId,
+      sender: adminDisplayName || 'Mason Admin',
+      body: message,
+      sender_role: 'admin'
+    }]);
+    if (msgErr) {
+      setSessionStatus(sessionItem.id, `Error: ${msgErr.message}`);
+      return;
+    }
+    if (sessionErr) {
+      setSessionStatus(sessionItem.id, `Error: ${sessionErr.message}`);
+      return;
+    }
+    try {
+      await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', convoId);
+    } catch (err) {
+      console.warn('last_message_at update failed', err);
+    }
+    setSessionStatus(sessionItem.id, 'Message sent.');
+    setSessionMessageDrafts((prev) => ({ ...prev, [sessionItem.id]: '' }));
+    loadSessions();
+  }
+
   function handleSessionChange(event) {
     const { name, value } = event.target;
     setSessionForm((prev) => ({ ...prev, [name]: value }));
@@ -735,21 +907,69 @@ export default function App() {
   async function createSession(event) {
     event.preventDefault();
     if (!sessionForm.customer_name.trim() || !sessionForm.contact.trim()) return;
-    await supabase.from('sessions').insert([
-      {
-        customer_name: sessionForm.customer_name.trim(),
-        contact: sessionForm.contact.trim(),
-        details: sessionForm.details.trim(),
-        scheduled_for: sessionForm.scheduled_for || null
-      }
-    ]);
+    const payload = {
+      customer_name: sessionForm.customer_name.trim(),
+      contact: sessionForm.contact.trim(),
+      details: sessionForm.details.trim(),
+      scheduled_for: sessionForm.scheduled_for || null,
+      location: sessionForm.location.trim() || null,
+      duration_minutes: sessionForm.duration_minutes ? Number(sessionForm.duration_minutes) : null,
+      price: sessionForm.price ? Number(sessionForm.price) : null,
+      status: sessionForm.status.trim() || 'scheduled',
+      staff_name: sessionForm.staff_name.trim() || null,
+      user_id: sessionForm.user_id || null
+    };
+    if (editingSessionId) {
+      await supabase.from('sessions').update(payload).eq('id', editingSessionId);
+    } else {
+      await supabase.from('sessions').insert([payload]);
+    }
     setSessionForm({
       customer_name: '',
       contact: '',
       details: '',
-      scheduled_for: ''
+      scheduled_for: '',
+      location: '',
+      duration_minutes: '',
+      price: '',
+      status: 'scheduled',
+      staff_name: '',
+      user_id: ''
     });
+    setEditingSessionId(null);
     loadSessions();
+  }
+
+  function startEditSession(sessionItem) {
+    setEditingSessionId(sessionItem.id);
+    setSessionForm({
+      customer_name: sessionItem.customer_name || '',
+      contact: sessionItem.contact || '',
+      details: sessionItem.details || '',
+      scheduled_for: sessionItem.scheduled_for ? new Date(sessionItem.scheduled_for).toISOString().slice(0, 16) : '',
+      location: sessionItem.location || '',
+      duration_minutes: sessionItem.duration_minutes ? String(sessionItem.duration_minutes) : '',
+      price: sessionItem.price ? String(sessionItem.price) : '',
+      status: sessionItem.status || 'scheduled',
+      staff_name: sessionItem.staff_name || '',
+      user_id: sessionItem.user_id || ''
+    });
+  }
+
+  function cancelEditSession() {
+    setEditingSessionId(null);
+    setSessionForm({
+      customer_name: '',
+      contact: '',
+      details: '',
+      scheduled_for: '',
+      location: '',
+      duration_minutes: '',
+      price: '',
+      status: 'scheduled',
+      staff_name: '',
+      user_id: ''
+    });
   }
 
   async function saveAdminProfile(event) {
@@ -1191,15 +1411,15 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="profile">
-          <div>
-            <p className="muted">Signed in</p>
-            <p className="profile-name">{adminDisplayName || session.user.email}</p>
+          <div className="profile">
+            <div>
+              <p className="muted">Signed in</p>
+              <p className="profile-name">{adminDisplayName || 'ADMIN'}</p>
+            </div>
+            <button type="button" onClick={handleLogout} className="ghost">
+              Sign out
+            </button>
           </div>
-          <button type="button" onClick={handleLogout} className="ghost">
-            Sign out
-          </button>
-        </div>
       </aside>
       <main className="main">
         <header className="header">
@@ -1215,20 +1435,109 @@ export default function App() {
         </header>
 
         {activeTab === 'dashboard' && (
-          <section className="grid">
-            {Object.entries(counts).map(([label, value]) => (
-              <div key={label} className="card stat">
-                <p className="muted">{label}</p>
-                <h2>{value}</h2>
+          <section className="stack">
+            <div className="grid">
+              {Object.entries(counts).map(([label, value]) => (
+                <div key={label} className="card stat">
+                  <p className="muted">{label}</p>
+                  <h2>{value}</h2>
+                </div>
+              ))}
+              <div className="card note">
+                <h3>Admin playbook</h3>
+                <p className="muted">
+                  This console mirrors Mason portal activity in one secure workspace. Use the
+                  navigation to respond to conversations, publish announcements, and keep sessions
+                  moving.
+                </p>
               </div>
-            ))}
-            <div className="card note">
-              <h3>Admin playbook</h3>
-              <p className="muted">
-                This console mirrors Mason portal activity in one secure workspace. Use the
-                navigation to respond to conversations, publish announcements, and keep sessions
-                moving.
-              </p>
+            </div>
+            <div className="card gantt-card">
+              <div className="gantt-header">
+                <div>
+                  <h3>Session timeline</h3>
+                  <p className="muted">Live view of scheduled sessions for the next 7 days.</p>
+                </div>
+                <div className="gantt-now">
+                  <span className="pill">Now</span>
+                  <span>{formatDayLabel(now)} • {formatTime(now)}</span>
+                </div>
+              </div>
+              <div className="gantt-shell">
+                <div className="gantt-table-head">
+                  <div className="gantt-col">Task</div>
+                  <div className="gantt-col">Status</div>
+                </div>
+                <div className="gantt-timeline-head">
+                  {Array.from({ length: 7 }).map((_, idx) => {
+                    const day = new Date(rangeStart.getTime() + idx * 24 * 60 * 60 * 1000);
+                    return (
+                      <div key={day.toISOString()} className="gantt-day">
+                        <div className="gantt-day-label">{formatDayLabel(day)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="gantt-table-body">
+                  {timelineSessions.length === 0 && (
+                    <div className="gantt-empty muted">No scheduled sessions in the next 7 days.</div>
+                  )}
+                  {staffBuckets.map(([staff, items]) => (
+                    <React.Fragment key={staff}>
+                      <div className="gantt-group">
+                        <span className="pill">{staff.toUpperCase()}</span>
+                      </div>
+                      {items.length === 0 && (
+                        <div className="gantt-table-row gantt-empty-row">
+                          <div className="muted">No sessions</div>
+                          <span className="pill">—</span>
+                        </div>
+                      )}
+                      {items.map(({ sessionItem, start }) => (
+                        <div key={sessionItem.id} className="gantt-table-row">
+                          <div>
+                            <p className="gantt-task">{sessionItem.customer_name || 'Session'}</p>
+                            <p className="muted">{formatTime(start)}</p>
+                          </div>
+                          <span className="pill">{sessionStatusLabel(sessionItem.status)}</span>
+                        </div>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </div>
+                <div className="gantt-timeline-body">
+                  <div
+                    className="gantt-now-line"
+                    style={{
+                      left: `${clamp(((now.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100)}%`
+                    }}
+                  />
+                  {staffBuckets.map(([staff, items]) => (
+                    <React.Fragment key={staff}>
+                      <div className="gantt-group-row">
+                        <div className="gantt-group-label">{staff}</div>
+                      </div>
+                      {items.length === 0 && <div className="gantt-bar-row gantt-empty-row" />}
+                      {items.map(({ sessionItem, start, end }) => {
+                        const left = clamp(((start.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100);
+                        const right = clamp(((end.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100);
+                        const width = Math.max(right - left, 0.5);
+                        return (
+                          <div key={sessionItem.id} className="gantt-bar-row">
+                            <div
+                              className={`gantt-bar status-${sessionStatusLabel(sessionItem.status)}`}
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                              title={`${sessionItem.customer_name || 'Session'} • ${formatDayLabel(start)} ${formatTime(start)}`}
+                            >
+                              <span>{sessionItem.customer_name || 'Session'}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
         )}
@@ -1547,24 +1856,213 @@ export default function App() {
                   onChange={handleSessionChange}
                 />
               </label>
-              <button type="submit">Save session</button>
+              <label>
+                Location
+                <input
+                  name="location"
+                  value={sessionForm.location}
+                  onChange={handleSessionChange}
+                  placeholder="Address or on-site"
+                />
+              </label>
+              <label>
+                Book with
+                <select name="staff_name" value={sessionForm.staff_name} onChange={handleSessionChange}>
+                  <option value="">No preference</option>
+                  <option value="Mason">Mason</option>
+                  <option value="Carter">Carter</option>
+                  <option value="Gilgy">Gilgy</option>
+                  <option value="Jade">Jade</option>
+                </select>
+              </label>
+              <label>
+                Duration (minutes)
+                <input
+                  type="number"
+                  name="duration_minutes"
+                  value={sessionForm.duration_minutes}
+                  onChange={handleSessionChange}
+                  placeholder="60"
+                />
+              </label>
+              <label>
+                Price
+                <input
+                  type="number"
+                  name="price"
+                  value={sessionForm.price}
+                  onChange={handleSessionChange}
+                  placeholder="0"
+                />
+              </label>
+              <label>
+                Status
+                <select name="status" value={sessionForm.status} onChange={handleSessionChange}>
+                  <option value="requested">Requested</option>
+                  <option value="approved">Approved</option>
+                  <option value="denied">Denied</option>
+                  <option value="scheduled">Scheduled</option>
+                </select>
+              </label>
+              <label>
+                Assign to client
+                <select name="user_id" value={sessionForm.user_id} onChange={handleSessionChange}>
+                  <option value="">Unassigned</option>
+                  {clients.map((client) => (
+                    <option key={client.user_id} value={client.user_id}>
+                      {clientLabel(client)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="row">
+                <button type="submit">{editingSessionId ? 'Update session' : 'Save session'}</button>
+                {editingSessionId && (
+                  <button type="button" className="ghost" onClick={cancelEditSession}>
+                    Cancel edit
+                  </button>
+                )}
+              </div>
             </form>
             <div className="card list">
-              <h3>Upcoming sessions</h3>
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <h3>Upcoming sessions</h3>
+                <select
+                  value={sessionFilter}
+                  onChange={(event) => setSessionFilter(event.target.value)}
+                  style={{ maxWidth: '180px' }}
+                >
+                  <option value="all">All</option>
+                  <option value="requested">Requested</option>
+                  <option value="approved">Approved</option>
+                  <option value="denied">Denied</option>
+                  <option value="scheduled">Scheduled</option>
+                </select>
+              </div>
               {sessions.length === 0 && <p className="muted">No sessions scheduled yet.</p>}
-              {sessions.map((sessionItem) => (
-                <div key={sessionItem.id} className="list-row">
-                  <div>
-                    <p>{sessionItem.customer_name || 'Session'}</p>
-                    <p className="muted">
-                      {sessionItem.scheduled_for
-                        ? new Date(sessionItem.scheduled_for).toLocaleString()
-                        : 'Not scheduled'}
-                    </p>
+              {sessions
+                .filter((sessionItem) =>
+                  sessionFilter === 'all' ? true : sessionItem.status === sessionFilter
+                )
+                .map((sessionItem) => (
+                  <div key={sessionItem.id} className="session-card">
+                    <div className="session-main">
+                      <div className="session-title">
+                        <div>
+                          <p className="session-name">{sessionItem.customer_name || 'Session'}</p>
+                          <p className="muted">
+                            {sessionItem.scheduled_for
+                              ? new Date(sessionItem.scheduled_for).toLocaleString()
+                              : 'Not scheduled'}
+                          </p>
+                        </div>
+                        <span className="pill">{sessionStatusLabel(sessionItem.status)}</span>
+                      </div>
+                      <div className="session-meta">
+                        <p>Contact: {sessionItem.contact || '—'}</p>
+                        <p>Location: {sessionItem.location || '—'}</p>
+                        <p>Duration: {sessionItem.duration_minutes || '—'} mins</p>
+                        <p>Price: {sessionItem.price || '—'}</p>
+                      </div>
+                      <div className="session-actions">
+                        <label>
+                          Assign client
+                          <select
+                            value={sessionItem.user_id || ''}
+                            onChange={(event) => updateSessionAssignment(sessionItem.id, event.target.value)}
+                          >
+                            <option value="">Unassigned</option>
+                            {clients.map((client) => (
+                              <option key={client.user_id} value={client.user_id}>
+                                {clientLabel(client)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      <div className="row">
+                        <button type="button" onClick={() => updateSessionStatus(sessionItem.id, 'approved')}>
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => updateSessionStatus(sessionItem.id, 'denied')}
+                        >
+                          Deny
+                        </button>
+                        <button type="button" className="ghost" onClick={() => startEditSession(sessionItem)}>
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() =>
+                            window.open(
+                              `${window.location.origin}/sessioncall.html?session=${sessionItem.id}&role=admin`,
+                              '_blank',
+                              'noopener,noreferrer'
+                            )
+                          }
+                        >
+                          Call
+                        </button>
+                        <button type="button" className="ghost" onClick={() => deleteSession(sessionItem.id)}>
+                          Delete
+                        </button>
+                      </div>
+                      </div>
+                    </div>
+                    <div className="session-comms">
+                      <label>
+                        Admin feedback (private)
+                        <textarea
+                          rows={3}
+                          value={sessionNoteDrafts[sessionItem.id] ?? sessionItem.admin_feedback ?? ''}
+                          onChange={(event) =>
+                            setSessionNoteDrafts((prev) => ({
+                              ...prev,
+                              [sessionItem.id]: event.target.value
+                            }))
+                          }
+                          placeholder="Internal notes about this appointment."
+                        />
+                      </label>
+                      <div className="row">
+                        <button type="button" className="ghost" onClick={() => saveSessionFeedback(sessionItem.id)}>
+                          Save feedback
+                        </button>
+                        <span className="muted">{sessionActionStatus[sessionItem.id] || ''}</span>
+                      </div>
+                      <label>
+                        Message to client
+                        <textarea
+                          rows={3}
+                          value={sessionMessageDrafts[sessionItem.id] ?? ''}
+                          onChange={(event) =>
+                            setSessionMessageDrafts((prev) => ({
+                              ...prev,
+                              [sessionItem.id]: event.target.value
+                            }))
+                          }
+                          placeholder="Send an update directly to the client."
+                        />
+                      </label>
+                      <div className="row">
+                        <button type="button" onClick={() => sendSessionMessage(sessionItem)}>
+                          Send message
+                        </button>
+                        <button type="button" className="ghost" onClick={() => openSessionChat(sessionItem)}>
+                          Open chat
+                        </button>
+                        <span className="muted">
+                          {sessionItem.admin_message_sent_at
+                            ? `Last sent ${new Date(sessionItem.admin_message_sent_at).toLocaleString()}`
+                            : ''}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <span className="pill">{sessionItem.status || 'requested'}</span>
-                </div>
-              ))}
+                ))}
             </div>
           </section>
         )}

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Session Chat — Mason</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body{background:#f7fafc}
+    .container{max-width:980px;margin:28px auto;padding:20px;background:#fff;border-radius:16px;box-shadow:0 18px 40px rgba(15,23,42,0.12)}
+    .header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .meta{color:#64748b;font-size:0.9rem}
+    .messages{list-style:none;padding:0;margin:16px 0;display:grid;gap:10px;max-height:520px;overflow:auto}
+    .msg{padding:12px;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc}
+    .msg.admin{background:#ecfeff;border-color:#cffafe}
+    .msg .meta{font-size:0.78rem;margin-bottom:6px}
+    .form{display:flex;gap:10px;margin-top:12px}
+    .form input[type="text"]{flex:1;padding:10px;border:1px solid #e2e8f0;border-radius:10px}
+    .form button{padding:10px 16px;border-radius:999px;border:0;background:#0ea5a4;color:#fff;font-weight:700}
+    .ghost{background:#fff;border:1px solid #e2e8f0;color:#0f172a}
+    .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#e2e8f0;font-size:12px;font-weight:600}
+  </style>
+</head>
+<body>
+  <script src="global-nav.js"></script>
+  <main class="container">
+    <div class="header">
+      <div>
+        <h1 style="margin:0 0 6px">Session chat</h1>
+        <div id="sessionMeta" class="meta"></div>
+      </div>
+      <div class="meta" id="chatStatus"></div>
+    </div>
+    <div id="notice" class="meta" style="margin-top:10px"></div>
+    <ul id="messages" class="messages"></ul>
+    <form id="chatForm" class="form">
+      <input id="chatInput" type="text" placeholder="Write a message..." />
+      <button type="submit">Send</button>
+      <button id="startChatBtn" type="button" class="ghost" style="display:none">Start chat</button>
+    </form>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script src="sessionchat.js"></script>
+</body>
+</html>

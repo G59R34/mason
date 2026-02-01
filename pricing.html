@@ -5,31 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Mason Services — Pricing</title>
   <link rel="stylesheet" href="style.css">
-  <style>
-    body{font-family:Inter,system-ui,Arial,sans-serif;background:#f3f8fb;margin:0}
-    .hero{max-width:1100px;margin:36px auto;padding:28px;background:white;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.06)}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:18px}
-    .card{background:linear-gradient(180deg,#fff,#fbfdff);padding:18px;border-radius:10px;border:1px solid #eef2ff}
-    .price{font-size:1.6rem;font-weight:800;color:#0ea5a4}
-    .muted{color:#6b7280}
-    .cta{display:inline-block;margin-top:12px;padding:10px 14px;background:#0f172a;color:white;border-radius:8px;text-decoration:none}
-  </style>
 </head>
 <body>
   <script src="global-nav.js"></script>
 
-  <main class="hero" role="main">
+  <main class="wrap" role="main">
+    <section class="card">
     <header>
       <h1 id="pricingTitle">Mason — Pricing</h1>
       <p id="pricingSubtitle" class="muted">Low Quality Service, for a Low Low Price</p>
     </header>
+    </section>
 
-    <section id="pricingPlans" class="grid" aria-label="pricing plans"></section>
+    <section id="pricingPlans" class="grid section" aria-label="pricing plans"></section>
 
-    <section id="pricingCustom" style="margin-top:20px">
+    <section id="pricingCustom" class="card section">
       <h3 id="customTitle">Need a custom session?</h3>
       <p id="customBody" class="muted">Contact mason for volume discounts and enterprise offerings.</p>
-      <a id="customCta" class="cta" href="contact.html">Contact Sales</a>
+      <a id="customCta" class="btn btn-dark" href="contact.html">Contact Sales</a>
     </section>
   </main>
 

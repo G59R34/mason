@@ -40,6 +40,16 @@
 
   const sessionForm = document.getElementById('sessionForm');
   const sessionStatus = document.getElementById('sessionStatus');
+  const sessionLocation = document.getElementById('sessionLocation');
+  const sessionDuration = document.getElementById('sessionDuration');
+  const sessionPrice = document.getElementById('sessionPrice');
+  const sessionClientEmail = document.getElementById('sessionClientEmail');
+  const sessionState = document.getElementById('sessionState');
+
+  const appointmentsList = document.getElementById('appointmentsList');
+  const appointmentsFilter = document.getElementById('appointmentsFilter');
+  const appointmentsRefresh = document.getElementById('appointmentsRefresh');
+  const appointmentsStatus = document.getElementById('appointmentsStatus');
 
   const conversations = document.getElementById('conversations');
   const conversationView = document.getElementById('conversationView');
@@ -52,11 +62,119 @@
   const ganttEl = document.getElementById('gantt');
 
   let currentConversation = null;
+  let clientDirectory = [];
 
   function el(tag, cls) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     return e;
+  }
+
+  function normalizeStatus(status) {
+    return (status || '').toLowerCase().trim();
+  }
+
+  function statusPill(status) {
+    const pill = el('span', 'pill');
+    pill.textContent = status || 'requested';
+    return pill;
+  }
+
+  async function loadClients() {
+    const { data, error } = await sb.from('user_profiles').select('user_id, display_name, email').order('created_at', { ascending: false });
+    if (error) return;
+    clientDirectory = data || [];
+  }
+
+  function findClientByEmail(email) {
+    if (!email) return null;
+    const needle = email.toLowerCase().trim();
+    return clientDirectory.find(c => (c.email || '').toLowerCase() === needle) || null;
+  }
+
+  function buildClientSelect(selectedId) {
+    const select = document.createElement('select');
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Unassigned';
+    select.appendChild(defaultOpt);
+    clientDirectory.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.user_id;
+      opt.textContent = c.display_name || c.email || c.user_id;
+      if (selectedId && selectedId === c.user_id) opt.selected = true;
+      select.appendChild(opt);
+    });
+    return select;
+  }
+
+  async function loadAppointments() {
+    if (!appointmentsList) return;
+    appointmentsStatus.textContent = 'Loading...';
+    const { data, error } = await sb
+      .from('sessions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) {
+      appointmentsStatus.textContent = 'Failed to load.';
+      return;
+    }
+    const filterVal = normalizeStatus(appointmentsFilter.value);
+    const filtered = filterVal ? (data || []).filter(s => normalizeStatus(s.status) === filterVal) : (data || []);
+    appointmentsList.innerHTML = '';
+    if (!filtered.length) {
+      appointmentsList.innerHTML = '<div class="muted">No appointments yet.</div>';
+      appointmentsStatus.textContent = '';
+      return;
+    }
+    filtered.forEach(s => {
+      const item = el('div', 'item');
+      const when = s.scheduled_for ? new Date(s.scheduled_for).toLocaleString() : 'TBD';
+      const title = el('div');
+      title.innerHTML = `<strong>${s.customer_name || 'Appointment'}</strong>`;
+      title.appendChild(statusPill(s.status || 'requested'));
+      const meta = el('div', 'muted');
+      meta.textContent = `When: ${when} • Contact: ${s.contact || ''}`;
+      const details = el('div');
+      details.textContent = s.details || '';
+      const actionRow = el('div', 'row');
+
+      const assignSelect = buildClientSelect(s.user_id);
+      const assignBtn = el('button');
+      assignBtn.textContent = 'Assign';
+      assignBtn.addEventListener('click', async () => {
+        const userId = assignSelect.value || null;
+        await sb.from('sessions').update({ user_id: userId }).eq('id', s.id);
+        loadAppointments();
+      });
+
+      const approveBtn = el('button');
+      approveBtn.textContent = 'Approve';
+      approveBtn.addEventListener('click', async () => {
+        await sb.from('sessions').update({ status: 'approved' }).eq('id', s.id);
+        loadAppointments();
+      });
+
+      const denyBtn = el('button');
+      denyBtn.textContent = 'Deny';
+      denyBtn.className = 'danger';
+      denyBtn.addEventListener('click', async () => {
+        await sb.from('sessions').update({ status: 'denied' }).eq('id', s.id);
+        loadAppointments();
+      });
+
+      actionRow.appendChild(assignSelect);
+      actionRow.appendChild(assignBtn);
+      actionRow.appendChild(approveBtn);
+      actionRow.appendChild(denyBtn);
+      item.appendChild(title);
+      item.appendChild(meta);
+      item.appendChild(details);
+      item.appendChild(actionRow);
+      appointmentsList.appendChild(item);
+    });
+    appointmentsStatus.textContent = '';
   }
 
   async function loadAnnouncements() {
@@ -216,6 +334,7 @@
     loadReviews();
     loadStats();
     loadSessionsForGantt();
+    loadClients().then(loadAppointments);
   }
 
   announceForm.addEventListener('submit', async (e) => {
@@ -235,12 +354,52 @@
     const contact = (document.getElementById('sessionContact').value || '').trim();
     const details = (document.getElementById('sessionDetails').value || '').trim();
     const when = (document.getElementById('sessionWhen').value || '').trim();
+    const location = (sessionLocation.value || '').trim();
+    const duration = Number(sessionDuration.value || 0) || null;
+    const price = Number(sessionPrice.value || 0) || null;
+    const status = (sessionState.value || '').trim() || 'scheduled';
+    const clientEmail = (sessionClientEmail.value || '').trim();
     if (!name || !contact) return;
     sessionStatus.textContent = 'Saving...';
-    const { error } = await sb.from('sessions').insert([{ customer_name: name, contact, details, scheduled_for: when || null }]);
+    let userId = null;
+    if (clientEmail) {
+      if (!clientDirectory.length) await loadClients();
+      const client = findClientByEmail(clientEmail);
+      if (!client) {
+        sessionStatus.textContent = 'Client email not found. Ask client to create an account.';
+        return;
+      }
+      userId = client.user_id;
+    }
+    const { error } = await sb.from('sessions').insert([{
+      customer_name: name,
+      contact,
+      details,
+      location,
+      duration_minutes: duration,
+      price,
+      scheduled_for: when || null,
+      status,
+      user_id: userId
+    }]);
     sessionStatus.textContent = error ? 'Failed.' : 'Saved.';
     if (!error) sessionForm.reset();
+    loadAppointments();
   });
+
+  if (appointmentsRefresh) {
+    appointmentsRefresh.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadClients().then(loadAppointments);
+    });
+  }
+
+  if (appointmentsFilter) {
+    appointmentsFilter.addEventListener('change', () => loadAppointments());
+    appointmentsFilter.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loadAppointments();
+    });
+  }
 
   replyForm.addEventListener('submit', async (e) => {
     e.preventDefault();

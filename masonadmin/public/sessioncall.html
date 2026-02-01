@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Session Call — Mason</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body{background:#f7fafc}
+    .container{max-width:980px;margin:28px auto;padding:20px;background:#fff;border-radius:16px;box-shadow:0 18px 40px rgba(15,23,42,0.12)}
+    .header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .meta{color:#64748b;font-size:0.9rem}
+    .call-box{margin-top:18px;border:1px solid #e2e8f0;border-radius:16px;padding:18px;display:grid;gap:12px;background:#f8fafc}
+    .controls{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{padding:10px 16px;border-radius:999px;border:0;background:#0ea5a4;color:#fff;font-weight:700;cursor:pointer}
+    .ghost{background:#fff;border:1px solid #e2e8f0;color:#0f172a}
+    .danger{background:#ef4444}
+    .status-pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;background:#e2e8f0;font-size:12px;font-weight:700}
+  </style>
+</head>
+<body>
+  <main class="container">
+    <div class="header">
+      <div>
+        <h1 style="margin:0 0 6px">Session call</h1>
+        <div id="sessionMeta" class="meta"></div>
+      </div>
+      <div class="status-pill" id="callStatus">Idle</div>
+    </div>
+    <div class="call-box">
+      <div class="meta" id="callNotice"></div>
+      <div class="controls">
+        <button id="startCallBtn" class="btn">Start call</button>
+        <button id="joinCallBtn" class="btn">Join call</button>
+        <button id="hangupBtn" class="btn danger">Hang up</button>
+        <button id="muteBtn" class="btn ghost">Mute</button>
+      </div>
+      <audio id="remoteAudio" autoplay playsinline></audio>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script src="sessioncall.js"></script>
+</body>
+</html>

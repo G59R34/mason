@@ -5,21 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Order — Mason Services</title>
   <link rel="stylesheet" href="style.css">
-  <style>
-    .container{max-width:760px;margin:36px auto;padding:20px;background:#fff;border-radius:10px}
-    form{display:grid;gap:12px}
-    input,select{padding:10px;border:1px solid #e5e7eb;border-radius:8px}
-    button{background:#0ea5a4;color:#fff;padding:10px;border:0;border-radius:8px}
-  </style>
 </head>
 <body>
   <script src="global-nav.js"></script>
 
-  <main class="container">
-    <h1>Place an Order</h1>
-    <p class="muted">Choose a plan and place your order. We'll notify the site when an order is received.</p>
+  <main class="wrap">
+    <section class="card">
+      <h1>Place an Order</h1>
+      <p class="muted">Choose a plan and place your order. We'll notify the site when an order is received.</p>
 
-    <form id="orderForm">
+      <form id="orderForm" class="form">
       <input id="name" name="name" type="text" placeholder="Your name" required />
       <input id="email" name="email" type="email" placeholder="Email" required />
       <select id="plan" name="plan" required>
@@ -29,9 +24,10 @@
         <option value="Premium">Premium — $299</option>
       </select>
       <button type="submit">Place order</button>
-    </form>
+      </form>
 
-    <div id="status" style="margin-top:12px;color:#6b7280"></div>
+      <div id="status" class="muted" style="margin-top:12px"></div>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>

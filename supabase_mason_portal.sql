@@ -6,9 +6,12 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- Profiles (optional)
 CREATE TABLE IF NOT EXISTS public.user_profiles (
   user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email text,
   display_name text,
   created_at timestamptz DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS user_profiles_email_idx ON public.user_profiles (email);
 
 -- Conversations
 CREATE TABLE IF NOT EXISTS public.conversations (
@@ -41,6 +44,11 @@ CREATE TABLE IF NOT EXISTS public.sessions (
   price numeric,
   scheduled_for timestamptz,
   status text DEFAULT 'requested',
+  admin_feedback text,
+  admin_message text,
+  admin_message_sent_at timestamptz,
+  session_chat_id uuid REFERENCES public.conversations(id) ON DELETE SET NULL,
+  staff_name text,
   user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now()
 );
@@ -66,6 +74,27 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 );
 
 CREATE INDEX IF NOT EXISTS reviews_created_idx ON public.reviews (created_at);
+
+-- Calls (browser-to-browser WebRTC signaling)
+CREATE TABLE IF NOT EXISTS public.call_sessions (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  session_id uuid REFERENCES public.sessions(id) ON DELETE CASCADE,
+  status text DEFAULT 'calling',
+  started_by_role text DEFAULT 'admin',
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.call_signals (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  call_id uuid REFERENCES public.call_sessions(id) ON DELETE CASCADE,
+  sender_role text,
+  signal_type text,
+  payload jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS call_sessions_created_idx ON public.call_sessions (created_at);
+CREATE INDEX IF NOT EXISTS call_signals_created_idx ON public.call_signals (created_at);
 
 -- Add missing columns if tables already exist
 DO $$
@@ -96,6 +125,42 @@ BEGIN
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='sessions' AND column_name='admin_feedback'
+  ) THEN
+    ALTER TABLE public.sessions ADD COLUMN admin_feedback text;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='sessions' AND column_name='admin_message'
+  ) THEN
+    ALTER TABLE public.sessions ADD COLUMN admin_message text;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='sessions' AND column_name='admin_message_sent_at'
+  ) THEN
+    ALTER TABLE public.sessions ADD COLUMN admin_message_sent_at timestamptz;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='sessions' AND column_name='session_chat_id'
+  ) THEN
+    ALTER TABLE public.sessions ADD COLUMN session_chat_id uuid REFERENCES public.conversations(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='sessions' AND column_name='staff_name'
+  ) THEN
+    ALTER TABLE public.sessions ADD COLUMN staff_name text;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='user_profiles' AND column_name='email'
+  ) THEN
+    ALTER TABLE public.user_profiles ADD COLUMN email text;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
     WHERE table_schema='public' AND table_name='conversations' AND column_name='user_id'
   ) THEN
     ALTER TABLE public.conversations ADD COLUMN user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL;
@@ -119,6 +184,8 @@ ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.call_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.call_signals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 
@@ -160,6 +227,19 @@ CREATE POLICY public_update_reviews ON public.reviews FOR UPDATE USING (true) WI
 DROP POLICY IF EXISTS public_delete_reviews ON public.reviews;
 CREATE POLICY public_delete_reviews ON public.reviews FOR DELETE USING (true);
 
+-- Call policies (prototype / internal use only)
+DROP POLICY IF EXISTS public_select_call_sessions ON public.call_sessions;
+CREATE POLICY public_select_call_sessions ON public.call_sessions FOR SELECT USING (true);
+DROP POLICY IF EXISTS public_insert_call_sessions ON public.call_sessions;
+CREATE POLICY public_insert_call_sessions ON public.call_sessions FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS public_update_call_sessions ON public.call_sessions;
+CREATE POLICY public_update_call_sessions ON public.call_sessions FOR UPDATE USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS public_select_call_signals ON public.call_signals;
+CREATE POLICY public_select_call_signals ON public.call_signals FOR SELECT USING (true);
+DROP POLICY IF EXISTS public_insert_call_signals ON public.call_signals;
+CREATE POLICY public_insert_call_signals ON public.call_signals FOR INSERT WITH CHECK (true);
+
 -- Authenticated user policies (for account portal)
 DROP POLICY IF EXISTS user_select_own_sessions ON public.sessions;
 CREATE POLICY user_select_own_sessions ON public.sessions FOR SELECT USING (auth.uid() = user_id);
@@ -170,6 +250,8 @@ CREATE POLICY user_update_own_sessions ON public.sessions FOR UPDATE USING (auth
 
 DROP POLICY IF EXISTS user_select_own_profile ON public.user_profiles;
 CREATE POLICY user_select_own_profile ON public.user_profiles FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS public_select_user_profiles ON public.user_profiles;
+CREATE POLICY public_select_user_profiles ON public.user_profiles FOR SELECT USING (true);
 DROP POLICY IF EXISTS user_upsert_own_profile ON public.user_profiles;
 CREATE POLICY user_upsert_own_profile ON public.user_profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS user_update_own_profile ON public.user_profiles;

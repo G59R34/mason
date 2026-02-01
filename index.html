@@ -6,105 +6,6 @@
     <title>Mason</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root{
-            --ink:#0f172a;
-            --muted:#64748b;
-            --accent:#0ea5a4;
-            --ring:#e2e8f0;
-        }
-        body{
-            margin:0;
-            font-family:"Space Grotesk", system-ui, -apple-system, sans-serif;
-            color:var(--ink);
-            background:
-              radial-gradient(900px 500px at 10% -10%, #dff7ff 0%, transparent 55%),
-              radial-gradient(900px 600px at 110% -10%, #f2e9ff 0%, transparent 55%),
-              linear-gradient(180deg,#eef6fb,#ffffff 45%,#f7f3ff);
-        }
-        .wrap{
-            max-width:1100px;
-            margin:36px auto 64px;
-            padding:0 20px;
-        }
-        .hero{
-            display:grid;
-            grid-template-columns:1.1fr 0.9fr;
-            gap:24px;
-            background:#ffffff;
-            border:1px solid var(--ring);
-            border-radius:16px;
-            padding:28px;
-            box-shadow:0 18px 40px rgba(2,6,23,0.08);
-            align-items:center;
-        }
-        h1{
-            margin:0 0 8px;
-            font-size:2.7rem;
-        }
-        p{
-            margin:0 0 18px;
-            color:var(--muted);
-            font-size:1.1rem;
-        }
-        .pill{
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            padding:10px 14px;
-            background:#f1f5f9;
-            border-radius:999px;
-            font-size:0.95rem;
-        }
-        .hero img{
-            width:100%;
-            height:auto;
-            border-radius:12px;
-            border:1px solid var(--ring);
-            box-shadow:0 10px 24px rgba(2,6,23,0.12);
-        }
-        @media (max-width:900px){
-            .hero{grid-template-columns:1fr}
-            h1{font-size:2.2rem}
-        }
-        .reviews-preview{
-            margin-top:22px;
-            background:#ffffff;
-            border:1px solid var(--ring);
-            border-radius:14px;
-            padding:18px;
-            box-shadow:0 10px 28px rgba(2,6,23,0.06);
-        }
-        .reviews-header{
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-        }
-        .reviews-grid{
-            margin-top:14px;
-            display:grid;
-            grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-            gap:14px;
-        }
-        .review-card{
-            border:1px solid var(--ring);
-            border-radius:12px;
-            padding:14px;
-            background:linear-gradient(180deg,#ffffff,#f8fafc);
-        }
-        .review-meta{
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:10px;
-            color:var(--muted);
-            font-size:0.9rem;
-        }
-        .review-stars{color:#f59e0b;font-weight:700}
-        .review-text{margin:8px 0 0;color:#0f172a}
-        .review-empty{color:var(--muted);font-style:italic}
-    </style>
 </head>
 
 <body>
@@ -112,31 +13,42 @@
     <script src="chatuser.js"></script>
    
     <main class="wrap">
-        <section class="hero">
-            <div>
-                <h1>Hello, I'm Mason!</h1>
-                <p>I want you to have sex with me.</p>
-                <div class="pill">Fast response • Clear communication • No fluff</div>
+        <section class="card hero">
+            <div class="hero-content">
+                <span class="pill">Private sessions • Quick replies • Straightforward booking</span>
+                <h1>Hello, I'm Mason.</h1>
+                <p>Book a private session and keep everything organized in one place.</p>
+                <div class="hero-actions">
+                    <a class="btn" href="pricing.html">Book a session</a>
+                    <a class="btn btn-ghost" href="reviews.html">See reviews</a>
+                </div>
+                <div class="stats-grid section">
+                    <div class="stat-card"><strong>Fast replies</strong>Most clients hear back same day.</div>
+                    <div class="stat-card"><strong>Clear scheduling</strong>Everything is confirmed upfront.</div>
+                    <div class="stat-card"><strong>Private chat</strong>Secure, real-time updates.</div>
+                </div>
             </div>
-            <div>
+            <div class="hero-media">
                 <img src="/img/mason.png" alt="Mason">
             </div>
         </section>
-        <section class="reviews-preview" aria-label="recent reviews">
-            <div class="reviews-header">
+
+        <section class="section">
+            <div class="section-head">
                 <h2>Recent reviews</h2>
-                <a href="reviews.html" style="color:var(--accent);text-decoration:none">View all</a>
+                <a href="reviews.html">View all</a>
             </div>
-            <div id="recentReviews" class="reviews-grid">
-                <div class="review-empty">Loading reviews…</div>
+            <div id="recentReviews" class="grid">
+                <div class="card-soft muted">Loading reviews...</div>
             </div>
         </section>
-        <section class="reviews-preview" aria-label="mason quote">
-            <div class="reviews-header">
+
+        <section class="section card" aria-label="mason quote">
+            <div class="section-head">
                 <h2>From Mason</h2>
             </div>
-            <blockquote style="margin:0;border-left:4px solid var(--accent);padding-left:14px;color:var(--muted);font-size:1.05rem">
-                “You WILL get FUCKED”
+            <blockquote class="quote">
+                You WILL get FUCKED
             </blockquote>
         </section>
     </main>
