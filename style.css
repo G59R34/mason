@@ -19,6 +19,14 @@
 
 * {
   box-sizing: border-box;
+  max-width: 100%;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: clip;
 }
 
 body {
@@ -27,6 +35,8 @@ body {
   color: var(--ink);
   font-size: var(--fs-base);
   line-height: var(--lh-body);
+  -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
   background:
     radial-gradient(900px 540px at 10% -10%, rgba(34, 211, 238, 0.12) 0%, transparent 55%),
     radial-gradient(900px 600px at 110% -10%, rgba(245, 158, 11, 0.08) 0%, transparent 55%),
@@ -58,12 +68,18 @@ a {
 
 img {
   max-width: 100%;
+  height: auto;
+  display: block;
 }
 
 .wrap {
   max-width: 1160px;
   margin: 40px auto 80px;
   padding: 0 24px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
+  max-width: 100vw;
 }
 
 .section {
@@ -77,12 +93,18 @@ img {
   gap: 12px;
 }
 
+.section-head > * {
+  min-width: 0;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--ring);
   border-radius: 18px;
   padding: 20px;
   box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 100%;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -224,6 +246,7 @@ textarea {
   border-radius: 10px;
   font-family: inherit;
   font-size: 1rem;
+  line-height: 1.3;
   background: #0b1220;
   color: var(--ink);
   min-height: 44px;
@@ -249,6 +272,9 @@ textarea:focus {
 .reviews {
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .row {
@@ -256,6 +282,10 @@ textarea:focus {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.row > * {
+  min-width: 0;
 }
 
 .row.stretch > * {
@@ -339,6 +369,7 @@ blockquote cite {
   background: #0b1220;
   border: 1px solid rgba(148, 163, 184, 0.2);
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .mason-reply-head {
@@ -506,6 +537,68 @@ blockquote cite {
   padding: 16px;
   background: #0b1220;
   box-shadow: 0 12px 26px rgba(2, 6, 23, 0.55);
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.review-card * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.review-score {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.vote-btn {
+  background: #0b1220;
+  color: var(--ink);
+  border: 1px solid var(--ring);
+  border-radius: 999px;
+  padding: 8px 12px;
+  min-height: 40px;
+  width: auto;
+  box-shadow: none;
+}
+
+.vote-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.35);
+}
+
+.reply-btn {
+  background: var(--accent);
+  color: #0b0f14;
+  border-radius: 999px;
+  padding: 10px 14px;
+  min-height: 44px;
+  width: auto;
+}
+
+.reply-name,
+.reply-message {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 1rem;
+  background: #0b1220;
+  color: var(--ink);
+}
+
+.reply-submit {
+  margin-top: 8px;
 }
 
 .review-meta {
@@ -515,6 +608,28 @@ blockquote cite {
   gap: 12px;
   color: var(--muted);
   font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.review-meta > * {
+  min-width: 0;
+}
+
+.review-meta span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.review-card p,
+.review-card div,
+.review-card span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.replies-container {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .meta {
@@ -523,6 +638,44 @@ blockquote cite {
   gap: 8px;
   color: var(--muted);
   font-size: 0.9rem;
+  min-width: 0;
+}
+
+.row-end {
+  justify-content: flex-end;
+}
+
+.reviews-debug {
+  max-width: 900px;
+  margin: 8px auto 0;
+  color: #b91c1c;
+  font-size: 0.95rem;
+  display: none;
+}
+
+.admin-controls {
+  max-width: 900px;
+  margin: 8px auto;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin-controls .admin-status {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.admin-controls .admin-login-btn {
+  background: #111827;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 0;
+  cursor: pointer;
+  min-height: 40px;
 }
 
 .review-stars {
@@ -533,6 +686,13 @@ blockquote cite {
 .review-text {
   margin-top: 8px;
   color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.review-time {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-left: auto;
 }
 
 .shot {
@@ -587,6 +747,31 @@ blockquote cite {
 }
 
 @media (max-width: 900px) {
+  .wrap {
+    max-width: 100%;
+    margin: 28px auto 70px;
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .grid,
+  .stats-grid,
+  .reasons,
+  .quotes {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    border-radius: 16px;
+    padding: 18px;
+  }
+
+  .card-soft {
+    border-radius: 14px;
+    padding: 16px;
+  }
+
   .hero {
     grid-template-columns: 1fr;
   }
@@ -598,16 +783,19 @@ blockquote cite {
 
 @media (max-width: 700px) {
   :root {
-    --fs-base: 15px;
-    --fs-lead: 1rem;
-    --h1: 2rem;
-    --h2: 1.35rem;
-    --h3: 1.05rem;
+    --fs-base: 17px;
+    --fs-lead: 1.05rem;
+    --h1: 2.15rem;
+    --h2: 1.5rem;
+    --h3: 1.15rem;
   }
 
   .wrap {
-    margin: 20px auto 56px;
-    padding: 0 16px;
+    max-width: 100%;
+    margin: 20px auto 64px;
+    padding-left: calc(14px + env(safe-area-inset-left));
+    padding-right: calc(14px + env(safe-area-inset-right));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
   }
 
   .section {
@@ -617,6 +805,12 @@ blockquote cite {
   .section-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .section-head .muted,
+  .section-head p {
+    width: 100%;
+    font-size: 0.95rem;
   }
 
   .card {
@@ -673,6 +867,34 @@ blockquote cite {
     align-items: flex-start;
   }
 
+  .review-card {
+    display: grid;
+    gap: 10px;
+  }
+
+  .review-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .vote-btn {
+    width: auto;
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  .reply-btn {
+    width: 100%;
+  }
+
+  .admin-controls {
+    justify-content: flex-start;
+  }
+
+  .admin-controls .admin-login-btn {
+    width: 100%;
+  }
+
   .rating-summary {
     gap: 8px;
   }
@@ -688,6 +910,28 @@ blockquote cite {
   .row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .row.stretch > * {
+    width: 100%;
+  }
+
+  .btn,
+  button,
+  .cta {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .reply-submit {
+    width: 100%;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+    padding: 12px 12px;
   }
 
   .cta-banner {
@@ -714,11 +958,27 @@ blockquote cite {
 
 @media (max-width: 420px) {
   .wrap {
-    padding: 0 12px;
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+
+  :root {
+    --fs-base: 16px;
+    --h1: 1.85rem;
+    --h2: 1.35rem;
   }
 
   .hero-content h1 {
     font-size: 1.75rem;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .review-card {
+    padding: 14px;
   }
 
   .btn,

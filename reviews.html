@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Reviews</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -26,20 +26,12 @@
             </header>
         </section>
 
-        <div id="reviewsDebug" style="max-width:900px;margin:8px auto 0;color:#b91c1c;font-size:0.95rem;display:none"></div>
+        <div id="reviewsDebug" class="reviews-debug"></div>
 
-        <div id="adminControls" style="max-width:900px;margin:8px auto;display:flex;gap:8px;justify-content:flex-end;align-items:center">
-            <div id="adminStatus" style="color:var(--muted);font-size:0.95rem"></div>
-            <button id="adminLoginBtn" style="background:#111827;color:#fff;padding:8px 10px;border-radius:8px;border:0;cursor:pointer">Admin Sign In</button>
+        <div id="adminControls" class="admin-controls">
+            <div id="adminStatus" class="admin-status"></div>
+            <button id="adminLoginBtn" class="admin-login-btn">Admin Sign In</button>
         </div>
-
-        
-
-        <section aria-label="submit review" style="margin-top:18px">
-            <div style="text-align:right;color:var(--muted);font-size:0.9rem">
-                
-            </div>
-        </header>
 
         <section aria-label="submit review" class="card section">
             <form id="reviewForm" class="form">
@@ -61,7 +53,7 @@
                     </select>
                 </div>
                 <textarea id="comment" name="comment" placeholder="Write your review..." required></textarea>
-                <div class="row" style="justify-content:flex-end">
+                <div class="row row-end">
                     <button type="submit">Submit Review</button>
                 </div>
             </form>
@@ -307,18 +299,16 @@
 
             reviews.slice().reverse().forEach(r => {
                 const card = document.createElement('article');
-                card.className = 'card';
+                card.className = 'card review-card';
                 const meta = document.createElement('div');
-                meta.className = 'meta';
+                meta.className = 'review-meta';
                 const name = document.createElement('strong');
                 name.textContent = r.name;
                 const stars = document.createElement('span');
                 stars.className = 'stars';
                 stars.textContent = renderStars(r.rating);
                 const time = document.createElement('time');
-                time.style.marginLeft = 'auto';
-                time.style.color = 'var(--muted)';
-                time.style.fontSize = '0.85rem';
+                time.className = 'review-time';
                 time.textContent = new Date(r.t).toLocaleString();
                 meta.appendChild(name);
                 // if signed-in user is an admin and is the owner of this review, show ADMIN badge
@@ -332,7 +322,7 @@
                 meta.appendChild(time);
 
                 const text = document.createElement('p');
-                text.style.margin = '8px 0 0';
+                text.className = 'review-text';
                 text.textContent = r.comment;
 
                 const masonReply = document.createElement('div');
@@ -343,12 +333,13 @@
                 // votes UI
                 const votesWrap = document.createElement('div');
                 votesWrap.style.marginTop = '8px';
+                votesWrap.className = 'review-actions';
                 const score = document.createElement('span');
+                score.className = 'review-score';
                 let vcount = votesMap[r.id] || 0;
                 score.textContent = `Score: ${vcount}`;
-                score.style.marginRight = '12px';
-                const up = document.createElement('button'); up.textContent = '👍'; up.style.marginRight = '6px';
-                const down = document.createElement('button'); down.textContent = '👎';
+                const up = document.createElement('button'); up.textContent = '👍'; up.className = 'vote-btn';
+                const down = document.createElement('button'); down.textContent = '👎'; down.className = 'vote-btn';
                 up.addEventListener('click', async () => {
                     up.disabled = true; down.disabled = true;
                     const voter = prompt('Your name (optional):','Guest') || null;
@@ -377,7 +368,7 @@
                 // reply form (collapsed by default)
                 const replyForm = document.createElement('div');
                 replyForm.style.marginTop = '8px';
-                const replyBtn = document.createElement('button'); replyBtn.textContent = 'Reply';
+                const replyBtn = document.createElement('button'); replyBtn.textContent = 'Reply'; replyBtn.className = 'reply-btn';
                 const replyFields = document.createElement('div');
                 replyFields.style.display = 'none';
                 replyFields.innerHTML = `<input placeholder="Your name" class="reply-name" style="margin-bottom:6px;width:100%;padding:8px;border:1px solid #ddd;border-radius:6px"><textarea placeholder="Write a reply..." class="reply-message" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;margin-top:6px"></textarea><div style="text-align:right;margin-top:6px"><button class="reply-submit">Send</button></div>`;

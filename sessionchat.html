@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Session Chat — Mason</title>
   <link rel="stylesheet" href="style.css">
   <style>
@@ -19,6 +19,14 @@
     .form button{padding:10px 16px;border-radius:999px;border:0;background:#0ea5a4;color:#fff;font-weight:700}
     .ghost{background:#fff;border:1px solid #e2e8f0;color:#0f172a}
     .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#e2e8f0;font-size:12px;font-weight:600}
+
+    @media (max-width:720px){
+      .container{margin:18px auto;padding:14px;border-radius:14px}
+      .header{flex-direction:column;align-items:flex-start}
+      .messages{max-height:50vh}
+      .form{flex-direction:column;align-items:stretch}
+      .form button{width:100%}
+    }
   </style>
 </head>
 <body>

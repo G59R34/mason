@@ -26,7 +26,15 @@
       .ms-chat-form input[type="text"]{flex:1;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
       .ms-chat-msg{padding:8px;border-radius:10px;background:#f8fafc;border:1px solid #eef2ff}
       .ms-chat-meta{font-size:0.8rem;color:#6b7280}
-      @media(max-width:420px){.ms-chat-panel{right:12px;left:12px;width:auto;height:60vh}}
+      @media(max-width:720px){
+        .ms-chat-bubble{right:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:64px;height:64px}
+        .ms-chat-panel{inset:0;right:0;bottom:0;width:100vw;height:100vh;border-radius:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+        .ms-chat-header{padding:16px;font-size:1.05rem}
+        .ms-chat-body{padding:16px}
+        .ms-chat-form{padding:14px;flex-direction:column}
+        .ms-chat-form input[type="text"]{width:100%;min-height:46px;font-size:1rem}
+        .ms-chat-form button{width:100%;min-height:46px}
+      }
     `;
     document.head.appendChild(style);
   }

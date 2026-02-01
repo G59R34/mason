@@ -2,18 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Mason Support — Admin</title>
   <link rel="stylesheet" href="style.css">
   <style>
     .container{max-width:900px;margin:28px auto;padding:18px;background:#fff;border-radius:10px}
-    header{display:flex;align-items:center;justify-content:space-between}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
     ul.msgs{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
     li.msg{padding:10px;border-radius:8px;border:1px solid #eef2ff;display:flex;gap:8px;align-items:flex-start}
     .meta{font-size:0.9rem;color:#6b7280}
     .msg .text{flex:1}
     button.small{background:#ef4444;color:white;padding:6px 8px;border:0;border-radius:6px;cursor:pointer}
     .controls{display:flex;gap:8px}
+    .tickets-layout{display:flex;gap:16px;margin-top:16px}
+    .tickets-sidebar{width:320px;border-right:1px solid #eef2ff;padding-right:12px}
+    .tickets-list{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+    .ticket-content{flex:1}
+    .ticket-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .admin-reply{display:flex;gap:8px;margin-top:12px;align-items:center}
+    .admin-field{padding:8px;border:1px solid #e5e7eb;border-radius:6px}
+    .admin-name{flex:0 0 140px}
+    .admin-text{flex:1}
+
+    @media (max-width:860px){
+      .container{margin:18px auto;padding:14px}
+      header{flex-direction:column;align-items:flex-start}
+      .controls{width:100%;flex-wrap:wrap}
+      .tickets-layout{flex-direction:column}
+      .tickets-sidebar{width:100%;border-right:0;padding-right:0;border-bottom:1px solid #eef2ff;padding-bottom:12px}
+      .admin-reply{flex-direction:column;align-items:stretch}
+      .admin-name,.admin-text{flex:1}
+    }
   </style>
 </head>
 <body>
@@ -26,14 +45,14 @@
         <button id="clearAll">Clear All</button>
       </div>
     </header>
-    <section style="display:flex;gap:16px;margin-top:16px">
-      <aside style="width:320px;border-right:1px solid #eef2ff;padding-right:12px">
+    <section class="tickets-layout">
+      <aside class="tickets-sidebar">
         <h3>Tickets</h3>
-        <ul id="tickets" style="list-style:none;padding:0;margin:0;display:grid;gap:8px"></ul>
+        <ul id="tickets" class="tickets-list"></ul>
         <div id="noTickets" class="meta">No tickets yet.</div>
       </aside>
-      <div style="flex:1">
-        <div id="ticketHeader" style="display:flex;justify-content:space-between;align-items:center">
+      <div class="ticket-content">
+        <div id="ticketHeader" class="ticket-header">
           <h3 id="ticketTitle">Select a ticket</h3>
           <div>
             <button id="claim">Claim</button>
@@ -42,9 +61,9 @@
         </div>
         <ul id="messages" class="msgs"></ul>
         <div id="empty" class="meta">No ticket selected.</div>
-        <form id="adminReply" style="display:flex;gap:8px;margin-top:12px;align-items:center">
-          <input id="adminName" placeholder="Your name" style="flex:0 0 140px;padding:8px;border:1px solid #e5e7eb;border-radius:6px" />
-          <input id="replyText" placeholder="Reply to ticket" style="flex:1;padding:8px;border:1px solid #e5e7eb;border-radius:6px" />
+        <form id="adminReply" class="admin-reply">
+          <input id="adminName" placeholder="Your name" class="admin-field admin-name" />
+          <input id="replyText" placeholder="Reply to ticket" class="admin-field admin-text" />
           <button type="submit">Send</button>
         </form>
       </div>

@@ -32,6 +32,7 @@
                     </div>
                 </nav>
             </div>
+            <div class="gn-backdrop" aria-hidden="true"></div>
             <div class="gn-announcement" aria-live="polite"></div>
         `;
 
@@ -50,29 +51,44 @@
         // Toggle mobile menu
         const toggle = header.querySelector('.gn-toggle');
         const menu = header.querySelector('#gn-menu');
+        const backdrop = header.querySelector('.gn-backdrop');
+
+        function setMenu(open) {
+            toggle.setAttribute('aria-expanded', String(open));
+            menu.classList.toggle('open', open);
+            backdrop.classList.toggle('open', open);
+            document.documentElement.style.overflow = open ? 'hidden' : '';
+        }
+
         toggle.addEventListener('click', () => {
             const opened = toggle.getAttribute('aria-expanded') === 'true';
-            toggle.setAttribute('aria-expanded', String(!opened));
-            menu.classList.toggle('open');
-            document.documentElement.style.overflow = !opened ? 'hidden' : '';
+            setMenu(!opened);
+        });
+
+        backdrop.addEventListener('click', () => {
+            setMenu(false);
         });
 
         // Close when clicking outside on small screens
         document.addEventListener('click', (e) => {
             if (!header.contains(e.target) && menu.classList.contains('open')) {
-                toggle.setAttribute('aria-expanded', 'false');
-                menu.classList.remove('open');
-                document.documentElement.style.overflow = '';
+                setMenu(false);
             }
         });
 
         // Close on ESC
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && menu.classList.contains('open')) {
-                toggle.setAttribute('aria-expanded', 'false');
-                menu.classList.remove('open');
-                document.documentElement.style.overflow = '';
+                setMenu(false);
                 toggle.focus();
+            }
+        });
+
+        // Close menu after tap on a link (native feel)
+        menu.addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            if (link && menu.classList.contains('open')) {
+                setMenu(false);
             }
         });
     }
@@ -85,7 +101,7 @@
             .gn-logo{display:inline-flex;align-items:center;gap:10px;color:#f8fafc;text-decoration:none;font-weight:700}
             .gn-logo svg{display:block}
             .gn-title{font-size:1.15rem}
-            .gn-toggle{display:none;background:none;border:0;padding:8px;border-radius:8px}
+            .gn-toggle{display:none;background:none;border:0;padding:8px;border-radius:8px;min-height:44px;min-width:44px}
             .gn-toggle .hamburger{width:22px;height:2px;background:currentColor;display:block;position:relative}
             .gn-toggle .hamburger:before,.gn-toggle .hamburger:after{content:"";position:absolute;left:0;width:100%;height:2px;background:currentColor}
             .gn-toggle .hamburger:before{top:-6px}.gn-toggle .hamburger:after{top:6px}
@@ -100,6 +116,8 @@
             .gn-search button{background:transparent;border:0;padding:0;font-size:1rem}
             .gn-cta{display:inline-block;background:#22d3ee;color:#0b0f14;padding:8px 12px;border-radius:999px;text-decoration:none}
             .gn-announcement{max-width:1160px;margin:0 auto;padding:0 20px 12px}
+            .gn-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.65);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:7990}
+            .gn-backdrop.open{opacity:1;pointer-events:auto}
             .gn-announcement .gn-ann-bar{display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(90deg,#0f766e,#22d3ee);color:#0b0f14;border-radius:18px;padding:12px 16px;font-weight:600;letter-spacing:0.01em;box-shadow:0 12px 24px rgba(2,6,23,0.6);border:1px solid rgba(148,163,184,0.25);text-align:center}
             .gn-announcement .gn-ann-bar .gn-ann-pill{background:rgba(255,255,255,0.18);padding:4px 10px;border-radius:999px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em}
             .gn-announcement .gn-ann-bar .gn-ann-text{line-height:1.35}
@@ -117,13 +135,14 @@
 
             /* Responsive */
             @media (max-width:850px){
-                .gn-wrapper{padding:12px 14px}
+                .gn-wrapper{padding:calc(10px + env(safe-area-inset-top)) 14px}
                 .gn-title{font-size:1rem}
                 .gn-toggle{display:inline-flex;margin-left:auto}
-                .gn-nav{position:fixed;inset:0 auto 0 0;right:0;top:0;height:100vh;width:min(86vw,320px);background:linear-gradient(180deg,#0b0f14,#0f172a);flex-direction:column;padding:70px 18px;transform:translateX(110%);transition:transform .28s ease;box-shadow:-8px 0 30px rgba(2,6,23,0.8)}
+                .gn-nav{position:fixed;inset:0;right:0;top:0;height:100vh;width:100vw;background:linear-gradient(180deg,#0b0f14,#0f172a);flex-direction:column;padding:calc(72px + env(safe-area-inset-top)) 22px 32px;transform:translateX(110%);transition:transform .28s ease;box-shadow:none;z-index:8001}
                 .gn-nav.open{transform:translateX(0)}
-                .gn-list{flex-direction:column;gap:8px}
-                .gn-list a{width:100%;text-align:left}
+                .gn-list{flex-direction:column;gap:12px}
+                .gn-list a{width:100%;text-align:left;padding:14px 16px;font-size:1.15rem;border-radius:14px;background:rgba(15,23,42,0.4)}
+                .gn-list a.active{background:linear-gradient(90deg,#22d3ee,#0ea5a4);color:#0b0f14}
                 .gn-actions{margin-top:auto;flex-direction:column;gap:12px;width:100%}
                 .gn-search input{width:100%}
                 .gn-announcement{padding:0 12px 12px}

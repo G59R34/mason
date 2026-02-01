@@ -2,17 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Your Conversation — Mason Support</title>
   <link rel="stylesheet" href="style.css">
   <style>
     .container{max-width:900px;margin:28px auto;padding:18px;background:#fff;border-radius:10px}
     .ticket-meta{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .ticket-controls{display:flex;gap:8px;align-items:center}
     .msgs{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
     .msg{padding:10px;border-radius:8px;border:1px solid #eef2ff}
     .meta{font-size:0.9rem;color:#6b7280}
     form{display:flex;gap:8px;margin-top:12px}
     input[type="text"]{flex:1;padding:8px;border:1px solid #e5e7eb;border-radius:6px}
+    .ticket-select{padding:8px;border:1px solid #e5e7eb;border-radius:6px}
+    .ticket-name{flex:0 0 160px}
+
+    @media (max-width:720px){
+      .container{margin:18px auto;padding:14px}
+      .ticket-meta{flex-direction:column;align-items:flex-start}
+      .ticket-controls{width:100%;flex-direction:column;align-items:stretch}
+      .ticket-controls button,.ticket-controls select{width:100%}
+      form{flex-direction:column}
+      .ticket-name{flex:1}
+    }
   </style>
 </head>
 <body>
@@ -25,8 +37,8 @@
         <div id="status" class="meta"></div>
         <div id="typing" class="meta" style="display:none"></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="ticketSelect" style="padding:8px;border:1px solid #e5e7eb;border-radius:6px"></select>
+      <div class="ticket-controls">
+        <select id="ticketSelect" class="ticket-select"></select>
         <button id="newTicketBtn" type="button">New Ticket</button>
       </div>
     </div>
@@ -34,7 +46,7 @@
     <div id="empty" class="meta">No messages yet.</div>
 
     <form id="userReply">
-      <input id="yourName" placeholder="Your name" type="text" style="flex:0 0 160px" />
+      <input id="yourName" placeholder="Your name" type="text" class="ticket-name" />
       <input id="yourMessage" placeholder="Write your message..." type="text" />
       <button type="submit">Send</button>
     </form>
