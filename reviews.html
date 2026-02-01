@@ -336,13 +336,9 @@
                 text.textContent = r.comment;
 
                 const masonReply = document.createElement('div');
-                masonReply.style.marginTop = '8px';
-                masonReply.style.padding = '8px';
-                masonReply.style.borderRadius = '6px';
-                masonReply.style.background = '#fff7ed';
-                masonReply.style.border = '1px solid #fed7aa';
+                masonReply.className = 'mason-reply';
                 masonReply.style.display = r.mason_reply ? 'block' : 'none';
-                masonReply.innerHTML = `<strong>Mason</strong> <span class="admin-badge">ADMIN</span><div style="margin-top:4px">${r.mason_reply}</div>`;
+                masonReply.innerHTML = `<div class="mason-reply-head"><strong>Mason</strong> <span class="admin-badge">ADMIN</span></div><div class="mason-reply-body">${r.mason_reply}</div>`;
 
                 // votes UI
                 const votesWrap = document.createElement('div');

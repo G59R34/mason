@@ -44,6 +44,9 @@ CREATE POLICY admin_select_announcements ON public.announcements
 DROP POLICY IF EXISTS admin_insert_announcements ON public.announcements;
 CREATE POLICY admin_insert_announcements ON public.announcements
   FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS admin_update_announcements ON public.announcements;
+CREATE POLICY admin_update_announcements ON public.announcements
+  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
 DROP POLICY IF EXISTS admin_delete_announcements ON public.announcements;
 CREATE POLICY admin_delete_announcements ON public.announcements
   FOR DELETE USING (public.is_admin());
