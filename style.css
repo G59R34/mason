@@ -571,3 +571,115 @@ blockquote cite {
     font-size: 2.2rem;
   }
 }
+
+@media (max-width: 700px) {
+  .wrap {
+    margin: 20px auto 56px;
+    padding: 0 16px;
+  }
+
+  .section {
+    margin-top: 20px;
+  }
+
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .card-soft {
+    padding: 14px;
+  }
+
+  .hero {
+    gap: 16px;
+  }
+
+  .hero-content h1 {
+    font-size: 2rem;
+  }
+
+  .hero-content p {
+    font-size: 1rem;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-actions .btn,
+  .hero-actions .btn-ghost {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .hero-media {
+    padding: 8px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card strong {
+    font-size: 1.15rem;
+  }
+
+  .review-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cta-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+  }
+
+  .cta-banner a {
+    text-align: center;
+  }
+
+  .chart-header,
+  .chart-controls,
+  .chart-legend {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .shot img {
+    height: 200px;
+  }
+}
+
+@media (max-width: 420px) {
+  .wrap {
+    padding: 0 12px;
+  }
+
+  .hero-content h1 {
+    font-size: 1.75rem;
+  }
+
+  .btn,
+  button,
+  .cta {
+    width: 100%;
+  }
+}
