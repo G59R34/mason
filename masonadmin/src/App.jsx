@@ -70,6 +70,8 @@ export default function App() {
   const [sessionNoteDrafts, setSessionNoteDrafts] = useState({});
   const [sessionMessageDrafts, setSessionMessageDrafts] = useState({});
   const [sessionActionStatus, setSessionActionStatus] = useState({});
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0, session: null });
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [hasConversationSubject, setHasConversationSubject] = useState(false);
   const [hasConversationClosedAt, setHasConversationClosedAt] = useState(false);
@@ -173,6 +175,24 @@ export default function App() {
     });
     return Array.from(map.entries());
   }, [timelineSessions]);
+  const scheduleDays = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, idx) => {
+      return new Date(rangeStart.getTime() + idx * 24 * 60 * 60 * 1000);
+    });
+  }, [rangeStart]);
+  const scheduleRows = useMemo(() => {
+    const dayKey = (date) => date.toISOString().slice(0, 10);
+    return staffBuckets.map(([staff, items]) => {
+      const byDay = new Map(scheduleDays.map((day) => [dayKey(day), []]));
+      items.forEach(({ sessionItem, start, end }) => {
+        const key = dayKey(start);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push({ sessionItem, start, end });
+      });
+      return { staff, items, byDay };
+    });
+  }, [staffBuckets, scheduleDays]);
+  const nowOffsetPercent = clamp(((now.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100);
 
   useEffect(() => {
     if (!session) {
@@ -206,6 +226,24 @@ export default function App() {
     const id = window.setInterval(() => setNow(new Date()), 30000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!contextMenu.open) return undefined;
+    const handleClick = () => {
+      setContextMenu({ open: false, x: 0, y: 0, session: null });
+    };
+    const handleKey = (event) => {
+      if (event.key === 'Escape') {
+        setContextMenu({ open: false, x: 0, y: 0, session: null });
+      }
+    };
+    window.addEventListener('click', handleClick);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [contextMenu.open]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -783,6 +821,24 @@ export default function App() {
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
+  }
+
+  function openSessionDetails(sessionItem) {
+    setSelectedSession(sessionItem);
+    setContextMenu({ open: false, x: 0, y: 0, session: null });
+  }
+
+  function openSessionContextMenu(event, sessionItem) {
+    event.preventDefault();
+    setContextMenu({ open: true, x: event.clientX, y: event.clientY, session: sessionItem });
+  }
+
+  function openSessionCall(sessionItem) {
+    window.open(
+      `${window.location.origin}/sessioncall.html?session=${sessionItem.id}&role=admin`,
+      '_blank',
+      'noopener,noreferrer'
+    );
   }
 
   async function updateSessionStatus(id, nextStatus) {
@@ -1460,84 +1516,135 @@ export default function App() {
                 </div>
                 <div className="gantt-now">
                   <span className="pill">Now</span>
-                  <span>{formatDayLabel(now)} • {formatTime(now)}</span>
+                  <span>{formatDayLabel(now)} - {formatTime(now)}</span>
                 </div>
               </div>
-              <div className="gantt-shell">
-                <div className="gantt-table-head">
-                  <div className="gantt-col">Task</div>
-                  <div className="gantt-col">Status</div>
-                </div>
-                <div className="gantt-timeline-head">
-                  {Array.from({ length: 7 }).map((_, idx) => {
-                    const day = new Date(rangeStart.getTime() + idx * 24 * 60 * 60 * 1000);
-                    return (
-                      <div key={day.toISOString()} className="gantt-day">
-                        <div className="gantt-day-label">{formatDayLabel(day)}</div>
+              <div className="schedule-board" style={{ '--now-left': nowOffsetPercent }}>
+                <div className="schedule-head">
+                  <div className="schedule-staff-head">Staff</div>
+                  <div className="schedule-days">
+                    {scheduleDays.map((day) => (
+                      <div key={day.toISOString()} className="schedule-day">
+                        <div className="schedule-day-label">{formatDayLabel(day)}</div>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-                <div className="gantt-table-body">
+                <div className="schedule-body">
+                  <div className="schedule-now-line" />
                   {timelineSessions.length === 0 && (
-                    <div className="gantt-empty muted">No scheduled sessions in the next 7 days.</div>
+                    <div className="schedule-empty muted">No scheduled sessions in the next 7 days.</div>
                   )}
-                  {staffBuckets.map(([staff, items]) => (
-                    <React.Fragment key={staff}>
-                      <div className="gantt-group">
-                        <span className="pill">{staff.toUpperCase()}</span>
+                  {scheduleRows.map((row) => (
+                    <div key={row.staff} className="schedule-row">
+                      <div className="schedule-staff">
+                        <div className="staff-name">{row.staff}</div>
+                        <div className="staff-count">{row.items.length} sessions</div>
                       </div>
-                      {items.length === 0 && (
-                        <div className="gantt-table-row gantt-empty-row">
-                          <div className="muted">No sessions</div>
-                          <span className="pill">—</span>
-                        </div>
-                      )}
-                      {items.map(({ sessionItem, start }) => (
-                        <div key={sessionItem.id} className="gantt-table-row">
-                          <div>
-                            <p className="gantt-task">{sessionItem.customer_name || 'Session'}</p>
-                            <p className="muted">{formatTime(start)}</p>
-                          </div>
-                          <span className="pill">{sessionStatusLabel(sessionItem.status)}</span>
-                        </div>
-                      ))}
-                    </React.Fragment>
-                  ))}
-                </div>
-                <div className="gantt-timeline-body">
-                  <div
-                    className="gantt-now-line"
-                    style={{
-                      left: `${clamp(((now.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100)}%`
-                    }}
-                  />
-                  {staffBuckets.map(([staff, items]) => (
-                    <React.Fragment key={staff}>
-                      <div className="gantt-group-row">
-                        <div className="gantt-group-label">{staff}</div>
-                      </div>
-                      {items.length === 0 && <div className="gantt-bar-row gantt-empty-row" />}
-                      {items.map(({ sessionItem, start, end }) => {
-                        const left = clamp(((start.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100);
-                        const right = clamp(((end.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100);
-                        const width = Math.max(right - left, 0.5);
-                        return (
-                          <div key={sessionItem.id} className="gantt-bar-row">
-                            <div
-                              className={`gantt-bar status-${sessionStatusLabel(sessionItem.status)}`}
-                              style={{ left: `${left}%`, width: `${width}%` }}
-                              title={`${sessionItem.customer_name || 'Session'} • ${formatDayLabel(start)} ${formatTime(start)}`}
-                            >
-                              <span>{sessionItem.customer_name || 'Session'}</span>
+                      <div className="schedule-cells">
+                        {scheduleDays.map((day) => {
+                          const key = day.toISOString().slice(0, 10);
+                          const items = row.byDay.get(key) || [];
+                          return (
+                            <div key={key} className="schedule-cell">
+                              {items.length === 0 && <span className="schedule-empty-cell">—</span>}
+                              {items.map(({ sessionItem, start, end }) => (
+                                <button
+                                  key={sessionItem.id}
+                                  type="button"
+                                  className={`schedule-chip status-${sessionStatusLabel(sessionItem.status)}`}
+                                  onClick={() => openSessionDetails(sessionItem)}
+                                  onContextMenu={(event) => openSessionContextMenu(event, sessionItem)}
+                                  title="Click for details. Right-click to edit."
+                                >
+                                  <div className="chip-title">{sessionItem.customer_name || 'Session'}</div>
+                                  <div className="chip-meta">
+                                    {formatTime(start)} - {sessionItem.duration_minutes || 60} min
+                                  </div>
+                                  <div className="chip-meta">
+                                    {sessionItem.location ? `@ ${sessionItem.location}` : 'Location TBD'}
+                                  </div>
+                                </button>
+                              ))}
                             </div>
-                          </div>
-                        );
-                      })}
-                    </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
+              {selectedSession && (
+                <div className="session-detail-drawer">
+                  <div className="session-detail-header">
+                    <div>
+                      <h4>Session details</h4>
+                      <p className="muted">
+                        {selectedSession.customer_name || 'Session'} - {selectedSession.staff_name || 'Unassigned'}
+                      </p>
+                    </div>
+                    <button type="button" className="ghost" onClick={() => setSelectedSession(null)}>
+                      Close
+                    </button>
+                  </div>
+                  <div className="session-detail-grid">
+                    <div>
+                      <span className="detail-label">Status</span>
+                      <span>{sessionStatusLabel(selectedSession.status)}</span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Scheduled</span>
+                      <span>
+                        {selectedSession.scheduled_for
+                          ? new Date(selectedSession.scheduled_for).toLocaleString()
+                          : 'Not scheduled'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Duration</span>
+                      <span>{selectedSession.duration_minutes || '—'} mins</span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Location</span>
+                      <span>{selectedSession.location || 'Location TBD'}</span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Contact</span>
+                      <span>{selectedSession.contact || 'Not provided'}</span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Price</span>
+                      <span>{selectedSession.price || '—'}</span>
+                    </div>
+                  </div>
+                  {selectedSession.details && (
+                    <div className="session-detail-notes">
+                      <span className="detail-label">Details</span>
+                      <p>{selectedSession.details}</p>
+                    </div>
+                  )}
+                  <div className="session-detail-actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startEditSession(selectedSession);
+                        setActiveTab('sessions');
+                      }}
+                    >
+                      Edit session
+                    </button>
+                    <button type="button" className="ghost" onClick={() => openSessionChat(selectedSession)}>
+                      Open chat
+                    </button>
+                    <button type="button" className="ghost" onClick={() => openSessionCall(selectedSession)}>
+                      Call client
+                    </button>
+                    <button type="button" className="danger" onClick={() => deleteSession(selectedSession.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -1996,13 +2103,7 @@ export default function App() {
                         <button
                           type="button"
                           className="ghost"
-                          onClick={() =>
-                            window.open(
-                              `${window.location.origin}/sessioncall.html?session=${sessionItem.id}&role=admin`,
-                              '_blank',
-                              'noopener,noreferrer'
-                            )
-                          }
+                          onClick={() => openSessionCall(sessionItem)}
                         >
                           Call
                         </button>
@@ -2631,6 +2732,57 @@ export default function App() {
 
             {whyStatus && <p className="muted">{whyStatus}</p>}
           </section>
+        )}
+        {contextMenu.open && contextMenu.session && (
+          <div className="session-context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+            <button
+              type="button"
+              onClick={() => {
+                openSessionDetails(contextMenu.session);
+                setContextMenu({ open: false, x: 0, y: 0, session: null });
+              }}
+            >
+              View details
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                startEditSession(contextMenu.session);
+                setActiveTab('sessions');
+                setContextMenu({ open: false, x: 0, y: 0, session: null });
+              }}
+            >
+              Edit session
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                openSessionChat(contextMenu.session);
+                setContextMenu({ open: false, x: 0, y: 0, session: null });
+              }}
+            >
+              Open chat
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                openSessionCall(contextMenu.session);
+                setContextMenu({ open: false, x: 0, y: 0, session: null });
+              }}
+            >
+              Call client
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => {
+                deleteSession(contextMenu.session.id);
+                setContextMenu({ open: false, x: 0, y: 0, session: null });
+              }}
+            >
+              Delete session
+            </button>
+          </div>
         )}
       </main>
     </div>
