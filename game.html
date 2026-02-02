@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Mason's Life - 3D</title>
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
@@ -131,6 +131,14 @@
       .panel{position:fixed;right:16px;top:16px}
       .hud{inset:16px 16px auto 16px}
       .log{left:16px;bottom:16px}
+    }
+
+    @media (max-width:640px){
+      .hud{inset:12px 12px auto 12px}
+      .hud-card{min-width:100px;padding:8px 10px}
+      .panel{left:12px;right:12px;width:auto}
+      .panel h1{font-size:1.4rem}
+      .log{left:12px;right:12px;width:auto;max-height:160px}
     }
   </style>
 </head>

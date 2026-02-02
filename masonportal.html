@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Mason Portal</title>
   <style>
     body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#f2f2f2;color:#111}
@@ -30,6 +30,13 @@
     .split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     @media (max-width:980px){
       .grid-2,.split{grid-template-columns:1fr}
+    }
+    @media (max-width:720px){
+      .wrap{padding:10px 12px 20px}
+      .bar{padding:8px 12px}
+      .row{flex-direction:column;align-items:stretch}
+      input,textarea,button{min-height:40px}
+      .list{max-height:260px}
     }
   </style>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/frappe-gantt/0.6.1/frappe-gantt.css">
