@@ -157,6 +157,9 @@
         </div>
         <button id="logoutBtn" class="ghost">Sign out</button>
       </div>
+      <div id="clientNotifications" class="panel-note" style="margin-top:10px;display:none;cursor:pointer">
+        New messages from staff: <strong id="clientNotificationsCount">0</strong>
+      </div>
       <div class="panel-note">Manage your display name and keep your details up to date.</div>
       <form id="profileForm" style="margin-top:12px">
         <label for="displayName">Display name</label>
@@ -195,15 +198,11 @@
             <label for="bkStaff">Book with</label>
             <select id="bkStaff">
               <option value="">No preference</option>
-              <option value="Mason">Mason</option>
-              <option value="Carter">Carter</option>
-              <option value="Gilgy">Gilgy</option>
-              <option value="Jade">Jade</option>
             </select>
           </div>
           <div>
             <label for="bkWhen">Preferred time</label>
-            <input id="bkWhen" placeholder="2026-02-01 18:00" />
+            <input id="bkWhen" type="datetime-local" />
           </div>
           <div>
             <label for="bkDuration">Duration (minutes)</label>

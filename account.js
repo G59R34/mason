@@ -18,13 +18,25 @@
   const bookingCard = document.getElementById('bookingCard');
   const sessionsCard = document.getElementById('sessionsCard');
   const bookingForm = document.getElementById('bookingForm');
+  const staffSelect = document.getElementById('bkStaff');
   const bookingStatus = document.getElementById('bookingStatus');
   const sessionsList = document.getElementById('sessionsList');
   const profileForm = document.getElementById('profileForm');
   const displayNameInput = document.getElementById('displayName');
   const profileStatus = document.getElementById('profileStatus');
+  const notificationsBanner = document.getElementById('clientNotifications');
+  const notificationsCount = document.getElementById('clientNotificationsCount');
 
   let currentUser = null;
+  let notificationsChannel = null;
+  let sessionsChannel = null;
+  let lastConversationIds = [];
+  const seenMsgKey = 'ms_client_seen_msgs';
+  const seenMsgTsKey = 'ms_client_seen_ts';
+  const seenMsgIds = new Set(JSON.parse(localStorage.getItem(seenMsgKey) || '[]'));
+  let lastSeenTs = Number(localStorage.getItem(seenMsgTsKey) || 0);
+  let lastUnreadMessageCount = 0;
+  let lastUnreadSessionCount = 0;
 
   function setLoggedInUI(on) {
     authCard.style.display = on ? 'none' : '';
@@ -80,6 +92,95 @@
       email: currentUser.email
     }]);
     displayNameInput.value = fallbackName;
+  }
+
+  function setNotificationCount(count) {
+    if (!notificationsBanner || !notificationsCount) return;
+    if (count > 0) {
+      notificationsCount.textContent = String(count);
+      notificationsBanner.style.display = '';
+    } else {
+      notificationsBanner.style.display = 'none';
+    }
+  }
+
+  function updateNotificationTotal() {
+    setNotificationCount(lastUnreadMessageCount + lastUnreadSessionCount);
+  }
+
+  function markAllSeen(ids) {
+    ids.forEach((id) => seenMsgIds.add(id));
+    localStorage.setItem(seenMsgKey, JSON.stringify(Array.from(seenMsgIds).slice(-500)));
+    lastSeenTs = Date.now();
+    localStorage.setItem(seenMsgTsKey, String(lastSeenTs));
+    lastUnreadMessageCount = 0;
+    lastUnreadSessionCount = 0;
+    updateNotificationTotal();
+  }
+
+  async function loadNotifications(conversationIds) {
+    if (!conversationIds || conversationIds.length === 0) {
+      lastUnreadMessageCount = 0;
+      updateNotificationTotal();
+      return;
+    }
+    const { data, error } = await sb
+      .from('conversation_messages')
+      .select('id, conversation_id, sender_role')
+      .in('conversation_id', conversationIds)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error || !data) return;
+    const unseen = data.filter((msg) => msg.sender_role !== 'user' && !seenMsgIds.has(msg.id));
+    lastUnreadMessageCount = unseen.length;
+    updateNotificationTotal();
+  }
+
+  function subscribeNotifications(conversationIds) {
+    if (notificationsChannel) {
+      sb.removeChannel(notificationsChannel);
+      notificationsChannel = null;
+    }
+    lastConversationIds = conversationIds || [];
+    if (!lastConversationIds.length) {
+      setNotificationCount(0);
+      return;
+    }
+    notificationsChannel = sb
+      .channel('client:conversation_messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_messages' }, (payload) => {
+        const msg = payload.new;
+        if (!msg || !lastConversationIds.includes(msg.conversation_id)) return;
+        if (msg.sender_role === 'user') return;
+        if (!seenMsgIds.has(msg.id)) {
+          lastUnreadMessageCount += 1;
+          updateNotificationTotal();
+        }
+      })
+      .subscribe();
+  }
+
+  function subscribeSessionUpdates() {
+    if (!currentUser) return;
+    if (sessionsChannel) {
+      sb.removeChannel(sessionsChannel);
+      sessionsChannel = null;
+    }
+    sessionsChannel = sb
+      .channel('client:sessions')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `user_id=eq.${currentUser.id}` },
+        (payload) => {
+          const s = payload.new;
+          if (!s || !s.admin_message_sent_at) return;
+          const ts = new Date(s.admin_message_sent_at).getTime();
+          if (Number.isNaN(ts) || ts <= lastSeenTs) return;
+          lastUnreadSessionCount += 1;
+          updateNotificationTotal();
+        }
+      )
+      .subscribe();
   }
 
   async function loadSessions() {
@@ -138,6 +239,62 @@
       item.appendChild(actions);
       sessionsList.appendChild(item);
     });
+
+    lastUnreadSessionCount = (data || []).filter((s) => {
+      if (!s.admin_message_sent_at) return false;
+      const ts = new Date(s.admin_message_sent_at).getTime();
+      return ts > lastSeenTs;
+    }).length;
+
+    const convoIds = Array.from(new Set((data || []).map((s) => s.session_chat_id).filter(Boolean)));
+    lastConversationIds = convoIds;
+    loadNotifications(convoIds);
+    subscribeNotifications(convoIds);
+    subscribeSessionUpdates();
+  }
+
+  function normalizeStaffName(value) {
+    return String(value || '')
+      .replace(/[\u00a0\u200b\u200c\u200d\u2060]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async function loadStaff() {
+    if (!staffSelect) return;
+    staffSelect.innerHTML = '<option value=\"\">No preference</option>';
+    const { data, error } = await sb
+      .from('staff')
+      .select('name, active, sort_order')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+    if (error) {
+      console.warn('load staff failed', error);
+      return;
+    }
+    const seen = new Set();
+    (data || []).filter(row => row.active !== false).forEach(row => {
+      const cleanName = normalizeStaffName(row.name);
+      const key = cleanName.toLowerCase();
+      if (!cleanName || seen.has(key)) return;
+      seen.add(key);
+      const opt = document.createElement('option');
+      opt.value = cleanName;
+      opt.textContent = cleanName;
+      staffSelect.appendChild(opt);
+    });
+
+    // Final de-dupe pass in case the DOM already has duplicates
+    const optionSeen = new Set();
+    Array.from(staffSelect.options).forEach((opt) => {
+      const clean = normalizeStaffName(opt.textContent).toLowerCase();
+      if (!clean) return;
+      if (optionSeen.has(clean)) {
+        opt.remove();
+      } else {
+        optionSeen.add(clean);
+      }
+    });
   }
 
   async function ensureSessionChat(session) {
@@ -169,10 +326,12 @@
       setLoggedInUI(true);
       loadProfile();
       loadSessions();
+      loadStaff();
     } else {
       authStatus.textContent = 'Not signed in.';
       setLoggedInUI(false);
       showLogin();
+      setNotificationCount(0);
     }
   }
 
@@ -268,7 +427,27 @@
       authStatus.textContent = 'Not signed in.';
       setLoggedInUI(false);
       showLogin();
+      setNotificationCount(0);
     }
   });
+
+  if (notificationsBanner) {
+    notificationsBanner.addEventListener('click', () => {
+      if (!lastConversationIds.length) return;
+      loadNotifications(lastConversationIds).then(() => {
+        const unreadIds = [];
+        // Re-fetch to mark all as seen
+        sb.from('conversation_messages')
+          .select('id')
+          .in('conversation_id', lastConversationIds)
+          .then(({ data }) => {
+            (data || []).forEach((row) => unreadIds.push(row.id));
+            markAllSeen(unreadIds);
+          });
+      });
+    });
+  }
+
+  loadStaff();
   await refreshAuth();
 })();

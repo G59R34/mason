@@ -55,6 +55,21 @@ CREATE TABLE IF NOT EXISTS public.sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_created_idx ON public.sessions (created_at);
 
+-- Staff directory (assignable to sessions)
+CREATE TABLE IF NOT EXISTS public.staff (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  active boolean DEFAULT true,
+  sort_order int DEFAULT 0,
+  user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS staff_name_idx ON public.staff (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS staff_name_trim_idx ON public.staff (lower(trim(name)));
+CREATE INDEX IF NOT EXISTS staff_sort_idx ON public.staff (sort_order);
+CREATE INDEX IF NOT EXISTS staff_user_id_idx ON public.staff (user_id);
+
 -- Announcements (if not already present)
 CREATE TABLE IF NOT EXISTS public.announcements (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -155,6 +170,12 @@ BEGIN
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='staff' AND column_name='user_id'
+  ) THEN
+    ALTER TABLE public.staff ADD COLUMN user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
     WHERE table_schema='public' AND table_name='user_profiles' AND column_name='email'
   ) THEN
     ALTER TABLE public.user_profiles ADD COLUMN email text;
@@ -188,6 +209,22 @@ ALTER TABLE public.call_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.call_signals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.staff ENABLE ROW LEVEL SECURITY;
+
+-- Normalize staff names on insert/update
+CREATE OR REPLACE FUNCTION public.staff_normalize_name()
+RETURNS trigger AS $$
+BEGIN
+  NEW.name := trim(NEW.name);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS staff_normalize_name ON public.staff;
+CREATE TRIGGER staff_normalize_name
+BEFORE INSERT OR UPDATE ON public.staff
+FOR EACH ROW
+EXECUTE FUNCTION public.staff_normalize_name();
 
 -- Public policies (prototype / internal use only)
 DROP POLICY IF EXISTS public_select_conversations ON public.conversations;
@@ -211,12 +248,56 @@ CREATE POLICY public_update_sessions ON public.sessions FOR UPDATE USING (true) 
 DROP POLICY IF EXISTS public_delete_sessions ON public.sessions;
 CREATE POLICY public_delete_sessions ON public.sessions FOR DELETE USING (true);
 
+-- Staff can view/update sessions assigned to them
+DROP POLICY IF EXISTS staff_select_assigned_sessions ON public.sessions;
+CREATE POLICY staff_select_assigned_sessions ON public.sessions
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.staff s
+    WHERE s.user_id = auth.uid()
+      AND lower(trim(s.name)) = lower(trim(staff_name))
+  )
+);
+
+DROP POLICY IF EXISTS staff_update_assigned_sessions ON public.sessions;
+CREATE POLICY staff_update_assigned_sessions ON public.sessions
+FOR UPDATE USING (
+  EXISTS (
+    SELECT 1 FROM public.staff s
+    WHERE s.user_id = auth.uid()
+      AND lower(trim(s.name)) = lower(trim(staff_name))
+  )
+) WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.staff s
+    WHERE s.user_id = auth.uid()
+      AND lower(trim(s.name)) = lower(trim(staff_name))
+  )
+);
+
 DROP POLICY IF EXISTS public_select_announcements ON public.announcements;
 CREATE POLICY public_select_announcements ON public.announcements FOR SELECT USING (true);
 DROP POLICY IF EXISTS public_insert_announcements ON public.announcements;
 CREATE POLICY public_insert_announcements ON public.announcements FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS public_delete_announcements ON public.announcements;
 CREATE POLICY public_delete_announcements ON public.announcements FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS public_select_staff ON public.staff;
+CREATE POLICY public_select_staff ON public.staff FOR SELECT USING (true);
+DROP POLICY IF EXISTS public_insert_staff ON public.staff;
+CREATE POLICY public_insert_staff ON public.staff FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS public_update_staff ON public.staff;
+CREATE POLICY public_update_staff ON public.staff FOR UPDATE USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS public_delete_staff ON public.staff;
+CREATE POLICY public_delete_staff ON public.staff FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS staff_select_self ON public.staff;
+CREATE POLICY staff_select_self ON public.staff
+FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS staff_update_self ON public.staff;
+CREATE POLICY staff_update_self ON public.staff
+FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS public_select_reviews ON public.reviews;
 CREATE POLICY public_select_reviews ON public.reviews FOR SELECT USING (true);
@@ -256,4 +337,3 @@ DROP POLICY IF EXISTS user_upsert_own_profile ON public.user_profiles;
 CREATE POLICY user_upsert_own_profile ON public.user_profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS user_update_own_profile ON public.user_profiles;
 CREATE POLICY user_update_own_profile ON public.user_profiles FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-

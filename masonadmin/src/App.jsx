@@ -14,6 +14,10 @@ const TABS = [
   { id: 'settings', label: 'Settings' }
 ];
 
+const STAFF_TABS = [
+  { id: 'sessions', label: 'My Sessions' }
+];
+
 const emptyCounts = {
   Reviews: 0,
   Conversations: 0,
@@ -48,6 +52,11 @@ function useAuth() {
 export default function App() {
   const { session, loading: authLoading } = useAuth();
   const [adminState, setAdminState] = useState({ status: 'idle', error: '' });
+  const [staffState, setStaffState] = useState({ status: 'idle', error: '' });
+  const [staffProfile, setStaffProfile] = useState(null);
+  const [loginMode, setLoginMode] = useState(() => {
+    return window.localStorage.getItem('ms_login_mode') || 'admin';
+  });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [counts, setCounts] = useState(emptyCounts);
   const [announcements, setAnnouncements] = useState([]);
@@ -66,9 +75,17 @@ export default function App() {
   const [reviews, setReviews] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [clients, setClients] = useState([]);
+  const [staff, setStaff] = useState([]);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffActive, setNewStaffActive] = useState(true);
+  const [newStaffSortOrder, setNewStaffSortOrder] = useState(0);
+  const [newStaffUserId, setNewStaffUserId] = useState('');
+  const [staffStatus, setStaffStatus] = useState('');
   const [sessionFilter, setSessionFilter] = useState('all');
   const [sessionNoteDrafts, setSessionNoteDrafts] = useState({});
   const [sessionMessageDrafts, setSessionMessageDrafts] = useState({});
+  const [sessionChatMessages, setSessionChatMessages] = useState({});
+  const [sessionChatOpen, setSessionChatOpen] = useState({});
   const [sessionActionStatus, setSessionActionStatus] = useState({});
   const [selectedSession, setSelectedSession] = useState(null);
   const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0, session: null });
@@ -141,10 +158,11 @@ export default function App() {
   const gravityTimeoutRef = useRef(null);
   const [now, setNow] = useState(new Date());
 
-  const isReady = useMemo(
-    () => session && adminState.status === 'allowed',
-    [session, adminState.status]
-  );
+  const isStaffMode = loginMode === 'staff';
+  const isReady = useMemo(() => {
+    if (!session) return false;
+    return isStaffMode ? staffState.status === 'allowed' : adminState.status === 'allowed';
+  }, [session, isStaffMode, adminState.status, staffState.status]);
 
   const rangeStart = useMemo(() => {
     const start = new Date(now);
@@ -166,15 +184,19 @@ export default function App() {
       .filter(Boolean);
   }, [sessions, rangeStart, rangeEnd]);
   const staffBuckets = useMemo(() => {
-    const labels = ['Mason', 'Carter', 'Gilgy', 'Jade', 'Unassigned'];
+    const activeStaff = staff.filter((row) => row.active).map((row) => row.name);
+    const sessionStaff = timelineSessions
+      .map(({ sessionItem }) => sessionItem.staff_name)
+      .filter(Boolean);
+    const labels = Array.from(new Set([...activeStaff, ...sessionStaff, 'Unassigned']));
     const map = new Map(labels.map((name) => [name, []]));
     timelineSessions.forEach(({ sessionItem, start, end }) => {
-      const staff = sessionItem.staff_name || 'Unassigned';
-      if (!map.has(staff)) map.set(staff, []);
-      map.get(staff).push({ sessionItem, start, end });
+      const staffName = sessionItem.staff_name || 'Unassigned';
+      if (!map.has(staffName)) map.set(staffName, []);
+      map.get(staffName).push({ sessionItem, start, end });
     });
     return Array.from(map.entries());
-  }, [timelineSessions]);
+  }, [timelineSessions, staff]);
   const scheduleDays = useMemo(() => {
     return Array.from({ length: 7 }).map((_, idx) => {
       return new Date(rangeStart.getTime() + idx * 24 * 60 * 60 * 1000);
@@ -197,30 +219,61 @@ export default function App() {
   useEffect(() => {
     if (!session) {
       setAdminState({ status: 'idle', error: '' });
+      setStaffState({ status: 'idle', error: '' });
+      setStaffProfile(null);
       return;
     }
     let mounted = true;
-    setAdminState({ status: 'checking', error: '' });
-    supabase
-      .rpc('is_admin')
-      .then(({ data, error }) => {
-        if (!mounted) return;
-        if (error) {
-          setAdminState({ status: 'denied', error: error.message });
-        } else if (data) {
-          setAdminState({ status: 'allowed', error: '' });
-        } else {
-          setAdminState({ status: 'denied', error: '' });
-        }
-      })
-      .catch((err) => {
-        if (!mounted) return;
-        setAdminState({ status: 'denied', error: err.message });
-      });
+    if (isStaffMode) {
+      setStaffState({ status: 'checking', error: '' });
+      supabase
+        .from('staff')
+        .select('id, name, active, user_id')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!mounted) return;
+          if (error) {
+            setStaffState({ status: 'denied', error: error.message });
+            setStaffProfile(null);
+            return;
+          }
+          if (data && data.active) {
+            setStaffState({ status: 'allowed', error: '' });
+            setStaffProfile(data);
+          } else {
+            setStaffState({ status: 'denied', error: 'No active staff record found.' });
+            setStaffProfile(null);
+          }
+        })
+        .catch((err) => {
+          if (!mounted) return;
+          setStaffState({ status: 'denied', error: err.message });
+          setStaffProfile(null);
+        });
+    } else {
+      setAdminState({ status: 'checking', error: '' });
+      supabase
+        .rpc('is_admin')
+        .then(({ data, error }) => {
+          if (!mounted) return;
+          if (error) {
+            setAdminState({ status: 'denied', error: error.message });
+          } else if (data) {
+            setAdminState({ status: 'allowed', error: '' });
+          } else {
+            setAdminState({ status: 'denied', error: '' });
+          }
+        })
+        .catch((err) => {
+          if (!mounted) return;
+          setAdminState({ status: 'denied', error: err.message });
+        });
+    }
     return () => {
       mounted = false;
     };
-  }, [session]);
+  }, [session, isStaffMode]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 30000);
@@ -247,22 +300,26 @@ export default function App() {
 
   useEffect(() => {
     if (!isReady) return;
-    loadDashboard();
-    loadAnnouncements();
-    loadConversations();
-    loadReviews();
     loadSessions();
-    loadClients();
-    detectConversationColumns();
-    detectAnnouncementColumns();
-    loadAdminProfile();
-    loadWhyContent();
-    loadPricingContent();
-    loadGalleryContent();
+    if (!isStaffMode) {
+      loadDashboard();
+      loadAnnouncements();
+      loadConversations();
+      loadReviews();
+      loadClients();
+      loadStaff();
+      detectConversationColumns();
+      detectAnnouncementColumns();
+      loadAdminProfile();
+      loadWhyContent();
+      loadPricingContent();
+      loadGalleryContent();
+    }
   }, [isReady]);
 
   useEffect(() => {
     if (!isReady) return;
+    if (isStaffMode) return;
     const convoChannel = supabase
       .channel('admin:conversations')
       .on(
@@ -346,7 +403,7 @@ export default function App() {
       supabase.removeChannel(reviewsChannel);
       window.clearInterval(pollId);
     };
-  }, [isReady, currentConversation]);
+  }, [isReady, currentConversation, isStaffMode]);
 
   async function detectConversationColumns() {
     try {
@@ -544,12 +601,106 @@ export default function App() {
   }
 
   async function loadSessions() {
-    const { data } = await supabase
+    let query = supabase
       .from('sessions')
       .select('*')
       .order('scheduled_for', { ascending: true })
       .limit(100);
+    if (isStaffMode && staffProfile?.name) {
+      query = query.eq('staff_name', staffProfile.name);
+    }
+    const { data } = await query;
     setSessions(data || []);
+  }
+
+  async function loadStaff() {
+    const { data, error } = await supabase
+      .from('staff')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+    if (error) {
+      console.warn('load staff failed', error);
+      setStaffStatus(error.message || 'Failed to load staff.');
+      setStaff([]);
+      return;
+    }
+    setStaff(data || []);
+  }
+
+  function normalizeStaffName(value) {
+    return String(value || '')
+      .replace(/[\u00a0\u200b\u200c\u200d\u2060]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async function createStaff(event) {
+    event.preventDefault();
+    const name = normalizeStaffName(newStaffName);
+    if (!name) {
+      setStaffStatus('Staff name is required.');
+      return;
+    }
+    const exists = staff.some(
+      (row) => normalizeStaffName(row.name).toLowerCase() === name.toLowerCase()
+    );
+    if (exists) {
+      setStaffStatus('That staff name already exists.');
+      return;
+    }
+    setStaffStatus('Saving...');
+    const { error } = await supabase.from('staff').insert([{
+      name,
+      active: newStaffActive,
+      sort_order: Number(newStaffSortOrder || 0),
+      user_id: newStaffUserId.trim() || null
+    }]);
+    if (error) {
+      setStaffStatus(error.message || 'Failed to create staff.');
+      return;
+    }
+    setNewStaffName('');
+    setNewStaffActive(true);
+    setNewStaffSortOrder(0);
+    setNewStaffUserId('');
+    setStaffStatus('Saved.');
+    loadStaff();
+  }
+
+  async function updateStaffUserId(staffItem, value) {
+    const userId = value.trim() || null;
+    const { error } = await supabase
+      .from('staff')
+      .update({ user_id: userId })
+      .eq('id', staffItem.id);
+    if (error) {
+      setStaffStatus(error.message || 'Failed to update staff user.');
+      return;
+    }
+    loadStaff();
+  }
+
+  async function toggleStaffActive(staffItem) {
+    const { error } = await supabase
+      .from('staff')
+      .update({ active: !staffItem.active })
+      .eq('id', staffItem.id);
+    if (error) {
+      setStaffStatus(error.message || 'Failed to update staff.');
+      return;
+    }
+    loadStaff();
+  }
+
+  async function deleteStaff(staffItem) {
+    if (!window.confirm(`Delete staff "${staffItem.name}"?`)) return;
+    const { error } = await supabase.from('staff').delete().eq('id', staffItem.id);
+    if (error) {
+      setStaffStatus(error.message || 'Failed to delete staff.');
+      return;
+    }
+    loadStaff();
   }
 
   async function loadClients() {
@@ -636,13 +787,23 @@ export default function App() {
     if (!email || !password) return;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      setAdminState({ status: 'denied', error: error.message });
+      if (isStaffMode) {
+        setStaffState({ status: 'denied', error: error.message });
+      } else {
+        setAdminState({ status: 'denied', error: error.message });
+      }
     }
   }
 
   async function handleLogout() {
     await supabase.auth.signOut();
     setActiveTab('dashboard');
+  }
+
+  function handleLoginModeChange(mode) {
+    setLoginMode(mode);
+    window.localStorage.setItem('ms_login_mode', mode);
+    setActiveTab(mode === 'staff' ? 'sessions' : 'dashboard');
   }
 
   async function submitAnnouncement(event) {
@@ -900,6 +1061,32 @@ export default function App() {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  async function loadSessionChat(sessionItem) {
+    const convoId = await ensureSessionConversation(sessionItem);
+    if (!convoId) {
+      setSessionStatus(sessionItem.id, 'Assign a client before opening chat.');
+      return;
+    }
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .select('*')
+      .eq('conversation_id', convoId)
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.warn('load chat failed', error);
+      return;
+    }
+    setSessionChatMessages((prev) => ({ ...prev, [sessionItem.id]: data || [] }));
+  }
+
+  function toggleSessionChat(sessionItem) {
+    setSessionChatOpen((prev) => {
+      const next = !prev[sessionItem.id];
+      if (next) loadSessionChat(sessionItem);
+      return { ...prev, [sessionItem.id]: next };
+    });
+  }
+
   async function sendSessionMessage(sessionItem) {
     const message = (sessionMessageDrafts[sessionItem.id] || '').trim();
     if (!message) return;
@@ -913,7 +1100,7 @@ export default function App() {
     const { error: sessionErr } = await supabase.from('sessions').update(payload).eq('id', sessionItem.id);
     const { error: msgErr } = await supabase.from('conversation_messages').insert([{
       conversation_id: convoId,
-      sender: adminDisplayName || 'Mason Admin',
+      sender: isStaffMode ? (staffProfile?.name || session?.user?.email || 'Staff') : (adminDisplayName || 'Mason Admin'),
       body: message,
       sender_role: 'admin'
     }]);
@@ -933,6 +1120,9 @@ export default function App() {
     setSessionStatus(sessionItem.id, 'Message sent.');
     setSessionMessageDrafts((prev) => ({ ...prev, [sessionItem.id]: '' }));
     loadSessions();
+    if (isStaffMode && sessionChatOpen[sessionItem.id]) {
+      loadSessionChat(sessionItem);
+    }
   }
 
   function handleSessionChange(event) {
@@ -962,19 +1152,25 @@ export default function App() {
 
   async function createSession(event) {
     event.preventDefault();
+    if (isStaffMode && !editingSessionId) return;
     if (!sessionForm.customer_name.trim() || !sessionForm.contact.trim()) return;
-    const payload = {
+    const basePayload = {
       customer_name: sessionForm.customer_name.trim(),
       contact: sessionForm.contact.trim(),
       details: sessionForm.details.trim(),
       scheduled_for: sessionForm.scheduled_for || null,
       location: sessionForm.location.trim() || null,
-      duration_minutes: sessionForm.duration_minutes ? Number(sessionForm.duration_minutes) : null,
-      price: sessionForm.price ? Number(sessionForm.price) : null,
-      status: sessionForm.status.trim() || 'scheduled',
-      staff_name: sessionForm.staff_name.trim() || null,
-      user_id: sessionForm.user_id || null
+      duration_minutes: sessionForm.duration_minutes ? Number(sessionForm.duration_minutes) : null
     };
+    const payload = isStaffMode
+      ? basePayload
+      : {
+          ...basePayload,
+          price: sessionForm.price ? Number(sessionForm.price) : null,
+          status: sessionForm.status.trim() || 'scheduled',
+          staff_name: sessionForm.staff_name.trim() || null,
+          user_id: sessionForm.user_id || null
+        };
     if (editingSessionId) {
       await supabase.from('sessions').update(payload).eq('id', editingSessionId);
     } else {
@@ -1395,11 +1591,29 @@ export default function App() {
       <div className="screen">
         <div className="card auth">
           <div>
-            <p className="eyebrow">Mason Admin Access</p>
+            <p className="eyebrow">{isStaffMode ? 'Mason Staff Access' : 'Mason Admin Access'}</p>
             <h1>Sign in to continue</h1>
             <p className="muted">
-              This admin console is isolated from the public website. Approved admins only.
+              {isStaffMode
+                ? 'Staff accounts only. You will only see your assigned sessions.'
+                : 'This admin console is isolated from the public website. Approved admins only.'}
             </p>
+          </div>
+          <div className="row" style={{ marginBottom: '12px' }}>
+            <button
+              type="button"
+              className={loginMode === 'admin' ? '' : 'ghost'}
+              onClick={() => handleLoginModeChange('admin')}
+            >
+              Admin
+            </button>
+            <button
+              type="button"
+              className={loginMode === 'staff' ? '' : 'ghost'}
+              onClick={() => handleLoginModeChange('staff')}
+            >
+              Staff
+            </button>
           </div>
           <form onSubmit={handleLogin} className="auth-form">
             <label>
@@ -1411,31 +1625,36 @@ export default function App() {
               <input type="password" name="password" placeholder="••••••••" required />
             </label>
             <button type="submit">Sign In</button>
-            {adminState.error ? <p className="error">{adminState.error}</p> : null}
+            {isStaffMode
+              ? (staffState.error ? <p className="error">{staffState.error}</p> : null)
+              : (adminState.error ? <p className="error">{adminState.error}</p> : null)}
           </form>
         </div>
       </div>
     );
   }
 
-  if (adminState.status === 'checking') {
+  if ((isStaffMode ? staffState.status : adminState.status) === 'checking') {
     return (
       <div className="screen">
         <div className="card">
-          <h2>Verifying admin access</h2>
-          <p className="muted">Checking admin permissions for {session.user.email}.</p>
+          <h2>Verifying access</h2>
+          <p className="muted">
+            Checking {isStaffMode ? 'staff' : 'admin'} permissions for {session.user.email}.
+          </p>
         </div>
       </div>
     );
   }
 
-  if (adminState.status !== 'allowed') {
+  if ((isStaffMode ? staffState.status : adminState.status) !== 'allowed') {
     return (
       <div className="screen">
         <div className="card">
           <h2>Access denied</h2>
           <p className="muted">
-            {adminState.error || 'Your account is not registered as an admin yet.'}
+            {(isStaffMode ? staffState.error : adminState.error) ||
+              (isStaffMode ? 'Your account is not registered as staff yet.' : 'Your account is not registered as an admin yet.')}
           </p>
           <button type="button" onClick={handleLogout}>
             Sign out
@@ -1451,12 +1670,12 @@ export default function App() {
         <div className="brand">
           <div className="logo">MA</div>
           <div>
-            <p className="eyebrow">Mason Admin</p>
-            <p className="muted">Operations Console</p>
+            <p className="eyebrow">{isStaffMode ? 'Mason Staff' : 'Mason Admin'}</p>
+            <p className="muted">{isStaffMode ? 'Appointments' : 'Operations Console'}</p>
           </div>
         </div>
         <nav className="nav">
-          {TABS.map((tab) => (
+          {(isStaffMode ? STAFF_TABS : TABS).map((tab) => (
             <button
               key={tab.id}
               className={tab.id === activeTab ? 'active' : ''}
@@ -1470,7 +1689,7 @@ export default function App() {
           <div className="profile">
             <div>
               <p className="muted">Signed in</p>
-              <p className="profile-name">{adminDisplayName || 'ADMIN'}</p>
+              <p className="profile-name">{isStaffMode ? (staffProfile?.name || 'STAFF') : (adminDisplayName || 'ADMIN')}</p>
             </div>
             <button type="button" onClick={handleLogout} className="ghost">
               Sign out
@@ -1480,17 +1699,19 @@ export default function App() {
       <main className="main">
         <header className="header">
           <div>
-            <h1>{TABS.find((tab) => tab.id === activeTab)?.label}</h1>
-            <p className="muted">Realtime operations snapshot for Mason portal data.</p>
+            <h1>{(isStaffMode ? STAFF_TABS : TABS).find((tab) => tab.id === activeTab)?.label}</h1>
+            <p className="muted">
+              {isStaffMode ? 'Only your assigned appointments are shown.' : 'Realtime operations snapshot for Mason portal data.'}
+            </p>
           </div>
           <div className="header-actions">
-            <button type="button" onClick={loadDashboard} className="ghost">
+            <button type="button" onClick={loadSessions} className="ghost">
               Refresh
             </button>
           </div>
         </header>
 
-        {activeTab === 'dashboard' && (
+        {!isStaffMode && activeTab === 'dashboard' && (
           <section className="stack">
             <div className="grid">
               {Object.entries(counts).map(([label, value]) => (
@@ -1649,7 +1870,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'announcements' && (
+        {!isStaffMode && activeTab === 'announcements' && (
           <section className="stack">
             <form className="card form" onSubmit={submitAnnouncement}>
               <h3>Post announcement</h3>
@@ -1758,7 +1979,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'conversations' && (
+        {!isStaffMode && activeTab === 'conversations' && (
           <section className="two-col">
             <div className="card list">
               <h3>Client conversations</h3>
@@ -1889,7 +2110,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'reviews' && (
+        {!isStaffMode && activeTab === 'reviews' && (
           <section className="stack">
             <div className="card list">
               <h3>Latest reviews</h3>
@@ -1923,133 +2144,209 @@ export default function App() {
         )}
 
         {activeTab === 'sessions' && (
-          <section className="two-col">
-            <form className="card form" onSubmit={createSession}>
-              <h3>Create session</h3>
-              <label>
-                Client name
-                <input
-                  name="customer_name"
-                  value={sessionForm.customer_name}
-                  onChange={handleSessionChange}
-                  placeholder="Client name"
-                />
-              </label>
-              <label>
-                Contact
-                <input
-                  name="contact"
-                  value={sessionForm.contact}
-                  onChange={handleSessionChange}
-                  placeholder="Phone or email"
-                />
-              </label>
-              <label>
-                Details
-                <textarea
-                  name="details"
-                  value={sessionForm.details}
-                  onChange={handleSessionChange}
-                  rows={3}
-                  placeholder="Session notes"
-                />
-              </label>
-              <label>
-                Scheduled for
-                <input
-                  type="datetime-local"
-                  name="scheduled_for"
-                  value={sessionForm.scheduled_for}
-                  onChange={handleSessionChange}
-                />
-              </label>
-              <label>
-                Location
-                <input
-                  name="location"
-                  value={sessionForm.location}
-                  onChange={handleSessionChange}
-                  placeholder="Address or on-site"
-                />
-              </label>
-              <label>
-                Book with
-                <select name="staff_name" value={sessionForm.staff_name} onChange={handleSessionChange}>
-                  <option value="">No preference</option>
-                  <option value="Mason">Mason</option>
-                  <option value="Carter">Carter</option>
-                  <option value="Gilgy">Gilgy</option>
-                  <option value="Jade">Jade</option>
-                </select>
-              </label>
-              <label>
-                Duration (minutes)
-                <input
-                  type="number"
-                  name="duration_minutes"
-                  value={sessionForm.duration_minutes}
-                  onChange={handleSessionChange}
-                  placeholder="60"
-                />
-              </label>
-              <label>
-                Price
-                <input
-                  type="number"
-                  name="price"
-                  value={sessionForm.price}
-                  onChange={handleSessionChange}
-                  placeholder="0"
-                />
-              </label>
-              <label>
-                Status
-                <select name="status" value={sessionForm.status} onChange={handleSessionChange}>
-                  <option value="requested">Requested</option>
-                  <option value="approved">Approved</option>
-                  <option value="denied">Denied</option>
-                  <option value="scheduled">Scheduled</option>
-                </select>
-              </label>
-              <label>
-                Assign to client
-                <select name="user_id" value={sessionForm.user_id} onChange={handleSessionChange}>
-                  <option value="">Unassigned</option>
-                  {clients.map((client) => (
-                    <option key={client.user_id} value={client.user_id}>
-                      {clientLabel(client)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="row">
-                <button type="submit">{editingSessionId ? 'Update session' : 'Save session'}</button>
-                {editingSessionId && (
+          <section className={isStaffMode ? 'stack' : 'two-col'}>
+            {!isStaffMode && (
+              <form className="card form" onSubmit={createSession}>
+                <h3>Create session</h3>
+                <label>
+                  Client name
+                  <input
+                    name="customer_name"
+                    value={sessionForm.customer_name}
+                    onChange={handleSessionChange}
+                    placeholder="Client name"
+                  />
+                </label>
+                <label>
+                  Contact
+                  <input
+                    name="contact"
+                    value={sessionForm.contact}
+                    onChange={handleSessionChange}
+                    placeholder="Phone or email"
+                  />
+                </label>
+                <label>
+                  Details
+                  <textarea
+                    name="details"
+                    value={sessionForm.details}
+                    onChange={handleSessionChange}
+                    rows={3}
+                    placeholder="Session notes"
+                  />
+                </label>
+                <label>
+                  Scheduled for
+                  <input
+                    type="datetime-local"
+                    name="scheduled_for"
+                    value={sessionForm.scheduled_for}
+                    onChange={handleSessionChange}
+                  />
+                </label>
+                <label>
+                  Location
+                  <input
+                    name="location"
+                    value={sessionForm.location}
+                    onChange={handleSessionChange}
+                    placeholder="Address or on-site"
+                  />
+                </label>
+                <label>
+                  Book with
+                  <select name="staff_name" value={sessionForm.staff_name} onChange={handleSessionChange}>
+                    <option value="">No preference</option>
+                    {staff
+                      .filter((row) => row.active || row.name === sessionForm.staff_name)
+                      .map((row) => (
+                      <option key={row.id} value={row.name}>
+                        {row.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Duration (minutes)
+                  <input
+                    type="number"
+                    name="duration_minutes"
+                    value={sessionForm.duration_minutes}
+                    onChange={handleSessionChange}
+                    placeholder="60"
+                  />
+                </label>
+                <label>
+                  Price
+                  <input
+                    type="number"
+                    name="price"
+                    value={sessionForm.price}
+                    onChange={handleSessionChange}
+                    placeholder="0"
+                  />
+                </label>
+                <label>
+                  Status
+                  <select name="status" value={sessionForm.status} onChange={handleSessionChange}>
+                    <option value="requested">Requested</option>
+                    <option value="approved">Approved</option>
+                    <option value="denied">Denied</option>
+                    <option value="scheduled">Scheduled</option>
+                  </select>
+                </label>
+                <label>
+                  Assign to client
+                  <select name="user_id" value={sessionForm.user_id} onChange={handleSessionChange}>
+                    <option value="">Unassigned</option>
+                    {clients.map((client) => (
+                      <option key={client.user_id} value={client.user_id}>
+                        {clientLabel(client)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="row">
+                  <button type="submit">{editingSessionId ? 'Update session' : 'Save session'}</button>
+                  {editingSessionId && (
+                    <button type="button" className="ghost" onClick={cancelEditSession}>
+                      Cancel edit
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+
+            {isStaffMode && editingSessionId && (
+              <form className="card form" onSubmit={createSession}>
+                <h3>Edit appointment</h3>
+                <label>
+                  Client name
+                  <input
+                    name="customer_name"
+                    value={sessionForm.customer_name}
+                    onChange={handleSessionChange}
+                    placeholder="Client name"
+                  />
+                </label>
+                <label>
+                  Contact
+                  <input
+                    name="contact"
+                    value={sessionForm.contact}
+                    onChange={handleSessionChange}
+                    placeholder="Phone or email"
+                  />
+                </label>
+                <label>
+                  Details
+                  <textarea
+                    name="details"
+                    value={sessionForm.details}
+                    onChange={handleSessionChange}
+                    rows={3}
+                    placeholder="Session notes"
+                  />
+                </label>
+                <label>
+                  Scheduled for
+                  <input
+                    type="datetime-local"
+                    name="scheduled_for"
+                    value={sessionForm.scheduled_for}
+                    onChange={handleSessionChange}
+                  />
+                </label>
+                <label>
+                  Location
+                  <input
+                    name="location"
+                    value={sessionForm.location}
+                    onChange={handleSessionChange}
+                    placeholder="Address or on-site"
+                  />
+                </label>
+                <label>
+                  Duration (minutes)
+                  <input
+                    type="number"
+                    name="duration_minutes"
+                    value={sessionForm.duration_minutes}
+                    onChange={handleSessionChange}
+                    placeholder="60"
+                  />
+                </label>
+                <div className="row">
+                  <button type="submit">Save changes</button>
                   <button type="button" className="ghost" onClick={cancelEditSession}>
                     Cancel edit
                   </button>
-                )}
-              </div>
-            </form>
+                </div>
+              </form>
+            )}
+
             <div className="card list">
               <div className="row" style={{ justifyContent: 'space-between' }}>
-                <h3>Upcoming sessions</h3>
-                <select
-                  value={sessionFilter}
-                  onChange={(event) => setSessionFilter(event.target.value)}
-                  style={{ maxWidth: '180px' }}
-                >
-                  <option value="all">All</option>
-                  <option value="requested">Requested</option>
-                  <option value="approved">Approved</option>
-                  <option value="denied">Denied</option>
-                  <option value="scheduled">Scheduled</option>
-                </select>
+                <h3>{isStaffMode ? 'Your appointments' : 'Upcoming sessions'}</h3>
+                {!isStaffMode && (
+                  <select
+                    value={sessionFilter}
+                    onChange={(event) => setSessionFilter(event.target.value)}
+                    style={{ maxWidth: '180px' }}
+                  >
+                    <option value="all">All</option>
+                    <option value="requested">Requested</option>
+                    <option value="approved">Approved</option>
+                    <option value="denied">Denied</option>
+                    <option value="scheduled">Scheduled</option>
+                  </select>
+                )}
               </div>
               {sessions.length === 0 && <p className="muted">No sessions scheduled yet.</p>}
               {sessions
                 .filter((sessionItem) =>
-                  sessionFilter === 'all' ? true : sessionItem.status === sessionFilter
+                  isStaffMode ? true : (sessionFilter === 'all' ? true : sessionItem.status === sessionFilter)
                 )
                 .map((sessionItem) => (
                   <div key={sessionItem.id} className="session-card">
@@ -2063,7 +2360,7 @@ export default function App() {
                               : 'Not scheduled'}
                           </p>
                         </div>
-                        <span className="pill">{sessionStatusLabel(sessionItem.status)}</span>
+                      <span className="pill">{sessionStatusLabel(sessionItem.status)}</span>
                       </div>
                       <div className="session-meta">
                         <p>Contact: {sessionItem.contact || '—'}</p>
@@ -2071,97 +2368,165 @@ export default function App() {
                         <p>Duration: {sessionItem.duration_minutes || '—'} mins</p>
                         <p>Price: {sessionItem.price || '—'}</p>
                       </div>
-                      <div className="session-actions">
-                        <label>
-                          Assign client
-                          <select
-                            value={sessionItem.user_id || ''}
-                            onChange={(event) => updateSessionAssignment(sessionItem.id, event.target.value)}
+                      {!isStaffMode && (
+                        <div className="session-actions">
+                          <label>
+                            Assign client
+                            <select
+                              value={sessionItem.user_id || ''}
+                              onChange={(event) => updateSessionAssignment(sessionItem.id, event.target.value)}
+                            >
+                              <option value="">Unassigned</option>
+                              {clients.map((client) => (
+                                <option key={client.user_id} value={client.user_id}>
+                                  {clientLabel(client)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="row">
+                            <button type="button" onClick={() => updateSessionStatus(sessionItem.id, 'approved')}>
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => updateSessionStatus(sessionItem.id, 'denied')}
+                            >
+                              Deny
+                            </button>
+                            <button type="button" className="ghost" onClick={() => startEditSession(sessionItem)}>
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost"
+                              onClick={() => openSessionCall(sessionItem)}
+                            >
+                              Call
+                            </button>
+                            <button type="button" className="ghost" onClick={() => deleteSession(sessionItem.id)}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {isStaffMode && (
+                        <div className="row">
+                          <button type="button" onClick={() => updateSessionStatus(sessionItem.id, 'approved')}>
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => updateSessionStatus(sessionItem.id, 'denied')}
                           >
-                            <option value="">Unassigned</option>
-                            {clients.map((client) => (
-                              <option key={client.user_id} value={client.user_id}>
-                                {clientLabel(client)}
-                              </option>
-                            ))}
-                          </select>
+                            Deny
+                          </button>
+                          <button type="button" className="ghost" onClick={() => startEditSession(sessionItem)}>
+                            Edit appointment
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {!isStaffMode && (
+                      <div className="session-comms">
+                        <label>
+                          Admin feedback (private)
+                          <textarea
+                            rows={3}
+                            value={sessionNoteDrafts[sessionItem.id] ?? sessionItem.admin_feedback ?? ''}
+                            onChange={(event) =>
+                              setSessionNoteDrafts((prev) => ({
+                                ...prev,
+                                [sessionItem.id]: event.target.value
+                              }))
+                            }
+                            placeholder="Internal notes about this appointment."
+                          />
                         </label>
-                      <div className="row">
-                        <button type="button" onClick={() => updateSessionStatus(sessionItem.id, 'approved')}>
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => updateSessionStatus(sessionItem.id, 'denied')}
-                        >
-                          Deny
-                        </button>
-                        <button type="button" className="ghost" onClick={() => startEditSession(sessionItem)}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => openSessionCall(sessionItem)}
-                        >
-                          Call
-                        </button>
-                        <button type="button" className="ghost" onClick={() => deleteSession(sessionItem.id)}>
-                          Delete
-                        </button>
+                        <div className="row">
+                          <button type="button" className="ghost" onClick={() => saveSessionFeedback(sessionItem.id)}>
+                            Save feedback
+                          </button>
+                          <span className="muted">{sessionActionStatus[sessionItem.id] || ''}</span>
+                        </div>
+                        <label>
+                          Message to client
+                          <textarea
+                            rows={3}
+                            value={sessionMessageDrafts[sessionItem.id] ?? ''}
+                            onChange={(event) =>
+                              setSessionMessageDrafts((prev) => ({
+                                ...prev,
+                                [sessionItem.id]: event.target.value
+                              }))
+                            }
+                            placeholder="Send an update directly to the client."
+                          />
+                        </label>
+                        <div className="row">
+                          <button type="button" onClick={() => sendSessionMessage(sessionItem)}>
+                            Send message
+                          </button>
+                          <button type="button" className="ghost" onClick={() => openSessionChat(sessionItem)}>
+                            Open chat
+                          </button>
+                          <span className="muted">
+                            {sessionItem.admin_message_sent_at
+                              ? `Last sent ${new Date(sessionItem.admin_message_sent_at).toLocaleString()}`
+                              : ''}
+                          </span>
+                        </div>
                       </div>
+                    )}
+                    {isStaffMode && (
+                      <div className="session-comms">
+                        <label>
+                          Message to client
+                          <textarea
+                            rows={3}
+                            value={sessionMessageDrafts[sessionItem.id] ?? ''}
+                            onChange={(event) =>
+                              setSessionMessageDrafts((prev) => ({
+                                ...prev,
+                                [sessionItem.id]: event.target.value
+                              }))
+                            }
+                            placeholder="Send an update directly to the client."
+                          />
+                        </label>
+                        <div className="row">
+                          <button type="button" onClick={() => sendSessionMessage(sessionItem)}>
+                            Send message
+                          </button>
+                          <button type="button" className="ghost" onClick={() => toggleSessionChat(sessionItem)}>
+                            {sessionChatOpen[sessionItem.id] ? 'Hide chat' : 'Show chat'}
+                          </button>
+                          <span className="muted">
+                            {sessionItem.admin_message_sent_at
+                              ? `Last sent ${new Date(sessionItem.admin_message_sent_at).toLocaleString()}`
+                              : ''}
+                          </span>
+                        </div>
+                        {sessionChatOpen[sessionItem.id] && (
+                          <div className="list" style={{ marginTop: '0.75rem' }}>
+                            {(sessionChatMessages[sessionItem.id] || []).length === 0 && (
+                              <p className="muted">No messages yet.</p>
+                            )}
+                            {(sessionChatMessages[sessionItem.id] || []).map((msg) => (
+                              <div key={msg.id} className="message">
+                                <div className="message-meta">
+                                  <span>{msg.sender || 'Unknown'}</span>
+                                  <span>{msg.sender_role}</span>
+                                </div>
+                                <p>{msg.body}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div className="session-comms">
-                      <label>
-                        Admin feedback (private)
-                        <textarea
-                          rows={3}
-                          value={sessionNoteDrafts[sessionItem.id] ?? sessionItem.admin_feedback ?? ''}
-                          onChange={(event) =>
-                            setSessionNoteDrafts((prev) => ({
-                              ...prev,
-                              [sessionItem.id]: event.target.value
-                            }))
-                          }
-                          placeholder="Internal notes about this appointment."
-                        />
-                      </label>
-                      <div className="row">
-                        <button type="button" className="ghost" onClick={() => saveSessionFeedback(sessionItem.id)}>
-                          Save feedback
-                        </button>
-                        <span className="muted">{sessionActionStatus[sessionItem.id] || ''}</span>
-                      </div>
-                      <label>
-                        Message to client
-                        <textarea
-                          rows={3}
-                          value={sessionMessageDrafts[sessionItem.id] ?? ''}
-                          onChange={(event) =>
-                            setSessionMessageDrafts((prev) => ({
-                              ...prev,
-                              [sessionItem.id]: event.target.value
-                            }))
-                          }
-                          placeholder="Send an update directly to the client."
-                        />
-                      </label>
-                      <div className="row">
-                        <button type="button" onClick={() => sendSessionMessage(sessionItem)}>
-                          Send message
-                        </button>
-                        <button type="button" className="ghost" onClick={() => openSessionChat(sessionItem)}>
-                          Open chat
-                        </button>
-                        <span className="muted">
-                          {sessionItem.admin_message_sent_at
-                            ? `Last sent ${new Date(sessionItem.admin_message_sent_at).toLocaleString()}`
-                            : ''}
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 ))}
             </div>
@@ -2387,6 +2752,65 @@ export default function App() {
               {settingsStatus && <p className="muted">{settingsStatus}</p>}
               <button type="submit">Save</button>
             </form>
+            <div className="card list">
+              <h3>Staff</h3>
+              <form className="row" onSubmit={createStaff}>
+                <input
+                  type="text"
+                  value={newStaffName}
+                  onChange={(event) => setNewStaffName(event.target.value)}
+                  placeholder="Staff name"
+                />
+                <input
+                  type="text"
+                  value={newStaffUserId}
+                  onChange={(event) => setNewStaffUserId(event.target.value)}
+                  placeholder="Auth user id (optional)"
+                />
+                <input
+                  type="number"
+                  value={newStaffSortOrder}
+                  onChange={(event) => setNewStaffSortOrder(event.target.value)}
+                  placeholder="Sort"
+                  min="0"
+                />
+                <label className="row" style={{ gap: '6px' }}>
+                  <input
+                    type="checkbox"
+                    checked={newStaffActive}
+                    onChange={(event) => setNewStaffActive(event.target.checked)}
+                  />
+                  Active
+                </label>
+                <button type="submit">Add</button>
+              </form>
+              {staffStatus && <p className="muted">{staffStatus}</p>}
+              {staff.length === 0 && <p className="muted">No staff yet.</p>}
+              {staff.map((row) => (
+                <div key={row.id} className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>
+                    <strong>{row.name}</strong>{' '}
+                    <span className="pill">{row.active ? 'Active' : 'Inactive'}</span>
+                    {row.user_id && <div className="muted">User: {row.user_id}</div>}
+                  </div>
+                  <div className="row">
+                    <input
+                      type="text"
+                      placeholder="Set user id"
+                      defaultValue={row.user_id || ''}
+                      onBlur={(event) => updateStaffUserId(row, event.target.value)}
+                      style={{ maxWidth: '220px' }}
+                    />
+                    <button type="button" className="ghost" onClick={() => toggleStaffActive(row)}>
+                      {row.active ? 'Disable' : 'Enable'}
+                    </button>
+                    <button type="button" className="danger" onClick={() => deleteStaff(row)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
