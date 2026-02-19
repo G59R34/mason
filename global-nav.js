@@ -23,6 +23,7 @@
                         <li><a href="gallery.html">Gallery</a></li>
                         <li><a href="why.html">About</a></li>
                         <li><a href="reviews.html">Reviews</a></li>
+                        <li><a href="forums.html">Forums</a></li>
                         <li><a href="pricing.html">Pricing</a></li>
                         <li><a href="account.html">Account</a></li>
                     </ul>

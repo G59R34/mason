@@ -78,9 +78,10 @@
 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Detect whether optional tables exist (review_replies, review_votes) and owner column
+        // Detect whether optional tables exist (review_replies, review_votes) and optional columns
         let reviewsExtraTablesAvailable = { replies: false, votes: false };
         let ownerColumnExists = false;
+        let verifiedColumnExists = false;
         async function detectExtraTables() {
             try {
                 // try lightweight selects to see if tables exist
@@ -101,18 +102,29 @@
             }
         }
         detectExtraTables();
-        // detect owner column on reviews (some installs don't have it)
+        // detect owner/verified columns on reviews (some installs don't have them)
         async function detectOwnerColumn() {
             try {
                 const probe = await sb.from('reviews').select('owner').limit(1);
                 ownerColumnExists = !probe.error;
             } catch (e) { ownerColumnExists = false; }
+            try {
+                const probe = await sb.from('reviews').select('verified').limit(1);
+                verifiedColumnExists = !probe.error;
+            } catch (e) { verifiedColumnExists = false; }
             // update debug instruction
             if (!ownerColumnExists) {
                 const dbg = document.getElementById('reviewsDebug');
                 if (dbg) {
                     dbg.style.display = 'block';
                     dbg.innerHTML = dbg.innerHTML + '<div style="margin-top:6px;color:#b91c1c">Note: optional column <code>owner</code> missing — run <code>create_admins_and_owner_columns.sql</code> to enable admin badges.</div>';
+                }
+            }
+            if (!verifiedColumnExists) {
+                const dbg = document.getElementById('reviewsDebug');
+                if (dbg) {
+                    dbg.style.display = 'block';
+                    dbg.innerHTML = dbg.innerHTML + '<div style="margin-top:6px;color:#b91c1c">Note: optional column <code>verified</code> missing — run <code>add_verified_reviews.sql</code> to enable verified review badges.</div>';
                 }
             }
         }
@@ -209,7 +221,9 @@
             // choose whether to request owner depending on schema
             let res;
             try {
-                if (ownerColumnExists) {
+                if (ownerColumnExists && verifiedColumnExists) {
+                    res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner,verified,mason_reply').order('created_at', { ascending: true });
+                } else if (ownerColumnExists) {
                     res = await sb.from('reviews').select('id,name,comment,rating,created_at,owner,mason_reply').order('created_at', { ascending: true });
                 } else {
                     res = await sb.from('reviews').select('id,name,comment,rating,created_at,mason_reply').order('created_at', { ascending: true });
@@ -227,7 +241,9 @@
             console.debug('loadReviews result', res.data && res.data.length ? `${res.data.length} rows` : '0 rows');
             return (res.data || []).map(r => {
                 const t = r.created_at ? Date.parse(r.created_at) : Date.now();
-                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner: ownerColumnExists ? (r.owner || null) : null, mason_reply: r.mason_reply || '' };
+                const owner = ownerColumnExists ? (r.owner || null) : null;
+                const verified = verifiedColumnExists ? !!r.verified : !!owner;
+                return { id: r.id, name: r.name, comment: r.comment, rating: Number(r.rating), t, owner, verified, mason_reply: r.mason_reply || '' };
             });
         }
 
@@ -270,6 +286,7 @@
             // rely on the table's created_at column instead and only insert the fields we need
             const payload = { name: review.name, comment: review.comment, rating: review.rating };
             if (currentUser && currentUser.id) payload.owner = currentUser.id;
+            if (verifiedColumnExists) payload.verified = !!(currentUser && currentUser.id);
             const { error } = await sb.from('reviews').insert([payload]);
             return error;
         }
@@ -317,6 +334,12 @@
                     ab.className = 'admin-badge';
                     ab.textContent = 'ADMIN';
                     meta.appendChild(ab);
+                }
+                if (r.verified) {
+                    const vb = document.createElement('span');
+                    vb.className = 'verified-badge';
+                    vb.textContent = 'VERIFIED';
+                    meta.appendChild(vb);
                 }
                 meta.appendChild(stars);
                 meta.appendChild(time);

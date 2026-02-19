@@ -1,51 +1,158 @@
 import Foundation
 import Combine
+import AVKit
+import PhotosUI
 import SwiftUI
 
 struct ContentView: View {
     @StateObject private var store = MasonDataStore()
     @State private var selectedTab: AppTab = .home
     @State private var isAccountPresented = false
+    @AppStorage("ms_auth_access_token") private var authAccessToken: String = ""
+    @AppStorage("ms_auth_user_id") private var authUserID: String = ""
+    @AppStorage("ms_auth_email") private var authEmail: String = ""
+    @AppStorage("ms_browse_as_guest") private var browseAsGuest: Bool = false
+    @State private var showAuthScreen = false
+    @State private var showStartupAnimation = true
+    @State private var startupLogoScale: CGFloat = 0.72
+    @State private var startupLogoRotation: Double = -8
+    @State private var startupLogoOpacity: Double = 0
+    @State private var startupTextOffset: CGFloat = 24
+    @State private var startupTextOpacity: Double = 0
+    @State private var startupBackdropOpacity: Double = 1
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            HomeView(showAccount: $isAccountPresented)
-                .tabItem {
-                    Label("Home", systemImage: "house.fill")
-                }
-                .tag(AppTab.home)
+        ZStack {
+            TabView(selection: $selectedTab) {
+                HomeView(showAccount: $isAccountPresented)
+                    .tabItem {
+                        Label("Home", systemImage: "house.fill")
+                    }
+                    .tag(AppTab.home)
 
-            PricingView(showAccount: $isAccountPresented)
-                .tabItem {
-                    Label("Pricing", systemImage: "tag.fill")
-                }
-                .tag(AppTab.pricing)
+                PricingView(showAccount: $isAccountPresented)
+                    .tabItem {
+                        Label("Pricing", systemImage: "tag.fill")
+                    }
+                    .tag(AppTab.pricing)
 
-            WhyMasonView(showAccount: $isAccountPresented)
-                .tabItem {
-                    Label("Why", systemImage: "sparkles")
-                }
-                .tag(AppTab.why)
+                WhyMasonView(showAccount: $isAccountPresented)
+                    .tabItem {
+                        Label("Why", systemImage: "sparkles")
+                    }
+                    .tag(AppTab.why)
 
-            ReviewsView(showAccount: $isAccountPresented)
-                .tabItem {
-                    Label("Reviews", systemImage: "star.bubble.fill")
-                }
-                .tag(AppTab.reviews)
+                FlicksView(showAccount: $isAccountPresented)
+                    .tabItem {
+                        Label("Flicks", systemImage: "play.rectangle.fill")
+                    }
+                    .tag(AppTab.flicks)
 
-            ContactView(showAccount: $isAccountPresented)
-                .tabItem {
-                    Label("Contact", systemImage: "message.fill")
+                ReviewsView(showAccount: $isAccountPresented)
+                    .tabItem {
+                        Label("Reviews", systemImage: "star.bubble.fill")
+                    }
+                    .tag(AppTab.reviews)
+
+                ContactView(showAccount: $isAccountPresented)
+                    .tabItem {
+                        Label("Contact", systemImage: "message.fill")
+                    }
+                    .tag(AppTab.contact)
+            }
+
+            if showStartupAnimation {
+                ZStack {
+                    LinearGradient(
+                        colors: [MasonTheme.backgroundTop, MasonTheme.backgroundBottom],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
+                    .opacity(startupBackdropOpacity)
+
+                    VStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(MasonTheme.primary.opacity(0.18))
+                                .frame(width: 120, height: 120)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 46, weight: .bold))
+                                .foregroundStyle(MasonTheme.primary)
+                        }
+                        .scaleEffect(startupLogoScale)
+                        .rotationEffect(.degrees(startupLogoRotation))
+                        .opacity(startupLogoOpacity)
+
+                        Text("Mason")
+                            .font(.system(size: 34, weight: .heavy, design: .rounded))
+                            .foregroundStyle(MasonTheme.textPrimary)
+                            .opacity(startupTextOpacity)
+                            .offset(y: startupTextOffset)
+                    }
                 }
-                .tag(AppTab.contact)
+                .transition(.opacity)
+                .zIndex(1)
+                .allowsHitTesting(false)
+            }
         }
         .environmentObject(store)
         .tint(MasonTheme.primary)
         .sheet(isPresented: $isAccountPresented) {
-            AccountView(selectedTab: $selectedTab, isPresented: $isAccountPresented)
+            AccountView(
+                selectedTab: $selectedTab,
+                isPresented: $isAccountPresented,
+                authAccessToken: $authAccessToken,
+                authUserID: $authUserID,
+                authEmail: $authEmail,
+                showAuthScreen: $showAuthScreen
+            )
+        }
+        .fullScreenCover(isPresented: $showAuthScreen) {
+            AuthView(
+                authAccessToken: $authAccessToken,
+                authUserID: $authUserID,
+                authEmail: $authEmail,
+                browseAsGuest: $browseAsGuest,
+                isPresented: $showAuthScreen
+            )
+        }
+        .task {
+            runStartupAnimation()
         }
         .task {
             await store.loadIfNeeded()
+        }
+        .task {
+            if authAccessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !browseAsGuest {
+                showAuthScreen = true
+            }
+        }
+        .onChange(of: authAccessToken) { _, newValue in
+            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !browseAsGuest {
+                showAuthScreen = true
+            }
+        }
+    }
+
+    private func runStartupAnimation() {
+        guard showStartupAnimation else { return }
+        withAnimation(.spring(response: 0.65, dampingFraction: 0.76)) {
+            startupLogoScale = 1
+            startupLogoRotation = 0
+            startupLogoOpacity = 1
+        }
+        withAnimation(.easeOut(duration: 0.45).delay(0.2)) {
+            startupTextOpacity = 1
+            startupTextOffset = 0
+        }
+        withAnimation(.easeInOut(duration: 0.35).delay(1.15)) {
+            startupBackdropOpacity = 0
+            startupLogoOpacity = 0
+            startupTextOpacity = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            showStartupAnimation = false
         }
     }
 }
@@ -54,6 +161,7 @@ private enum AppTab: Hashable {
     case home
     case pricing
     case why
+    case flicks
     case reviews
     case contact
 }
@@ -212,6 +320,14 @@ private struct HomeView: View {
                             HStack {
                                 Text(review.name)
                                     .font(.headline)
+                                if review.verified {
+                                    Text("VERIFIED")
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(MasonTheme.primary, in: Capsule())
+                                        .foregroundStyle(.white)
+                                }
                                 Spacer()
                                 Text(review.ratingLabel)
                                     .font(.subheadline.weight(.semibold))
@@ -228,7 +344,7 @@ private struct HomeView: View {
                     }
                 }
             }
-            .navigationTitle("Mason")
+            .navigationTitle("Sex With Mason")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -347,6 +463,8 @@ private struct BookingSheetView: View {
     let onBooked: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("ms_auth_user_id") private var authUserID: String = ""
+    @AppStorage("ms_auth_email") private var authEmail: String = ""
 
     @State private var name: String = ""
     @State private var contact: String = ""
@@ -356,6 +474,9 @@ private struct BookingSheetView: View {
     @State private var scheduledFor: Date = .now.addingTimeInterval(3600)
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var showSuccessAnimation = false
+    @State private var successScale: CGFloat = 0.5
+    @State private var successOpacity: Double = 0
 
     var body: some View {
         NavigationStack {
@@ -399,6 +520,30 @@ private struct BookingSheetView: View {
                 if name.isEmpty {
                     name = storedCustomerName
                 }
+                if contact.isEmpty {
+                    contact = authEmail
+                }
+            }
+            .overlay {
+                if showSuccessAnimation {
+                    ZStack {
+                        Color.black.opacity(0.2).ignoresSafeArea()
+                        VStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 72))
+                                .foregroundStyle(.green)
+                            Text("Session Booked")
+                                .font(.title3.bold())
+                                .foregroundStyle(MasonTheme.textPrimary)
+                        }
+                        .padding(24)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .scaleEffect(successScale)
+                        .opacity(successOpacity)
+                    }
+                    .transition(.opacity)
+                }
             }
         }
     }
@@ -427,10 +572,20 @@ private struct BookingSheetView: View {
                 scheduledFor: scheduledFor,
                 plan: plan.title
             )
-            let sessionID = try await client.createSessionBooking(request: request)
+            let sessionID = try await client.createSessionBooking(
+                request: request,
+                userID: authUserID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : authUserID
+            )
             storedCustomerName = trimmedName
             onBooked("Booking confirmed. Session ID: \(sessionID)")
-            dismiss()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                showSuccessAnimation = true
+                successScale = 1
+                successOpacity = 1
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                dismiss()
+            }
         } catch {
             errorMessage = "Booking failed: \(error.localizedDescription)"
         }
@@ -558,6 +713,520 @@ private struct WhyMasonView: View {
     }
 }
 
+private struct FlicksView: View {
+    @Binding var showAccount: Bool
+    @AppStorage("ms_device_id") private var deviceID: String = ""
+    @AppStorage("ms_customer_name") private var customerName: String = ""
+    @AppStorage("flicks_muted") private var flicksMuted: Bool = false
+
+    @State private var flicks: [FlickItem] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var selectedVideoData: Data?
+    @State private var showUploadSheet = false
+    @State private var uploadCaption = ""
+    @State private var uploadAuthor = ""
+    @State private var commentDrafts: [String: String] = [:]
+    @State private var uploadBusy = false
+    @State private var activeCommentsFlick: FlickItem?
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                ZStack {
+                    Color.black.ignoresSafeArea()
+
+                    if isLoading {
+                        ProgressView("Loading Flicks...")
+                            .tint(.white)
+                    } else if let errorMessage {
+                        VStack(spacing: 12) {
+                            Text("Flicks")
+                                .font(.system(size: 38, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text(errorMessage)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        }
+                    } else if flicks.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No flicks yet")
+                                .font(.title.bold())
+                                .foregroundStyle(.white)
+                            Text("Upload the first vertical clip.")
+                                .foregroundStyle(.white.opacity(0.75))
+                        }
+                    } else {
+                        ScrollView(.vertical) {
+                            LazyVStack(spacing: 0) {
+                                ForEach(flicks) { flick in
+                                    FlickReelPage(
+                                        flick: flick,
+                                        height: geo.size.height,
+                                        isMuted: $flicksMuted,
+                                        onToggleLike: { Task { await toggleLike(flick: flick) } },
+                                        onLikeIfNeeded: {
+                                            if !flick.likedByMe {
+                                                Task { await toggleLike(flick: flick) }
+                                            }
+                                        },
+                                        onComment: { activeCommentsFlick = flick }
+                                    )
+                                    .id(flick.id)
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                                }
+                            }
+                            .scrollTargetLayout()
+                        }
+                        .ignoresSafeArea()
+                        .scrollIndicators(.hidden)
+                        .scrollTargetBehavior(.paging)
+                    }
+                }
+            }
+            .navigationTitle("Flicks")
+            .toolbar {
+                #if os(macOS)
+                ToolbarItem(placement: .navigation) {
+                    PhotosPicker(selection: $selectedVideoItem, matching: .videos) {
+                        Label("Upload", systemImage: "plus.circle.fill")
+                            .foregroundStyle(MasonTheme.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                #else
+                ToolbarItem(placement: .topBarLeading) {
+                    PhotosPicker(selection: $selectedVideoItem, matching: .videos) {
+                        Label("Upload", systemImage: "plus.circle.fill")
+                            .foregroundStyle(MasonTheme.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                #endif
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showAccount = true
+                    } label: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(MasonTheme.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open account")
+                }
+            }
+            .task {
+                ensureDeviceID()
+                if uploadAuthor.isEmpty {
+                    uploadAuthor = customerName
+                }
+                await loadFlicks()
+            }
+            .onChange(of: selectedVideoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self) {
+                        selectedVideoData = data
+                        uploadCaption = ""
+                        uploadAuthor = customerName
+                        showUploadSheet = true
+                    } else {
+                        errorMessage = "Could not load selected video."
+                    }
+                    selectedVideoItem = nil
+                }
+            }
+            .sheet(isPresented: $showUploadSheet) {
+                NavigationStack {
+                    Form {
+                        Section("Clip details") {
+                            TextField("Caption", text: $uploadCaption)
+                            TextField("Display name", text: $uploadAuthor)
+                        }
+                    }
+                    .navigationTitle("Upload Flick")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                showUploadSheet = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(uploadBusy ? "Uploading..." : "Post") {
+                                Task { await uploadFlick() }
+                            }
+                            .disabled(uploadBusy || selectedVideoData == nil)
+                        }
+                    }
+                }
+            }
+            .sheet(item: $activeCommentsFlick) { flick in
+                NavigationStack {
+                    VStack(spacing: 0) {
+                        List {
+                            if flick.comments.isEmpty {
+                                Text("No comments yet.")
+                                    .foregroundStyle(MasonTheme.textSecondary)
+                            } else {
+                                ForEach(flick.comments) { comment in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(comment.authorDisplay)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(MasonTheme.textSecondary)
+                                        Text(comment.body)
+                                    }
+                                }
+                            }
+                        }
+
+                        HStack {
+                            TextField("Add a comment...", text: Binding(
+                                get: { commentDrafts[flick.id] ?? "" },
+                                set: { commentDrafts[flick.id] = $0 }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+
+                            Button("Send") {
+                                Task { await addComment(to: flick.id) }
+                            }
+                            .disabled((commentDrafts[flick.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                        .padding(12)
+                        .background(.ultraThinMaterial)
+                    }
+                    .navigationTitle("Comments")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { activeCommentsFlick = nil }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func ensureDeviceID() {
+        if deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            deviceID = UUID().uuidString
+        }
+    }
+
+    private func loadFlicks() async {
+        guard let client = SupabaseRESTClient.fromBundle() else {
+            errorMessage = "Supabase is not configured."
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            flicks = try await client.fetchFlicks(forDevice: deviceID)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Failed loading flicks: \(error.localizedDescription)"
+        }
+    }
+
+    private func uploadFlick() async {
+        guard let data = selectedVideoData, let client = SupabaseRESTClient.fromBundle() else { return }
+        uploadBusy = true
+        defer { uploadBusy = false }
+        do {
+            let displayName = uploadAuthor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? (customerName.isEmpty ? "Anonymous" : customerName)
+                : uploadAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+            let path = try await client.uploadFlickVideo(data: data, fileExtension: "mov")
+            _ = try await client.createFlick(
+                caption: uploadCaption.trimmingCharacters(in: .whitespacesAndNewlines),
+                videoPath: path,
+                authorName: displayName,
+                deviceID: deviceID
+            )
+            selectedVideoData = nil
+            showUploadSheet = false
+            await loadFlicks()
+        } catch {
+            errorMessage = "Upload failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func toggleLike(flick: FlickItem) async {
+        guard let client = SupabaseRESTClient.fromBundle() else { return }
+        do {
+            if flick.likedByMe {
+                try await client.removeLike(flickID: flick.id, deviceID: deviceID)
+            } else {
+                try await client.addLike(flickID: flick.id, deviceID: deviceID)
+            }
+            await loadFlicks()
+        } catch {
+            errorMessage = "Like update failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func addComment(to flickID: String) async {
+        let draft = (commentDrafts[flickID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !draft.isEmpty, let client = SupabaseRESTClient.fromBundle() else { return }
+        do {
+            let author = customerName.isEmpty ? "Anonymous" : customerName
+            try await client.addComment(flickID: flickID, author: author, body: draft, deviceID: deviceID)
+            commentDrafts[flickID] = ""
+            await loadFlicks()
+            if let active = activeCommentsFlick {
+                activeCommentsFlick = flicks.first(where: { $0.id == active.id })
+            }
+        } catch {
+            errorMessage = "Comment failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct FlickReelPage: View {
+    let flick: FlickItem
+    let height: CGFloat
+    @Binding var isMuted: Bool
+    let onToggleLike: () -> Void
+    let onLikeIfNeeded: () -> Void
+    let onComment: () -> Void
+
+    @State private var player: AVPlayer?
+    @State private var isPlaying = true
+    @State private var duration: Double = 0
+    @State private var progress: Double = 0
+    @State private var isScrubbing = false
+    @State private var timeObserver: Any?
+    @State private var showBigHeart = false
+    @State private var showPlayPauseIcon = false
+    @State private var playPauseIconName = "pause.fill"
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            FlickVideoPlayerView(player: player)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(
+                    ExclusiveGesture(
+                        TapGesture(count: 2),
+                        TapGesture(count: 1)
+                    )
+                    .onEnded { value in
+                        switch value {
+                        case .first:
+                            onLikeIfNeeded()
+                            showHeartBurst()
+                        case .second:
+                            togglePlayPause()
+                        }
+                    }
+                )
+
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.75)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+
+            if showBigHeart {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 110))
+                    .foregroundStyle(.white, .red)
+                    .shadow(radius: 12)
+                    .transition(.scale.combined(with: .opacity))
+            }
+
+            if showPlayPauseIcon {
+                Image(systemName: playPauseIconName)
+                    .font(.system(size: 52, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(20)
+                    .background(.black.opacity(0.35))
+                    .clipShape(Circle())
+            }
+
+            HStack(alignment: .bottom, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(flick.authorName ?? "Anonymous")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text(flick.caption.isEmpty ? "Untitled clip" : flick.caption)
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                    Text(flick.prettyDate)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(spacing: 18) {
+                    Button(action: onToggleLike) {
+                        VStack(spacing: 4) {
+                            Image(systemName: flick.likedByMe ? "heart.fill" : "heart")
+                                .font(.system(size: 28, weight: .semibold))
+                                .foregroundStyle(flick.likedByMe ? .red : .white)
+                            Text("\(flick.likeCount)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onComment) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("\(flick.commentCount)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        isMuted.toggle()
+                        player?.isMuted = isMuted
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text(isMuted ? "Muted" : "Sound")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 28)
+        }
+        .frame(height: height)
+        .background(Color.black)
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 3) {
+                Slider(
+                    value: Binding(
+                        get: { progress },
+                        set: { progress = $0 }
+                    ),
+                    in: 0...(duration > 0 ? duration : 1),
+                    onEditingChanged: { editing in
+                        isScrubbing = editing
+                        guard !editing else { return }
+                        player?.seek(to: CMTime(seconds: progress, preferredTimescale: 600))
+                    }
+                )
+                .tint(.white)
+
+                HStack {
+                    Text(timeString(progress))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.85))
+                    Spacer()
+                    Text(timeString(duration))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
+        }
+        .onAppear {
+            setupPlayer()
+        }
+        .onDisappear {
+            teardownPlayer()
+        }
+    }
+
+    private func setupPlayer() {
+        if player == nil {
+            let av = AVPlayer(url: flick.videoURL)
+            av.isMuted = isMuted
+            player = av
+            duration = av.currentItem?.asset.duration.seconds ?? 0
+            let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
+            timeObserver = av.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+                if !isScrubbing {
+                    progress = time.seconds
+                }
+                let itemDuration = av.currentItem?.duration.seconds ?? 0
+                if itemDuration.isFinite && itemDuration > 0 {
+                    duration = itemDuration
+                }
+            }
+        }
+        player?.isMuted = isMuted
+        player?.play()
+        isPlaying = true
+    }
+
+    private func teardownPlayer() {
+        player?.pause()
+        if let timeObserver, let player {
+            player.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
+    }
+
+    private func togglePlayPause() {
+        guard let player else { return }
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+            playPauseIconName = "play.fill"
+        } else {
+            player.play()
+            isPlaying = true
+            playPauseIconName = "pause.fill"
+        }
+        withAnimation(.easeOut(duration: 0.15)) {
+            showPlayPauseIcon = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            withAnimation(.easeIn(duration: 0.2)) {
+                showPlayPauseIcon = false
+            }
+        }
+    }
+
+    private func showHeartBurst() {
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            showBigHeart = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation(.easeOut(duration: 0.2)) {
+                showBigHeart = false
+            }
+        }
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        guard seconds.isFinite && seconds >= 0 else { return "0:00" }
+        let total = Int(seconds.rounded())
+        let mins = total / 60
+        let secs = total % 60
+        return "\(mins):" + String(format: "%02d", secs)
+    }
+}
+
+private struct FlickVideoPlayerView: View {
+    let player: AVPlayer?
+
+    var body: some View {
+        VideoPlayer(player: player)
+            .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { note in
+                guard let endedItem = note.object as? AVPlayerItem, endedItem == player?.currentItem else { return }
+                player?.seek(to: .zero)
+                player?.play()
+            }
+    }
+}
+
 private struct ReviewsView: View {
     @Binding var showAccount: Bool
     @EnvironmentObject private var store: MasonDataStore
@@ -603,6 +1272,14 @@ private struct ReviewsView: View {
                             Text(review.name)
                                 .font(.headline)
                                 .foregroundStyle(MasonTheme.textPrimary)
+                            if review.verified {
+                                Text("VERIFIED")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(MasonTheme.primary, in: Capsule())
+                                    .foregroundStyle(.white)
+                            }
                             Spacer()
                             Text(review.ratingLabel)
                                 .foregroundStyle(MasonTheme.primary)
@@ -641,20 +1318,15 @@ private struct ContactView: View {
     @State private var name: String = ""
     @State private var startMessage: String = ""
     @State private var resumeConversationID: String = ""
-    @State private var activeConversationID: String?
-    @State private var activeConversationStatus: String = "open"
     @State private var tickets: [ConversationSummary] = []
     @State private var ticketIDs: [String] = []
-    @State private var messages: [ChatMessage] = []
-    @State private var newMessage: String = ""
     @State private var chatError: String?
     @State private var isBusy = false
     @State private var hasInitialized = false
-
-    private let pollTimer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScreenContainer {
                 Card {
                     Text("Contact Mason")
@@ -728,109 +1400,35 @@ private struct ContactView: View {
 
                 if !tickets.isEmpty {
                     Card {
-                        Text("Saved tickets")
+                        Text("Conversations")
                             .font(.title3.bold())
                             .foregroundStyle(MasonTheme.textPrimary)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(tickets) { ticket in
-                                    Button {
-                                        Task { await openConversation(id: ticket.id) }
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text("Ticket \(ticket.id.prefix(8))")
+                        VStack(spacing: 8) {
+                            ForEach(tickets) { ticket in
+                                Button {
+                                    storedConversationID = ticket.id
+                                    path.append(ticket.id)
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(ticket.customerName?.isEmpty == false ? ticket.customerName! : "Ticket \(ticket.id.prefix(8))")
                                                 .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(MasonTheme.textPrimary)
                                             Text(ticket.status.uppercased())
                                                 .font(.caption)
+                                                .foregroundStyle(ticket.status == "closed" ? .red : MasonTheme.textSecondary)
                                         }
-                                        .foregroundStyle(ticket.id == activeConversationID ? .white : MasonTheme.textPrimary)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 8)
-                                        .background(ticket.id == activeConversationID ? MasonTheme.primary : Color.black.opacity(0.06))
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let activeConversationID {
-                    Card {
-                        HStack {
-                            Text("Active: \(activeConversationID)")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(MasonTheme.textPrimary)
-                            Spacer()
-                            Text(activeConversationStatus.uppercased())
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(activeConversationStatus == "closed" ? .red : MasonTheme.primary)
-                        }
-
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 8) {
-                                if messages.isEmpty {
-                                    Text("No messages yet.")
-                                        .foregroundStyle(MasonTheme.textSecondary)
-                                }
-                                ForEach(messages) { message in
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        HStack {
-                                            Text(message.sender)
-                                                .font(.subheadline.weight(.semibold))
-                                            Spacer()
-                                            Text(message.prettyDate)
-                                                .font(.caption)
-                                                .foregroundStyle(MasonTheme.textSecondary)
-                                        }
-                                        Text(message.body)
-                                            .foregroundStyle(MasonTheme.textPrimary)
-                                        if let role = message.senderRole, !role.isEmpty {
-                                            Text(role.uppercased())
-                                                .font(.caption2)
-                                                .foregroundStyle(MasonTheme.textSecondary)
-                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .foregroundStyle(MasonTheme.textSecondary)
                                     }
                                     .padding(10)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(Color.black.opacity(0.04))
                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
+                                .buttonStyle(.plain)
                             }
-                        }
-                        .frame(maxHeight: 280)
-
-                        TextField(activeConversationStatus == "closed" ? "This ticket is closed" : "Type a message...", text: $newMessage, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
-                            .lineLimit(2...5)
-                            .disabled(activeConversationStatus == "closed")
-
-                        HStack {
-                            Button {
-                                Task { await sendMessageToActiveTicket() }
-                            } label: {
-                                Label("Send", systemImage: "arrow.up.circle.fill")
-                                    .font(.headline)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .background(MasonTheme.primary)
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isBusy || activeConversationStatus == "closed" || newMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                            Spacer()
-
-                            Button {
-                                Task { await refreshActiveConversation() }
-                            } label: {
-                                Label("Refresh", systemImage: "arrow.clockwise")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -867,12 +1465,9 @@ private struct ContactView: View {
                     saveTicketIDs()
                 }
                 await loadSavedTickets()
-                if !storedConversationID.isEmpty {
-                    await openConversation(id: storedConversationID)
-                }
             }
-            .onReceive(pollTimer) { _ in
-                Task { await refreshActiveConversation() }
+            .navigationDestination(for: String.self) { conversationID in
+                ConversationThreadView(conversationID: conversationID, defaultName: $storedName)
             }
         }
     }
@@ -900,7 +1495,7 @@ private struct ContactView: View {
             addTicketID(id)
 
             await loadSavedTickets()
-            await openConversation(id: id)
+            path.append(id)
             chatError = nil
         } catch {
             chatError = "Failed to create/send: \(error.localizedDescription)"
@@ -913,72 +1508,7 @@ private struct ContactView: View {
         addTicketID(id)
         storedConversationID = id
         await loadSavedTickets()
-        await openConversation(id: id)
-    }
-
-    private func openConversation(id: String) async {
-        guard let client = SupabaseRESTClient.fromBundle() else {
-            chatError = "Supabase is not configured."
-            return
-        }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            if let convo = try await client.fetchConversation(conversationID: id) {
-                activeConversationID = convo.id
-                activeConversationStatus = convo.status
-                storedConversationID = convo.id
-                resumeConversationID = convo.id
-                messages = try await client.fetchMessages(conversationID: convo.id)
-                chatError = nil
-            } else {
-                chatError = "Conversation not found."
-            }
-        } catch {
-            chatError = "Could not open conversation: \(error.localizedDescription)"
-        }
-    }
-
-    private func refreshActiveConversation() async {
-        guard let id = activeConversationID, let client = SupabaseRESTClient.fromBundle() else { return }
-        do {
-            if let convo = try await client.fetchConversation(conversationID: id) {
-                activeConversationStatus = convo.status
-            }
-            messages = try await client.fetchMessages(conversationID: id)
-            chatError = nil
-        } catch {
-            chatError = "Refresh failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func sendMessageToActiveTicket() async {
-        guard let id = activeConversationID else { return }
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedMessage = newMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty, !trimmedMessage.isEmpty else { return }
-        guard let client = SupabaseRESTClient.fromBundle() else {
-            chatError = "Supabase is not configured."
-            return
-        }
-        guard activeConversationStatus != "closed" else {
-            chatError = "This conversation is closed."
-            return
-        }
-
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            try await client.sendMessage(conversationID: id, sender: trimmedName, body: trimmedMessage, senderRole: "user")
-            try await client.touchConversation(conversationID: id)
-            newMessage = ""
-            storedName = trimmedName
-            messages = try await client.fetchMessages(conversationID: id)
-            chatError = nil
-        } catch {
-            chatError = "Send failed: \(error.localizedDescription)"
-        }
+        path.append(id)
     }
 
     private func loadSavedTickets() async {
@@ -1015,11 +1545,156 @@ private struct ContactView: View {
     }
 }
 
+private struct ConversationThreadView: View {
+    let conversationID: String
+    @Binding var defaultName: String
+
+    @State private var messages: [ChatMessage] = []
+    @State private var status: String = "open"
+    @State private var messageText: String = ""
+    @State private var loading = false
+    @State private var errorMessage: String?
+    @State private var didLoad = false
+
+    private let pollTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(messages) { message in
+                            let isMine = message.senderRole == "user"
+                            HStack {
+                                if isMine { Spacer(minLength: 28) }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(message.body)
+                                        .foregroundStyle(isMine ? .white : MasonTheme.textPrimary)
+                                    Text(message.prettyDate)
+                                        .font(.caption2)
+                                        .foregroundStyle(isMine ? .white.opacity(0.8) : MasonTheme.textSecondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .background(isMine ? MasonTheme.primary : Color.black.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                if !isMine { Spacer(minLength: 28) }
+                            }
+                            .id(message.id)
+                            .padding(.horizontal, 12)
+                        }
+                    }
+                    .padding(.vertical, 12)
+                }
+                .background(Color(red: 0.94, green: 0.97, blue: 0.99))
+                .onChange(of: messages.count) { _, _ in
+                    if let last = messages.last {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+            HStack(spacing: 8) {
+                TextField(status == "closed" ? "Conversation is closed" : "Message", text: $messageText, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .disabled(status == "closed")
+
+                Button {
+                    Task { await send() }
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(MasonTheme.primary)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || status == "closed")
+            }
+            .padding(10)
+            .background(.ultraThinMaterial)
+        }
+        .navigationTitle("Chat")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack {
+                    Text("Conversation")
+                        .font(.subheadline.weight(.semibold))
+                    Text(status.uppercased())
+                        .font(.caption2)
+                        .foregroundStyle(status == "closed" ? .red : MasonTheme.textSecondary)
+                }
+            }
+        }
+        .overlay(alignment: .top) {
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .padding(8)
+            } else if loading {
+                ProgressView()
+                    .padding(8)
+            }
+        }
+        .task {
+            guard !didLoad else { return }
+            didLoad = true
+            await refresh()
+        }
+        .onReceive(pollTimer) { _ in
+            Task { await refresh() }
+        }
+    }
+
+    private func refresh() async {
+        guard let client = SupabaseRESTClient.fromBundle() else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            if let convo = try await client.fetchConversation(conversationID: conversationID) {
+                status = convo.status
+            }
+            messages = try await client.fetchMessages(conversationID: conversationID)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Failed to load messages: \(error.localizedDescription)"
+        }
+    }
+
+    private func send() async {
+        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, status != "closed", let client = SupabaseRESTClient.fromBundle() else { return }
+        do {
+            let sender = defaultName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Guest" : defaultName
+            try await client.sendMessage(conversationID: conversationID, sender: sender, body: text, senderRole: "user")
+            try await client.touchConversation(conversationID: conversationID)
+            messageText = ""
+            await refresh()
+        } catch {
+            errorMessage = "Failed to send message: \(error.localizedDescription)"
+        }
+    }
+}
+
 private struct AccountView: View {
     @Binding var selectedTab: AppTab
     @Binding var isPresented: Bool
+    @Binding var authAccessToken: String
+    @Binding var authUserID: String
+    @Binding var authEmail: String
+    @AppStorage("ms_browse_as_guest") private var browseAsGuest: Bool = false
+    @Binding var showAuthScreen: Bool
     @AppStorage("ms_customer_name") private var customerName: String = ""
     @State private var email: String = ""
+    @State private var myBookings: [SessionBookingSummary] = []
+    @State private var bookingsError: String?
+    @State private var loadingBookings = false
 
     var body: some View {
         NavigationStack {
@@ -1033,7 +1708,7 @@ private struct AccountView: View {
                             Text(customerName.isEmpty ? "Your Account" : customerName)
                                 .font(.title2.bold())
                                 .foregroundStyle(MasonTheme.textPrimary)
-                            Text("Profile, booking shortcuts, and support")
+                            Text(authEmail.isEmpty ? "Not signed in" : authEmail)
                                 .font(.subheadline)
                                 .foregroundStyle(MasonTheme.textSecondary)
                         }
@@ -1048,6 +1723,60 @@ private struct AccountView: View {
                         .textFieldStyle(.roundedBorder)
                     TextField("Email", text: $email)
                         .textFieldStyle(.roundedBorder)
+                    if !authUserID.isEmpty {
+                        Text("User ID: \(authUserID)")
+                            .font(.caption2)
+                            .foregroundStyle(MasonTheme.textSecondary)
+                    }
+                }
+
+                Card {
+                    HStack {
+                        Text("My Bookings")
+                            .font(.title3.bold())
+                            .foregroundStyle(MasonTheme.textPrimary)
+                        Spacer()
+                        if loadingBookings { ProgressView().scaleEffect(0.8) }
+                        Button("Refresh") {
+                            Task { await loadBookings() }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if let bookingsError {
+                        Text(bookingsError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+
+                    if myBookings.isEmpty && !loadingBookings {
+                        Text("No bookings yet.")
+                            .foregroundStyle(MasonTheme.textSecondary)
+                    } else {
+                        ForEach(myBookings) { booking in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(booking.status.uppercased())
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(booking.status == "requested" ? MasonTheme.primary : MasonTheme.textSecondary)
+                                    Spacer()
+                                    Text(booking.prettyDate)
+                                        .font(.caption)
+                                        .foregroundStyle(MasonTheme.textSecondary)
+                                }
+                                Text(booking.details?.isEmpty == false ? booking.details! : "Session \(booking.id)")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(MasonTheme.textPrimary)
+                                if let contact = booking.contact, !contact.isEmpty {
+                                    Text(contact)
+                                        .font(.caption)
+                                        .foregroundStyle(MasonTheme.textSecondary)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            Divider()
+                        }
+                    }
                 }
 
                 Card {
@@ -1060,12 +1789,39 @@ private struct AccountView: View {
                     quickAction(title: "See Reviews", systemImage: "star.fill", tab: .reviews)
                     quickAction(title: "Why Mason", systemImage: "sparkles", tab: .why)
                 }
+
+                Card {
+                    Button {
+                        authAccessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? signInFromGuest()
+                            : signOut()
+                    } label: {
+                        HStack {
+                            Label(
+                                authAccessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Sign In" : "Sign Out",
+                                systemImage: "rectangle.portrait.and.arrow.right"
+                            )
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(Color.red)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .navigationTitle("Account")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { isPresented = false }
                 }
+            }
+            .task {
+                email = authEmail
+                await loadBookings()
             }
         }
     }
@@ -1089,6 +1845,198 @@ private struct AccountView: View {
         }
         .buttonStyle(.plain)
     }
+
+    private func signOut() {
+        authAccessToken = ""
+        authUserID = ""
+        authEmail = ""
+        browseAsGuest = false
+        isPresented = false
+        showAuthScreen = true
+    }
+
+    private func signInFromGuest() {
+        browseAsGuest = false
+        isPresented = false
+        showAuthScreen = true
+    }
+
+    private func loadBookings() async {
+        guard !authUserID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            myBookings = []
+            bookingsError = "Sign in to view your bookings."
+            return
+        }
+        guard let client = SupabaseRESTClient.fromBundle() else {
+            bookingsError = "Supabase is not configured."
+            return
+        }
+        loadingBookings = true
+        defer { loadingBookings = false }
+        do {
+            myBookings = try await client.fetchSessions(userID: authUserID)
+            bookingsError = nil
+        } catch {
+            bookingsError = "Failed to load bookings: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct AuthView: View {
+    @Binding var authAccessToken: String
+    @Binding var authUserID: String
+    @Binding var authEmail: String
+    @Binding var browseAsGuest: Bool
+    @Binding var isPresented: Bool
+
+    @State private var mode: AuthMode = .signIn
+    @State private var email: String = ""
+    @State private var password: String = ""
+    @State private var loading = false
+    @State private var errorMessage: String?
+    @State private var animateHeader = false
+    @State private var animateCard = false
+    @State private var showAuthSuccess = false
+
+    var body: some View {
+        NavigationStack {
+            ScreenContainer {
+                Card {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .font(.system(size: 42, weight: .bold))
+                            .foregroundStyle(MasonTheme.primary)
+                            .scaleEffect(animateHeader ? 1 : 0.7)
+                        Text("Welcome")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(MasonTheme.textPrimary)
+                    }
+                    Text("Sign in to manage bookings and use account features.")
+                        .foregroundStyle(MasonTheme.textSecondary)
+                }
+                .opacity(animateHeader ? 1 : 0)
+                .offset(y: animateHeader ? 0 : -14)
+
+                Card {
+                    Picker("Mode", selection: $mode) {
+                        Text("Sign In").tag(AuthMode.signIn)
+                        Text("Create Account").tag(AuthMode.signUp)
+                    }
+                    .pickerStyle(.segmented)
+
+                    TextField("Email", text: $email)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(.roundedBorder)
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        Text(loading ? "Please wait..." : (mode == .signIn ? "Sign In" : "Create Account"))
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(MasonTheme.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(loading || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.count < 6)
+
+                    Button {
+                        browseAsGuest = true
+                        authAccessToken = ""
+                        authUserID = ""
+                        authEmail = ""
+                        isPresented = false
+                    } label: {
+                        Text("Browse as Guest")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(MasonTheme.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.black.opacity(0.06))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .scaleEffect(animateCard ? 1 : 0.93)
+                .opacity(animateCard ? 1 : 0)
+            }
+            .navigationTitle("Login")
+            .task {
+                withAnimation(.easeOut(duration: 0.35)) {
+                    animateHeader = true
+                }
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.78).delay(0.1)) {
+                    animateCard = true
+                }
+            }
+            .overlay {
+                if showAuthSuccess {
+                    ZStack {
+                        Color.black.opacity(0.2).ignoresSafeArea()
+                        VStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 72))
+                                .foregroundStyle(.green)
+                            Text("Signed In")
+                                .font(.title3.bold())
+                                .foregroundStyle(MasonTheme.textPrimary)
+                        }
+                        .padding(22)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+            }
+        }
+    }
+
+    private func submit() async {
+        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !cleanEmail.isEmpty, !password.isEmpty else { return }
+        guard let client = SupabaseRESTClient.fromBundle() else {
+            errorMessage = "Supabase is not configured."
+            return
+        }
+        loading = true
+        defer { loading = false }
+        do {
+            let session: AuthSession
+            if mode == .signIn {
+                session = try await client.signIn(email: cleanEmail, password: password)
+            } else {
+                session = try await client.signUp(email: cleanEmail, password: password)
+            }
+            authAccessToken = session.accessToken
+            authUserID = session.userID
+            authEmail = session.email
+            browseAsGuest = false
+            errorMessage = nil
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                showAuthSuccess = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                isPresented = false
+            }
+        } catch {
+            errorMessage = "Auth failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+private enum AuthMode: Hashable {
+    case signIn
+    case signUp
 }
 
 private struct StatLine: View {
@@ -1114,6 +2062,7 @@ private struct PricingPlan: Identifiable {
     let subtitle: String
     let features: [String]
     let cta: String
+    let amount: Double?
 
     static let samples: [PricingPlan] = [
         PricingPlan(
@@ -1121,21 +2070,24 @@ private struct PricingPlan: Identifiable {
             price: "$2.50",
             subtitle: "Per session",
             features: ["Will slap it around a bit", "No bust is included"],
-            cta: "Book Basic"
+            cta: "Book Basic",
+            amount: 2.5
         ),
         PricingPlan(
             title: "The 'Happy Ending' Special",
             price: "$5",
             subtitle: "Per stroke",
             features: ["Mason will get it done QUICK!", "Max 10 strokes"],
-            cta: "Book Happy Ending"
+            cta: "Book Happy Ending",
+            amount: 5
         ),
         PricingPlan(
             title: "The 'Finishing' Move",
             price: "$100",
             subtitle: "Custom",
             features: ["Priority scheduling", "Full stroke experience", "Guaranteed bust"],
-            cta: "Book Finishing Move"
+            cta: "Book Finishing Move",
+            amount: 100
         )
     ]
 }
@@ -1214,6 +2166,67 @@ private struct ChatMessage: Identifiable {
     }
 }
 
+private struct SessionBookingRequest {
+    let customerName: String
+    let contact: String
+    let details: String
+    let location: String
+    let durationMinutes: Int?
+    let price: Double?
+    let scheduledFor: Date?
+    let plan: String
+}
+
+private struct SessionBookingSummary: Identifiable {
+    let id: String
+    let status: String
+    let details: String?
+    let contact: String?
+    let scheduledFor: String?
+    let createdAt: String?
+
+    var prettyDate: String {
+        let raw = scheduledFor ?? createdAt
+        guard let raw, let date = ISO8601DateFormatter().date(from: raw) else { return "No date" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private struct AuthSession {
+    let accessToken: String
+    let userID: String
+    let email: String
+}
+
+private struct FlickItem: Identifiable {
+    let id: String
+    let caption: String
+    let videoPath: String
+    let authorName: String?
+    let createdAt: String?
+    let likeCount: Int
+    let commentCount: Int
+    let likedByMe: Bool
+    let comments: [FlickComment]
+    let videoURL: URL
+
+    var prettyDate: String {
+        guard let createdAt, let date = ISO8601DateFormatter().date(from: createdAt) else {
+            return "Just now"
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private struct FlickComment: Identifiable {
+    let id: String
+    let author: String?
+    let body: String
+    let createdAt: String?
+
+    var authorDisplay: String { (author?.isEmpty == false ? author! : "Anonymous") }
+}
+
 @MainActor
 private final class MasonDataStore: ObservableObject {
     @Published var pricingPlans: [PricingPlan] = []
@@ -1272,6 +2285,10 @@ private struct SupabaseRESTClient {
         }
     }
 
+    private var projectRoot: String {
+        restBaseURL.absoluteString.replacingOccurrences(of: "/rest/v1", with: "")
+    }
+
     static func fromBundle(bundle: Bundle = .main) -> SupabaseRESTClient? {
         let infoURL = (bundle.object(forInfoDictionaryKey: "SUPABASE_URL") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1295,7 +2312,7 @@ private struct SupabaseRESTClient {
     func fetchPricingPlans() async throws -> [PricingPlan] {
         let rows: [PricingRow] = try await get(
             table: "pricing_plans",
-            select: "title,price,price_subtitle,features,cta_label",
+            select: "title,price,price_subtitle,features,cta_label,cta_amount",
             queryItems: [URLQueryItem(name: "order", value: "sort_order.asc")]
         )
 
@@ -1305,7 +2322,8 @@ private struct SupabaseRESTClient {
                 price: $0.price,
                 subtitle: $0.priceSubtitle ?? "",
                 features: $0.features,
-                cta: $0.ctaLabel ?? "Book"
+                cta: $0.ctaLabel ?? "Book",
+                amount: $0.ctaAmount
             )
         }
     }
@@ -1432,6 +2450,257 @@ private struct SupabaseRESTClient {
         )
     }
 
+    func createSessionBooking(request: SessionBookingRequest, userID: String? = nil) async throws -> String {
+        let customer = request.customerName.isEmpty ? "Guest" : request.customerName
+        let amount = request.price
+
+        do {
+            var orderItem: [String: Any] = [
+                "customer_name": customer,
+                "email": request.contact,
+                "plan": request.plan
+            ]
+            if let amount { orderItem["amount"] = amount }
+            let orderPayload: [[String: Any]] = [orderItem]
+            let _: [OrderRow] = try await send(
+                method: "POST",
+                table: "orders",
+                queryItems: [URLQueryItem(name: "select", value: "id")],
+                jsonBody: orderPayload,
+                preferRepresentation: true
+            )
+
+            let announcementPayload: [[String: Any]] = [[
+                "message": "New order: \(request.plan) by \(customer)"
+            ]]
+            let _: [AnnouncementRow] = try await send(
+                method: "POST",
+                table: "announcements",
+                queryItems: [URLQueryItem(name: "select", value: "id")],
+                jsonBody: announcementPayload,
+                preferRepresentation: true
+            )
+        } catch {
+            // Best-effort: booking should still succeed even if order/announcement tables differ.
+            print("Order/announcement write skipped: \(error.localizedDescription)")
+        }
+
+        var payload: [String: Any] = [
+            "customer_name": customer,
+            "contact": request.contact,
+            "details": request.details,
+            "status": "requested"
+        ]
+        if let userID, !userID.isEmpty { payload["user_id"] = userID }
+        if !request.location.isEmpty { payload["location"] = request.location }
+        if let duration = request.durationMinutes { payload["duration_minutes"] = duration }
+        if let price = amount { payload["price"] = price }
+        if let date = request.scheduledFor {
+            payload["scheduled_for"] = ISO8601DateFormatter().string(from: date)
+        }
+
+        let rows: [SessionRow] = try await send(
+            method: "POST",
+            table: "sessions",
+            queryItems: [URLQueryItem(name: "select", value: "id")],
+            jsonBody: [payload],
+            preferRepresentation: true
+        )
+        guard let id = rows.first?.id else {
+            throw URLError(.cannotParseResponse)
+        }
+        return id
+    }
+
+    func fetchSessions(userID: String) async throws -> [SessionBookingSummary] {
+        let rows: [SessionDetailsRow] = try await get(
+            table: "sessions",
+            select: "id,status,details,contact,scheduled_for,created_at",
+            queryItems: [
+                URLQueryItem(name: "user_id", value: "eq.\(userID)"),
+                URLQueryItem(name: "order", value: "created_at.desc")
+            ]
+        )
+        return rows.map {
+            SessionBookingSummary(
+                id: $0.id,
+                status: $0.status ?? "requested",
+                details: $0.details,
+                contact: $0.contact,
+                scheduledFor: $0.scheduledFor,
+                createdAt: $0.createdAt
+            )
+        }
+    }
+
+    func signUp(email: String, password: String) async throws -> AuthSession {
+        let url = URL(string: "\(projectRoot)/auth/v1/signup")!
+        let body: [String: Any] = [
+            "email": email,
+            "password": password
+        ]
+        let response: AuthResponse = try await authRequest(url: url, method: "POST", jsonBody: body)
+        guard let accessToken = response.accessToken, let user = response.user else {
+            throw SupabaseError.badStatus(400, "No session returned. Check email confirmation settings.")
+        }
+        return AuthSession(accessToken: accessToken, userID: user.id, email: user.email ?? email)
+    }
+
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        var components = URLComponents(string: "\(projectRoot)/auth/v1/token")!
+        components.queryItems = [URLQueryItem(name: "grant_type", value: "password")]
+        let body: [String: Any] = [
+            "email": email,
+            "password": password
+        ]
+        let response: AuthResponse = try await authRequest(url: components.url!, method: "POST", jsonBody: body)
+        guard let accessToken = response.accessToken, let user = response.user else {
+            throw SupabaseError.badStatus(401, "Invalid credentials.")
+        }
+        return AuthSession(accessToken: accessToken, userID: user.id, email: user.email ?? email)
+    }
+
+    func fetchFlicks(forDevice deviceID: String) async throws -> [FlickItem] {
+        let rows: [FlickRow] = try await get(
+            table: "flicks",
+            select: "id,caption,video_path,author_name,created_at",
+            queryItems: [URLQueryItem(name: "order", value: "created_at.desc")]
+        )
+
+        var result: [FlickItem] = []
+        for row in rows {
+            let likes = try await fetchLikeCount(flickID: row.id)
+            let likedByMe = try await hasLiked(flickID: row.id, deviceID: deviceID)
+            let comments = try await fetchComments(flickID: row.id)
+            let videoURL = publicVideoURL(path: row.videoPath)
+            result.append(
+                FlickItem(
+                    id: row.id,
+                    caption: row.caption ?? "",
+                    videoPath: row.videoPath,
+                    authorName: row.authorName,
+                    createdAt: row.createdAt,
+                    likeCount: likes,
+                    commentCount: comments.count,
+                    likedByMe: likedByMe,
+                    comments: comments,
+                    videoURL: videoURL
+                )
+            )
+        }
+        return result
+    }
+
+    func uploadFlickVideo(data: Data, fileExtension: String) async throws -> String {
+        let path = "uploads/\(UUID().uuidString).\(fileExtension)"
+        try await uploadToStorage(bucket: "flicks", path: path, data: data, contentType: "video/quicktime")
+        return path
+    }
+
+    func createFlick(caption: String, videoPath: String, authorName: String, deviceID: String) async throws -> String {
+        let payload: [[String: Any]] = [[
+            "caption": caption,
+            "video_path": videoPath,
+            "author_name": authorName,
+            "user_device": deviceID
+        ]]
+        let rows: [FlickRow] = try await send(
+            method: "POST",
+            table: "flicks",
+            queryItems: [URLQueryItem(name: "select", value: "id,caption,video_path,author_name,created_at")],
+            jsonBody: payload,
+            preferRepresentation: true
+        )
+        guard let id = rows.first?.id else { throw URLError(.cannotParseResponse) }
+        return id
+    }
+
+    func addLike(flickID: String, deviceID: String) async throws {
+        let payload: [[String: Any]] = [[
+            "flick_id": flickID,
+            "user_device": deviceID
+        ]]
+        let _: [FlickLikeRow] = try await send(
+            method: "POST",
+            table: "flick_likes",
+            queryItems: [URLQueryItem(name: "select", value: "id")],
+            jsonBody: payload,
+            preferRepresentation: true
+        )
+    }
+
+    func removeLike(flickID: String, deviceID: String) async throws {
+        let _: [FlickLikeRow] = try await send(
+            method: "DELETE",
+            table: "flick_likes",
+            queryItems: [
+                URLQueryItem(name: "flick_id", value: "eq.\(flickID)"),
+                URLQueryItem(name: "user_device", value: "eq.\(deviceID)"),
+                URLQueryItem(name: "select", value: "id")
+            ],
+            jsonBody: [:],
+            preferRepresentation: true
+        )
+    }
+
+    func addComment(flickID: String, author: String, body: String, deviceID: String) async throws {
+        let payload: [[String: Any]] = [[
+            "flick_id": flickID,
+            "author_name": author,
+            "body": body,
+            "user_device": deviceID
+        ]]
+        let _: [FlickCommentRow] = try await send(
+            method: "POST",
+            table: "flick_comments",
+            queryItems: [URLQueryItem(name: "select", value: "id")],
+            jsonBody: payload,
+            preferRepresentation: true
+        )
+    }
+
+    private func fetchLikeCount(flickID: String) async throws -> Int {
+        let rows: [FlickLikeRow] = try await get(
+            table: "flick_likes",
+            select: "id",
+            queryItems: [URLQueryItem(name: "flick_id", value: "eq.\(flickID)")]
+        )
+        return rows.count
+    }
+
+    private func hasLiked(flickID: String, deviceID: String) async throws -> Bool {
+        let rows: [FlickLikeRow] = try await get(
+            table: "flick_likes",
+            select: "id",
+            queryItems: [
+                URLQueryItem(name: "flick_id", value: "eq.\(flickID)"),
+                URLQueryItem(name: "user_device", value: "eq.\(deviceID)"),
+                URLQueryItem(name: "limit", value: "1")
+            ]
+        )
+        return !rows.isEmpty
+    }
+
+    private func fetchComments(flickID: String) async throws -> [FlickComment] {
+        let rows: [FlickCommentRow] = try await get(
+            table: "flick_comments",
+            select: "id,author_name,body,created_at",
+            queryItems: [
+                URLQueryItem(name: "flick_id", value: "eq.\(flickID)"),
+                URLQueryItem(name: "order", value: "created_at.desc"),
+                URLQueryItem(name: "limit", value: "20")
+            ]
+        )
+        return rows.map {
+            FlickComment(id: $0.id, author: $0.authorName, body: $0.body ?? "", createdAt: $0.createdAt)
+        }
+    }
+
+    private func publicVideoURL(path: String) -> URL {
+        let root = restBaseURL.absoluteString.replacingOccurrences(of: "/rest/v1", with: "")
+        return URL(string: "\(root)/storage/v1/object/public/flicks/\(path)")!
+    }
+
     private func get<T: Decodable>(table: String, select: String, queryItems: [URLQueryItem]) async throws -> T {
         var components = URLComponents(url: restBaseURL.appendingPathComponent(table), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "select", value: select)]
@@ -1484,6 +2753,48 @@ private struct SupabaseRESTClient {
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
+
+    private func uploadToStorage(bucket: String, path: String, data: Data, contentType: String) async throws {
+        let root = projectRoot
+        guard let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw URLError(.badURL)
+        }
+        guard let url = URL(string: "\(root)/storage/v1/object/\(bucket)/\(encodedPath)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue("true", forHTTPHeaderField: "x-upsert")
+
+        let (respData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = String(data: respData, encoding: .utf8) ?? "No response body"
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw SupabaseError.badStatus(code, body)
+        }
+    }
+
+    private func authRequest<T: Decodable>(url: URL, method: String, jsonBody: [String: Any]) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "No response body"
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw SupabaseError.badStatus(code, body)
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
 }
 
 private struct PricingRow: Decodable {
@@ -1492,6 +2803,7 @@ private struct PricingRow: Decodable {
     let priceSubtitle: String?
     let features: [String]
     let ctaLabel: String?
+    let ctaAmount: Double?
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -1499,6 +2811,7 @@ private struct PricingRow: Decodable {
         case priceSubtitle = "price_subtitle"
         case features
         case ctaLabel = "cta_label"
+        case ctaAmount = "cta_amount"
     }
 
     init(from decoder: Decoder) throws {
@@ -1507,6 +2820,15 @@ private struct PricingRow: Decodable {
         price = try container.decode(String.self, forKey: .price)
         priceSubtitle = try container.decodeIfPresent(String.self, forKey: .priceSubtitle)
         ctaLabel = try container.decodeIfPresent(String.self, forKey: .ctaLabel)
+        if let numeric = try container.decodeIfPresent(Double.self, forKey: .ctaAmount) {
+            ctaAmount = numeric
+        } else if let intNumeric = try container.decodeIfPresent(Int.self, forKey: .ctaAmount) {
+            ctaAmount = Double(intNumeric)
+        } else if let text = try container.decodeIfPresent(String.self, forKey: .ctaAmount) {
+            ctaAmount = Double(text)
+        } else {
+            ctaAmount = nil
+        }
 
         if let arrayFeatures = try container.decodeIfPresent([String].self, forKey: .features) {
             features = arrayFeatures
@@ -1564,6 +2886,85 @@ private struct ConversationMessageRow: Decodable {
         case sender
         case body
         case senderRole = "sender_role"
+        case createdAt = "created_at"
+    }
+}
+
+private struct SessionRow: Decodable {
+    let id: String
+}
+
+private struct SessionDetailsRow: Decodable {
+    let id: String
+    let status: String?
+    let details: String?
+    let contact: String?
+    let scheduledFor: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case details
+        case contact
+        case scheduledFor = "scheduled_for"
+        case createdAt = "created_at"
+    }
+}
+
+private struct OrderRow: Decodable {
+    let id: String
+}
+
+private struct AnnouncementRow: Decodable {
+    let id: String
+}
+
+private struct AuthResponse: Decodable {
+    let accessToken: String?
+    let user: AuthUserRow?
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case user
+    }
+}
+
+private struct AuthUserRow: Decodable {
+    let id: String
+    let email: String?
+}
+
+private struct FlickRow: Decodable {
+    let id: String
+    let caption: String?
+    let videoPath: String
+    let authorName: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case caption
+        case videoPath = "video_path"
+        case authorName = "author_name"
+        case createdAt = "created_at"
+    }
+}
+
+private struct FlickLikeRow: Decodable {
+    let id: String
+}
+
+private struct FlickCommentRow: Decodable {
+    let id: String
+    let authorName: String?
+    let body: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case authorName = "author_name"
+        case body
         case createdAt = "created_at"
     }
 }

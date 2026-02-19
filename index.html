@@ -21,6 +21,7 @@
                 <div class="hero-actions">
                     <a class="btn" href="pricing.html">Book a session</a>
                     <a class="btn btn-ghost" href="reviews.html">See reviews</a>
+                    <a class="btn btn-ghost" href="forums.html">Open forums</a>
                 </div>
                 <div class="stats-grid section">
                     <div class="stat-card"><strong>Slow replies</strong>Most clients hear back within a month.</div>
@@ -71,11 +72,26 @@
             if (!list) return;
 
             async function loadRecentReviews() {
-                const { data, error } = await sb
-                    .from('reviews')
-                    .select('name, comment, rating, created_at')
-                    .order('created_at', { ascending: false })
-                    .limit(3);
+                let data = null;
+                let error = null;
+                {
+                    const res = await sb
+                        .from('reviews')
+                        .select('name, comment, rating, created_at, verified, owner')
+                        .order('created_at', { ascending: false })
+                        .limit(3);
+                    data = res.data;
+                    error = res.error;
+                }
+                if (error) {
+                    const fallback = await sb
+                        .from('reviews')
+                        .select('name, comment, rating, created_at')
+                        .order('created_at', { ascending: false })
+                        .limit(3);
+                    data = fallback.data;
+                    error = fallback.error;
+                }
 
                 if (error || !data || data.length === 0) {
                     list.innerHTML = '<div class=\"review-empty\">No reviews yet.</div>';
@@ -88,7 +104,8 @@
                     card.className = 'review-card';
                     const meta = document.createElement('div');
                     meta.className = 'review-meta';
-                    meta.innerHTML = `<span>${r.name || 'Anonymous'}</span><span class=\"review-stars\">${r.rating || 0}★</span>`;
+                    const verified = !!(r.verified || r.owner);
+                    meta.innerHTML = `<span>${r.name || 'Anonymous'}</span>${verified ? '<span class=\"verified-badge\">VERIFIED</span>' : ''}<span class=\"review-stars\">${r.rating || 0}★</span>`;
                     const text = document.createElement('div');
                     text.className = 'review-text';
                     const comment = (r.comment || '').trim();

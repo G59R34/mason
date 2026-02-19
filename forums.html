@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Forums - Mason</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <script src="global-nav.js"></script>
+  <script src="chatuser.js"></script>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h1>Forums</h1>
+          <p class="muted">Threads, replies, and voting in one place.</p>
+        </div>
+        <div id="forumsAuthState" class="badge">Guest mode</div>
+      </div>
+      <div id="forumsStatus" class="forums-status"></div>
+    </section>
+
+    <section class="card section">
+      <h2>Start a thread</h2>
+      <form id="threadForm" class="form">
+        <div class="row stretch">
+          <input id="threadTitle" type="text" placeholder="Thread title" maxlength="120" required />
+          <select id="threadCategory">
+            <option value="general">General</option>
+            <option value="sessions">Sessions</option>
+            <option value="flicks">Flicks</option>
+            <option value="support">Support</option>
+          </select>
+        </div>
+        <input id="threadAuthor" type="text" placeholder="Display name (guest only)" />
+        <textarea id="threadBody" placeholder="Write your thread..." required></textarea>
+        <div class="row row-end">
+          <button type="submit">Post Thread</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="section forums-layout">
+      <div class="card forums-list-card">
+        <div class="section-head">
+          <h2>Threads</h2>
+          <select id="threadSort" class="forums-inline-select">
+            <option value="recent">Most recent</option>
+            <option value="top">Top voted</option>
+            <option value="active">Most active</option>
+          </select>
+        </div>
+        <div class="row stretch" style="margin-top: 8px;">
+          <input id="threadSearch" type="search" placeholder="Search threads..." />
+          <select id="threadCategoryFilter">
+            <option value="all">All categories</option>
+            <option value="general">General</option>
+            <option value="sessions">Sessions</option>
+            <option value="flicks">Flicks</option>
+            <option value="support">Support</option>
+          </select>
+        </div>
+        <div id="threadList" class="forums-thread-list"></div>
+      </div>
+
+      <div class="card forums-detail-card">
+        <div id="threadDetailEmpty" class="muted">Select a thread to view replies.</div>
+        <div id="threadDetail" class="forums-thread-detail" style="display: none;">
+          <div id="threadDetailMeta"></div>
+          <p id="threadDetailBody" class="forums-thread-detail-body"></p>
+
+          <h3 style="margin-top: 20px;">Replies</h3>
+          <div id="replyList" class="forums-reply-list"></div>
+
+          <form id="replyForm" class="form" style="margin-top: 12px;">
+            <input id="replyAuthor" type="text" placeholder="Display name (guest only)" />
+            <textarea id="replyBody" placeholder="Write a reply..." required></textarea>
+            <div class="row row-end">
+              <button type="submit">Reply</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script src="forums.js"></script>
+</body>
+</html>
