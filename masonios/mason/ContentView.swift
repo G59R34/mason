@@ -249,6 +249,9 @@ private struct HomeView: View {
 private struct PricingView: View {
     @Binding var showAccount: Bool
     @EnvironmentObject private var store: MasonDataStore
+    @AppStorage("ms_customer_name") private var storedCustomerName: String = ""
+    @State private var selectedPlanForBooking: PricingPlan?
+    @State private var bookingStatusMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -281,13 +284,26 @@ private struct PricingView: View {
                                 .labelStyle(.titleAndIcon)
                         }
 
-                        Text(plan.cta)
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(MasonTheme.primary)
-                            .clipShape(Capsule())
+                        Button {
+                            selectedPlanForBooking = plan
+                        } label: {
+                            Label(plan.cta, systemImage: "calendar.badge.plus")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(MasonTheme.primary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if let bookingStatusMessage {
+                    Card {
+                        Text(bookingStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(MasonTheme.textPrimary)
                     }
                 }
 
@@ -300,6 +316,14 @@ private struct PricingView: View {
                 }
             }
             .navigationTitle("Pricing")
+            .sheet(item: $selectedPlanForBooking) { plan in
+                BookingSheetView(
+                    plan: plan,
+                    storedCustomerName: $storedCustomerName
+                ) { message in
+                    bookingStatusMessage = message
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -313,6 +337,102 @@ private struct PricingView: View {
                     .accessibilityLabel("Open account")
                 }
             }
+        }
+    }
+}
+
+private struct BookingSheetView: View {
+    let plan: PricingPlan
+    @Binding var storedCustomerName: String
+    let onBooked: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String = ""
+    @State private var contact: String = ""
+    @State private var details: String = ""
+    @State private var location: String = ""
+    @State private var durationMinutes: String = "60"
+    @State private var scheduledFor: Date = .now.addingTimeInterval(3600)
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Plan") {
+                    Text(plan.title).font(.headline)
+                    Text(plan.price).foregroundStyle(MasonTheme.primary)
+                    Text(plan.subtitle).foregroundStyle(MasonTheme.textSecondary)
+                }
+
+                Section("Booking details") {
+                    TextField("Your name", text: $name)
+                    TextField("Contact (email/phone)", text: $contact)
+                    DatePicker("Scheduled for", selection: $scheduledFor)
+                    TextField("Duration (minutes)", text: $durationMinutes)
+                    TextField("Location (optional)", text: $location)
+                    TextField("Notes/details", text: $details, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Book Session")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSubmitting ? "Booking..." : "Confirm") {
+                        Task { await submitBooking() }
+                    }
+                    .disabled(isSubmitting || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .task {
+                if name.isEmpty {
+                    name = storedCustomerName
+                }
+            }
+        }
+    }
+
+    private func submitBooking() async {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        guard let client = SupabaseRESTClient.fromBundle() else {
+            errorMessage = "Supabase is not configured."
+            return
+        }
+
+        isSubmitting = true
+        defer { isSubmitting = false }
+        errorMessage = nil
+
+        do {
+            let duration = Int(durationMinutes.trimmingCharacters(in: .whitespacesAndNewlines))
+            let request = SessionBookingRequest(
+                customerName: trimmedName,
+                contact: contact.trimmingCharacters(in: .whitespacesAndNewlines),
+                details: details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Booked via app — \(plan.title)" : details.trimmingCharacters(in: .whitespacesAndNewlines),
+                location: location.trimmingCharacters(in: .whitespacesAndNewlines),
+                durationMinutes: duration,
+                price: plan.amount,
+                scheduledFor: scheduledFor,
+                plan: plan.title
+            )
+            let sessionID = try await client.createSessionBooking(request: request)
+            storedCustomerName = trimmedName
+            onBooked("Booking confirmed. Session ID: \(sessionID)")
+            dismiss()
+        } catch {
+            errorMessage = "Booking failed: \(error.localizedDescription)"
         }
     }
 }
