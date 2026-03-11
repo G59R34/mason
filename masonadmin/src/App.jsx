@@ -157,6 +157,14 @@ export default function App() {
   const [jumpscareStatus, setJumpscareStatus] = useState('');
   const gravityTimeoutRef = useRef(null);
   const [now, setNow] = useState(new Date());
+  const [announcementModalTitle, setAnnouncementModalTitle] = useState("What's New");
+  const [announcementModalIntro, setAnnouncementModalIntro] = useState("Here's what's new on the site:");
+  const [announcementModalItems, setAnnouncementModalItems] = useState([
+    { title: 'V2 redesign', description: 'New look and feel: Noir Luxe theme, Syne & DM Sans typography, violet accents, and smoother animations across the site.' },
+    { title: 'New feature', description: 'Description.' }
+  ]);
+  const [announcementModalVersion, setAnnouncementModalVersion] = useState(0);
+  const [announcementModalStatus, setAnnouncementModalStatus] = useState('');
 
   const isStaffMode = loginMode === 'staff';
   const isReady = useMemo(() => {
@@ -502,6 +510,24 @@ export default function App() {
         if (!mounted) return;
         setIntroLoopEnabled(Boolean(data?.value?.enabled));
       });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'announcement_modal')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        const v = data?.value;
+        if (v) {
+          setAnnouncementModalTitle(v.title ?? "What's New");
+          setAnnouncementModalVersion(Number(v.version) || 0);
+          const parsed = parseModalBodyHtml(v.bodyHtml);
+          if (parsed) {
+            setAnnouncementModalIntro(parsed.intro);
+            setAnnouncementModalItems(parsed.items);
+          }
+        }
+      });
     return () => {
       mounted = false;
     };
@@ -546,6 +572,95 @@ export default function App() {
     }, 500);
     setJumpscareStatus('Triggered.');
     setTimeout(() => setJumpscareStatus(''), 2000);
+  }
+
+  function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function buildModalBodyHtml(intro, items) {
+    const p = intro ? `<p style="margin:0">${escapeHtml(intro)}</p>` : '';
+    const list =
+      items && items.length > 0
+        ? '<ul class="ms-announcement-updates">' +
+          items
+            .map(
+              (item) =>
+                '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>' +
+                escapeHtml(item.title) +
+                '</strong> — ' +
+                escapeHtml(item.description) +
+                '</span></li>'
+            )
+            .join('') +
+          '</ul>'
+        : '';
+    return p + list;
+  }
+
+  function parseModalBodyHtml(html) {
+    if (!html || typeof html !== 'string') return null;
+    const introMatch = html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+    const intro = introMatch ? introMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim() : '';
+    const itemRegex = /<li[\s\S]*?<strong>([^<]*)<\/strong>\s*[—\-]\s*([\s\S]*?)<\/span>\s*<\/li>/gi;
+    const items = [];
+    let m;
+    while ((m = itemRegex.exec(html)) !== null) {
+      const desc = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
+      items.push({ title: m[1].trim(), description: desc });
+    }
+    return items.length > 0 || intro ? { intro, items } : null;
+  }
+
+  async function saveAnnouncementModal() {
+    setAnnouncementModalStatus('Saving...');
+    const bodyHtml = buildModalBodyHtml(announcementModalIntro, announcementModalItems);
+    const { error } = await supabase.from('site_settings').upsert([
+      {
+        key: 'announcement_modal',
+        value: {
+          title: announcementModalTitle,
+          bodyHtml,
+          version: announcementModalVersion
+        },
+        updated_at: new Date().toISOString()
+      }
+    ]);
+    if (error) {
+      setAnnouncementModalStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setAnnouncementModalStatus('Saved.');
+    setTimeout(() => setAnnouncementModalStatus(''), 2000);
+  }
+
+  async function forceSendAnnouncementModal() {
+    setAnnouncementModalStatus('Sending...');
+    const nextVersion = (announcementModalVersion || 0) + 1;
+    const bodyHtml = buildModalBodyHtml(announcementModalIntro, announcementModalItems);
+    const { error } = await supabase.from('site_settings').upsert([
+      {
+        key: 'announcement_modal',
+        value: {
+          title: announcementModalTitle,
+          bodyHtml,
+          version: nextVersion
+        },
+        updated_at: new Date().toISOString()
+      }
+    ]);
+    if (error) {
+      setAnnouncementModalStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setAnnouncementModalVersion(nextVersion);
+    setAnnouncementModalStatus('Sent! Everyone will see the modal on next visit.');
+    setTimeout(() => setAnnouncementModalStatus(''), 4000);
   }
 
   async function loadDashboard() {
@@ -2848,6 +2963,103 @@ export default function App() {
                 </button>
                 {jumpscareStatus && <span className="muted">{jumpscareStatus}</span>}
               </div>
+            </div>
+
+            <div className="card form" style={{ marginTop: '1rem' }}>
+              <h3>Daily &quot;What&apos;s New&quot; modal</h3>
+              <p className="muted">Edit the modal that appears once per day (or when you force send).</p>
+              <label>
+                Modal title
+                <input
+                  type="text"
+                  value={announcementModalTitle}
+                  onChange={(e) => setAnnouncementModalTitle(e.target.value)}
+                  placeholder="What's New"
+                />
+              </label>
+              <label>
+                Intro line (shown above the list)
+                <input
+                  type="text"
+                  value={announcementModalIntro}
+                  onChange={(e) => setAnnouncementModalIntro(e.target.value)}
+                  placeholder="Here's what's new on the site:"
+                />
+              </label>
+              <div style={{ marginTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <strong>Updates (bullet points)</strong>
+                  <button
+                    type="button"
+                    onClick={() => setAnnouncementModalItems((prev) => [...prev, { title: '', description: '' }])}
+                  >
+                    + Add item
+                  </button>
+                </div>
+                {announcementModalItems.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="card form"
+                    style={{ marginBottom: '0.75rem', padding: '1rem', background: 'var(--bg-soft, #f8f9fa)' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="ghost"
+                        style={{ fontSize: '0.85rem' }}
+                        onClick={() =>
+                          setAnnouncementModalItems((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <label>
+                      Title (bold label)
+                      <input
+                        type="text"
+                        value={item.title}
+                        onChange={(e) =>
+                          setAnnouncementModalItems((prev) =>
+                            prev.map((it, i) => (i === idx ? { ...it, title: e.target.value } : it))
+                          )
+                        }
+                        placeholder="e.g. V2 redesign"
+                      />
+                    </label>
+                    <label>
+                      Description
+                      <textarea
+                        rows={2}
+                        value={item.description}
+                        onChange={(e) =>
+                          setAnnouncementModalItems((prev) =>
+                            prev.map((it, i) => (i === idx ? { ...it, description: e.target.value } : it))
+                          )
+                        }
+                        placeholder="e.g. New look and feel: Noir Luxe theme..."
+                      />
+                    </label>
+                  </div>
+                ))}
+                {announcementModalItems.length === 0 && (
+                  <p className="muted" style={{ marginTop: '0.5rem' }}>
+                    No items yet. Click &quot;Add item&quot; to add an update.
+                  </p>
+                )}
+              </div>
+              <div className="review-actions" style={{ marginTop: '1rem' }}>
+                <button type="button" onClick={saveAnnouncementModal}>
+                  Save content
+                </button>
+                <button type="button" className="primary" onClick={forceSendAnnouncementModal}>
+                  Force send to everyone
+                </button>
+                {announcementModalStatus && <span className="muted">{announcementModalStatus}</span>}
+              </div>
+              <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+                Version: {announcementModalVersion}. Force send bumps the version so every visitor sees the modal on their next page load.
+              </p>
             </div>
           </section>
         )}

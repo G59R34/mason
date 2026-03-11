@@ -50,6 +50,39 @@
 
         document.body.insertBefore(header, document.body.firstChild);
 
+        // Secret admin: 5 quick clicks on logo reveals Admin link
+        (function () {
+            var logo = header.querySelector('.gn-logo');
+            var clicks = 0;
+            var goTimer;
+            if (!logo) return;
+            logo.addEventListener('click', function (e) {
+                e.preventDefault();
+                var href = logo.getAttribute('href') || 'index.html';
+                clicks += 1;
+                clearTimeout(goTimer);
+                goTimer = setTimeout(function () {
+                    if (clicks >= 5) {
+                        var existing = document.getElementById('ms-admin-secret-link');
+                        if (!existing) {
+                            var adminLink = document.createElement('a');
+                            adminLink.id = 'ms-admin-secret-link';
+                            adminLink.href = '/masonadmin';
+                            adminLink.textContent = 'Admin';
+                            adminLink.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;background:#8b5cf6;color:#0a0a0c;padding:8px 14px;border-radius:9999px;font-size:0.8rem;font-weight:700;text-decoration:none;font-family:"DM Sans",system-ui,sans-serif;box-shadow:0 4px 12px rgba(139,92,246,0.4);';
+                            document.body.appendChild(adminLink);
+                            setTimeout(function () {
+                                if (adminLink.parentNode) adminLink.parentNode.removeChild(adminLink);
+                            }, 8000);
+                        }
+                    } else {
+                        window.location.href = href;
+                    }
+                    clicks = 0;
+                }, 400);
+            });
+        })();
+
         // Highlight active link
         try {
             const path = location.pathname.split('/').pop() || 'index.html';
@@ -106,11 +139,75 @@
     }
 
     var ANNOUNCEMENT_MODAL_KEY = 'ms_announcement_modal_seen_v1';
+    var ANNOUNCEMENT_MODAL_VERSION_KEY = 'ms_announcement_modal_version';
 
-    function showAnnouncementModal() {
+    function getLocalDateString() {
+        var d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    var DEFAULT_MODAL_CONFIG = {
+        title: "What's New",
+        bodyHtml: '<p style="margin:0">Here\'s what\'s new on the site:</p>' +
+            '<ul class="ms-announcement-updates">' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>V2 redesign</strong> — New look and feel: Noir Luxe theme, Syne & DM Sans typography, violet accents, and smoother animations across the site.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Nut For Me</strong> — New track from Pegger Productions. Listen in the banner below the nav and on the dedicated track page.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Custom audio player</strong> — In-site player with play/pause, seek bar, and time display that matches the new design.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Track reviews</strong> — Rate and review "Nut For Me" the same way you do site reviews.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Smoother experience</strong> — Smooth scrolling, scroll-triggered animations, and refined hover states throughout.</span></li>' +
+            '</ul>',
+        version: 0
+    };
+
+    function getModalConfig(cb) {
+        var SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+        var SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+        if (typeof supabase === 'undefined') {
+            var script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js';
+            script.onload = function () {
+                var sb = window.msSupabase || (window.msSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }));
+                sb.from('site_settings').select('value').eq('key', 'announcement_modal').maybeSingle()
+                    .then(function (res) {
+                        var v = res.data && res.data.value;
+                        if (v && (v.title !== undefined || v.bodyHtml !== undefined || v.version !== undefined)) {
+                            cb({ title: v.title || DEFAULT_MODAL_CONFIG.title, bodyHtml: v.bodyHtml !== undefined ? v.bodyHtml : DEFAULT_MODAL_CONFIG.bodyHtml, version: Number(v.version) || 0 });
+                        } else {
+                            cb(DEFAULT_MODAL_CONFIG);
+                        }
+                    })
+                    .catch(function () { cb(DEFAULT_MODAL_CONFIG); });
+            };
+            script.onerror = function () { cb(DEFAULT_MODAL_CONFIG); };
+            document.head.appendChild(script);
+            return;
+        }
+        var sb = window.msSupabase || (window.msSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }));
+        sb.from('site_settings').select('value').eq('key', 'announcement_modal').maybeSingle()
+            .then(function (res) {
+                var v = res.data && res.data.value;
+                if (v && (v.title !== undefined || v.bodyHtml !== undefined || v.version !== undefined)) {
+                    cb({ title: v.title || DEFAULT_MODAL_CONFIG.title, bodyHtml: v.bodyHtml !== undefined ? v.bodyHtml : DEFAULT_MODAL_CONFIG.bodyHtml, version: Number(v.version) || 0 });
+                } else {
+                    cb(DEFAULT_MODAL_CONFIG);
+                }
+            })
+            .catch(function () { cb(DEFAULT_MODAL_CONFIG); });
+    }
+
+    function showAnnouncementModal(config) {
+        config = config || DEFAULT_MODAL_CONFIG;
         try {
-            if (localStorage.getItem(ANNOUNCEMENT_MODAL_KEY) === '1') return;
+            var lastSeenDate = localStorage.getItem(ANNOUNCEMENT_MODAL_KEY);
+            var lastSeenVersion = parseInt(localStorage.getItem(ANNOUNCEMENT_MODAL_VERSION_KEY) || '0', 10);
+            var today = getLocalDateString();
+            var shouldShow = (lastSeenDate !== today) || (config.version > lastSeenVersion);
+            if (!shouldShow) return;
         } catch (e) { return; }
+
+        var titleEl = document.createElement('h2');
+        titleEl.id = 'ms-announcement-title';
+        titleEl.textContent = config.title || "What's New";
 
         var overlay = document.createElement('div');
         overlay.className = 'ms-announcement-modal';
@@ -120,27 +217,24 @@
         overlay.innerHTML = '<div class="ms-announcement-modal-backdrop"></div>' +
             '<div class="ms-announcement-modal-dialog">' +
             '<div class="ms-announcement-modal-body">' +
-            '<h2 id="ms-announcement-title">What\'s New</h2>' +
-            '<p style="margin:0">Here’s what’s new on the site:</p>' +
-            '<ul class="ms-announcement-updates">' +
-            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>V2 redesign</strong> — New look and feel: Noir Luxe theme, Syne & DM Sans typography, violet accents, and smoother animations across the site.</span></li>' +
-            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Nut For Me</strong> — New track from Pegger Productions. Listen in the banner below the nav and on the dedicated track page.</span></li>' +
-            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Custom audio player</strong> — In-site player with play/pause, seek bar, and time display that matches the new design.</span></li>' +
-            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Track reviews</strong> — Rate and review “Nut For Me” the same way you do site reviews.</span></li>' +
-            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Smoother experience</strong> — Smooth scrolling, scroll-triggered animations, and refined hover states throughout.</span></li>' +
-            '</ul>' +
             '</div>' +
             '<div class="ms-announcement-modal-footer">' +
             '<button type="button" class="ms-announcement-btn">Got it</button>' +
             '</div>' +
             '</div>' +
             '</div>';
+        var bodyEl = overlay.querySelector('.ms-announcement-modal-body');
+        bodyEl.appendChild(titleEl);
+        bodyEl.insertAdjacentHTML('beforeend', config.bodyHtml || DEFAULT_MODAL_CONFIG.bodyHtml);
 
         document.body.appendChild(overlay);
 
         function closeModal() {
             overlay.classList.remove('open');
-            try { localStorage.setItem(ANNOUNCEMENT_MODAL_KEY, '1'); } catch (e) {}
+            try {
+                localStorage.setItem(ANNOUNCEMENT_MODAL_KEY, getLocalDateString());
+                localStorage.setItem(ANNOUNCEMENT_MODAL_VERSION_KEY, String(config.version));
+            } catch (e) {}
             setTimeout(function () {
                 if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
             }, 320);
@@ -267,13 +361,17 @@
             injectStyles();
             createNav();
             injectCustomAudioScript();
-            setTimeout(showAnnouncementModal, 300);
+            getModalConfig(function (config) {
+                setTimeout(function () { showAnnouncementModal(config); }, 300);
+            });
         });
     } else {
         injectStyles();
         createNav();
         injectCustomAudioScript();
-        setTimeout(showAnnouncementModal, 300);
+        getModalConfig(function (config) {
+            setTimeout(function () { showAnnouncementModal(config); }, 300);
+        });
     }
 
     function injectCustomAudioScript() {
