@@ -22,7 +22,13 @@
         playBtn.type = 'button';
         playBtn.className = 'custom-audio-play';
         playBtn.setAttribute('aria-label', 'Play');
-        playBtn.innerHTML = '<span class="custom-audio-icon-play"></span><span class="custom-audio-icon-pause"></span>';
+        var base = '';
+        if (window.location.protocol !== 'file:') {
+            base = (window.location.pathname.replace(/\/[^/]*$/, '/') || '/');
+        }
+        var playSrc = base + 'play.png';
+        var pauseSrc = base + 'pause.png';
+        playBtn.innerHTML = '<img src="' + playSrc + '" alt="Play" class="custom-audio-icon-play"><img src="' + pauseSrc + '" alt="Pause" class="custom-audio-icon-pause">';
 
         var progressWrap = document.createElement('div');
         progressWrap.className = 'custom-audio-progress-wrap';

@@ -8,6 +8,7 @@ const TABS = [
   { id: 'reviews', label: 'Reviews' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'gallery', label: 'Gallery' },
+  { id: 'music', label: 'Music' },
   { id: 'why', label: 'Why Editor' },
   { id: 'pricing', label: 'Pricing' },
   { id: 'super', label: 'SUPER ADMIN STUFF' },
@@ -149,6 +150,13 @@ export default function App() {
   const [galleryCaption, setGalleryCaption] = useState('');
   const [gallerySort, setGallerySort] = useState(0);
   const [galleryStatus, setGalleryStatus] = useState('');
+  const [musicTracks, setMusicTracks] = useState([]);
+  const [musicTitle, setMusicTitle] = useState('');
+  const [musicArtist, setMusicArtist] = useState('');
+  const [musicSortOrder, setMusicSortOrder] = useState(0);
+  const [musicStatus, setMusicStatus] = useState('');
+  const [musicAlbumArtist, setMusicAlbumArtist] = useState('');
+  const [musicAlbumSortStart, setMusicAlbumSortStart] = useState(0);
   const typingChannelRef = useRef(null);
   const typingDebounceRef = useRef(null);
   const [gravityEnabled, setGravityEnabled] = useState(false);
@@ -157,6 +165,7 @@ export default function App() {
   const [jumpscareStatus, setJumpscareStatus] = useState('');
   const gravityTimeoutRef = useRef(null);
   const [now, setNow] = useState(new Date());
+  const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(true);
   const [announcementModalTitle, setAnnouncementModalTitle] = useState("What's New");
   const [announcementModalIntro, setAnnouncementModalIntro] = useState("Here's what's new on the site:");
   const [announcementModalItems, setAnnouncementModalItems] = useState([
@@ -322,6 +331,7 @@ export default function App() {
       loadWhyContent();
       loadPricingContent();
       loadGalleryContent();
+      loadMusicContent();
     }
   }, [isReady]);
 
@@ -528,6 +538,15 @@ export default function App() {
           }
         }
       });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'sound_effects')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setSoundEffectsEnabled(data?.value?.enabled !== false);
+      });
     return () => {
       mounted = false;
     };
@@ -551,6 +570,13 @@ export default function App() {
     setIntroLoopEnabled(enabled);
     await supabase.from('site_settings').upsert([
       { key: 'intro_loop', value: { enabled }, updated_at: new Date().toISOString() }
+    ]);
+  }
+
+  async function updateSoundEffects(enabled) {
+    setSoundEffectsEnabled(enabled);
+    await supabase.from('site_settings').upsert([
+      { key: 'sound_effects', value: { enabled }, updated_at: new Date().toISOString() }
     ]);
   }
 
@@ -1686,6 +1712,147 @@ export default function App() {
     }
     setGalleryStatus('Saved.');
     loadGalleryContent();
+  }
+
+  async function loadMusicContent() {
+    const { data } = await supabase
+      .from('music_tracks')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setMusicTracks(data || []);
+  }
+
+  async function uploadMusicTrack(event) {
+    event.preventDefault();
+    const fileInput = event.target.elements.musicFile;
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      setMusicStatus('Select an MP3 file.');
+      return;
+    }
+    if (!file.type.includes('audio/') && !file.name.toLowerCase().endsWith('.mp3')) {
+      setMusicStatus('Please upload an MP3 file.');
+      return;
+    }
+    setMusicStatus('Uploading...');
+    const pathName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const { error: uploadError } = await supabase.storage
+      .from('music')
+      .upload(pathName, file, { contentType: file.type || 'audio/mpeg', upsert: true });
+    if (uploadError) {
+      setMusicStatus(`Upload failed: ${uploadError.message}`);
+      return;
+    }
+    const { data: urlData } = supabase.storage.from('music').getPublicUrl(pathName);
+    const publicUrl = urlData?.publicUrl || '';
+    const { error: insertError } = await supabase.from('music_tracks').insert([{
+      title: musicTitle.trim() || file.name.replace(/\.mp3$/i, ''),
+      artist: musicArtist.trim() || null,
+      storage_path: pathName,
+      public_url: publicUrl,
+      sort_order: Number(musicSortOrder) || 0,
+      uploaded_by: session?.user?.id || null
+    }]);
+    if (insertError) {
+      setMusicStatus(`Save failed: ${insertError.message}`);
+      return;
+    }
+    event.target.reset();
+    setMusicTitle('');
+    setMusicArtist('');
+    setMusicSortOrder(0);
+    setMusicStatus('Uploaded.');
+    loadMusicContent();
+  }
+
+  async function uploadMusicAlbum(event) {
+    event.preventDefault();
+    const fileInput = event.target.elements.musicAlbumFiles;
+    const files = Array.from(fileInput?.files || []);
+    if (files.length === 0) {
+      setMusicStatus('Select one or more MP3 files.');
+      return;
+    }
+    const validFiles = files.filter(
+      (f) => f.type.includes('audio/') || f.name.toLowerCase().endsWith('.mp3')
+    );
+    if (validFiles.length === 0) {
+      setMusicStatus('Please upload MP3 files only.');
+      return;
+    }
+    const artist = musicAlbumArtist.trim() || null;
+    const sortStart = Number(musicAlbumSortStart) || 0;
+    setMusicStatus(`Uploading ${validFiles.length} track(s)...`);
+
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      const baseTitle = file.name.replace(/\.mp3$/i, '').trim() || `Track ${i + 1}`;
+      const pathName = `${Date.now()}_${i}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage
+        .from('music')
+        .upload(pathName, file, { contentType: file.type || 'audio/mpeg', upsert: true });
+      if (uploadError) {
+        setMusicStatus(`Upload failed (${baseTitle}): ${uploadError.message}`);
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('music').getPublicUrl(pathName);
+      const publicUrl = urlData?.publicUrl || '';
+      const { error: insertError } = await supabase.from('music_tracks').insert([{
+        title: baseTitle,
+        artist,
+        storage_path: pathName,
+        public_url: publicUrl,
+        sort_order: sortStart + i,
+        uploaded_by: session?.user?.id || null
+      }]);
+      if (insertError) {
+        setMusicStatus(`Save failed (${baseTitle}): ${insertError.message}`);
+        return;
+      }
+    }
+
+    event.target.reset();
+    setMusicAlbumArtist('');
+    setMusicAlbumSortStart(0);
+    setMusicStatus(`Uploaded ${validFiles.length} track(s).`);
+    loadMusicContent();
+  }
+
+  async function deleteMusicTrack(track) {
+    if (!window.confirm(`Delete "${track.title}"?`)) return;
+    const { error: storageError } = await supabase.storage.from('music').remove([track.storage_path]);
+    if (storageError) {
+      setMusicStatus(`Storage delete failed: ${storageError.message}`);
+      return;
+    }
+    const { error } = await supabase.from('music_tracks').delete().eq('id', track.id);
+    if (error) {
+      setMusicStatus(`Delete failed: ${error.message}`);
+      return;
+    }
+    loadMusicContent();
+  }
+
+  function updateMusicTrackField(track, field, value) {
+    setMusicTracks((prev) => prev.map((t) => (t.id === track.id ? { ...t, [field]: value } : t)));
+  }
+
+  async function saveMusicTrack(track) {
+    const { error } = await supabase
+      .from('music_tracks')
+      .update({
+        title: track.title,
+        artist: track.artist || null,
+        sort_order: Number(track.sort_order) ?? 0
+      })
+      .eq('id', track.id);
+    if (error) {
+      setMusicStatus(`Save failed: ${error.message}`);
+      return;
+    }
+    setMusicStatus('Saved.');
+    loadMusicContent();
   }
 
 
@@ -2957,6 +3124,14 @@ export default function App() {
                 />
                 Physics Mode (website)
               </label>
+              <label className="gravity-toggle">
+                <input
+                  type="checkbox"
+                  checked={soundEffectsEnabled}
+                  onChange={(event) => updateSoundEffects(event.target.checked)}
+                />
+                Sound effects (website)
+              </label>
               <div className="review-actions" style={{ marginTop: '0.75rem' }}>
                 <button type="button" className="danger" onClick={triggerJumpscare}>
                   Trigger Jumpscare
@@ -3119,6 +3294,114 @@ export default function App() {
                   <div className="review-actions">
                     <button type="button" onClick={() => saveGalleryImage(img)}>Save</button>
                     <button type="button" className="danger" onClick={() => deleteGalleryImage(img)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'music' && (
+          <section className="stack">
+            <form className="card form" onSubmit={uploadMusicTrack}>
+              <h3>Upload single track</h3>
+              <label>
+                MP3 file
+                <input type="file" name="musicFile" accept=".mp3,audio/mpeg" />
+              </label>
+              <label>
+                Title
+                <input
+                  type="text"
+                  value={musicTitle}
+                  onChange={(e) => setMusicTitle(e.target.value)}
+                  placeholder="Track title"
+                />
+              </label>
+              <label>
+                Artist
+                <input
+                  type="text"
+                  value={musicArtist}
+                  onChange={(e) => setMusicArtist(e.target.value)}
+                  placeholder="Artist name"
+                />
+              </label>
+              <label>
+                Sort order
+                <input
+                  type="number"
+                  value={musicSortOrder}
+                  onChange={(e) => setMusicSortOrder(e.target.value)}
+                />
+              </label>
+              {musicStatus && <p className="muted">{musicStatus}</p>}
+              <button type="submit">Upload track</button>
+            </form>
+
+            <form className="card form" onSubmit={uploadMusicAlbum}>
+              <h3>Upload album (multiple tracks)</h3>
+              <p className="muted">Select multiple MP3s. Track titles are taken from filenames (no need to type each name).</p>
+              <label>
+                MP3 files
+                <input type="file" name="musicAlbumFiles" accept=".mp3,audio/mpeg" multiple />
+              </label>
+              <label>
+                Artist (optional, applied to all tracks)
+                <input
+                  type="text"
+                  value={musicAlbumArtist}
+                  onChange={(e) => setMusicAlbumArtist(e.target.value)}
+                  placeholder="e.g. Pegger Productions"
+                />
+              </label>
+              <label>
+                Sort order start (first file gets this number, then +1, +2…)
+                <input
+                  type="number"
+                  value={musicAlbumSortStart}
+                  onChange={(e) => setMusicAlbumSortStart(e.target.value)}
+                />
+              </label>
+              {musicStatus && <p className="muted">{musicStatus}</p>}
+              <button type="submit">Upload album</button>
+            </form>
+
+            <div className="card list">
+              <h3>Tracks (Mason Music Player)</h3>
+              <p className="muted">Tracks appear on the <a href="/music.html" target="_blank" rel="noopener noreferrer">Mason Music Player</a> page.</p>
+              {musicTracks.length === 0 && <p className="muted">No tracks yet.</p>}
+              {musicTracks.map((track) => (
+                <div key={track.id} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, display: 'grid', gap: '0.6rem' }}>
+                    <label>
+                      Title
+                      <input
+                        type="text"
+                        value={track.title || ''}
+                        onChange={(e) => updateMusicTrackField(track, 'title', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Artist
+                      <input
+                        type="text"
+                        value={track.artist || ''}
+                        onChange={(e) => updateMusicTrackField(track, 'artist', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={track.sort_order ?? 0}
+                        onChange={(e) => updateMusicTrackField(track, 'sort_order', e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" onClick={() => saveMusicTrack(track)}>Save</button>
+                    <button type="button" className="danger" onClick={() => deleteMusicTrack(track)}>Delete</button>
                   </div>
                 </div>
               ))}

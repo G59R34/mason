@@ -73,6 +73,7 @@ body {
   -webkit-text-size-adjust: 100%;
   overflow-x: clip;
   background: var(--bg);
+  cursor: url('img/favicon.ico') 0 0, auto;
   background-image:
     radial-gradient(ellipse 120% 80% at 20% -20%, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
     radial-gradient(ellipse 100% 60% at 85% 10%, rgba(251, 191, 36, 0.06) 0%, transparent 45%),
@@ -436,41 +437,18 @@ button.ghost:hover {
 .custom-audio-icon-play,
 .custom-audio-icon-pause {
   display: block;
-  width: 0;
-  height: 0;
-  border-style: solid;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .custom-audio-icon-play {
-  margin-left: 2px;
-  border-width: 8px 0 8px 14px;
-  border-color: transparent transparent transparent currentColor;
+  display: block;
 }
 
 .custom-audio-icon-pause {
   display: none;
-  width: 16px;
-  height: 14px;
-  gap: 4px;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.custom-audio-icon-pause::before,
-.custom-audio-icon-pause::after {
-  content: "";
-  display: block;
-  width: 4px;
-  height: 14px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-.custom-audio-icon-pause::after {
-  position: absolute;
-  left: 8px;
-  top: 0;
 }
 
 .custom-audio-play.is-playing .custom-audio-icon-play {
@@ -478,7 +456,7 @@ button.ghost:hover {
 }
 
 .custom-audio-play.is-playing .custom-audio-icon-pause {
-  display: flex;
+  display: block;
 }
 
 .custom-audio-progress-wrap {
@@ -1459,4 +1437,49 @@ blockquote cite {
   .forums-layout {
     grid-template-columns: 1fr;
   }
+}
+
+/* Mason Music Player */
+.music-track-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.music-track-item {
+  margin: 0;
+}
+
+.music-track-btn {
+  width: 100%;
+  text-align: left;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ring);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-smooth), background var(--duration-fast) var(--ease-smooth), transform var(--duration-fast) var(--ease-spring);
+}
+
+.music-track-btn:hover {
+  border-color: var(--ring-hover);
+  background: var(--card-soft);
+  transform: translateY(-2px);
+}
+
+.music-track-btn:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.music-player-embed .custom-audio-ui {
+  padding: 12px 16px;
+  min-height: 48px;
 }

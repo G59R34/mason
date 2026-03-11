@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Mason Music Player</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <script src="global-nav.js"></script>
+    <script src="animations.js"></script>
+
+    <main class="wrap">
+        <section class="card">
+            <div class="section-head">
+                <div>
+                    <h1>Mason Music Player</h1>
+                    <p class="muted">Stream tracks uploaded by Mason.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card section" id="musicPlayerSection" style="display: none;">
+            <h2>Now playing</h2>
+            <p class="muted" id="nowPlayingLabel">Select a track below.</p>
+            <div class="music-player-embed" style="margin-top: 12px;">
+                <audio id="musicPlayerAudio" preload="metadata" class="custom-audio-player" aria-label="Music player"></audio>
+            </div>
+        </section>
+
+        <section class="card-soft section" aria-live="polite" id="musicEmpty">
+            <h2>No tracks yet</h2>
+            <p class="muted">Check back soon for new music.</p>
+        </section>
+        <section class="section" id="musicTrackList" style="display: none;">
+            <h2>Track list</h2>
+            <ul id="musicTrackListUl" class="music-track-list" aria-label="Tracks"></ul>
+        </section>
+    </main>
+
+    <script src="custom-audio-player.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+    <script>
+        (async () => {
+            const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+            const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+            if (typeof supabase === 'undefined') return;
+            const sb = window.msSupabase || (window.msSupabase = supabase.createClient(
+                SUPABASE_URL,
+                SUPABASE_ANON_KEY,
+                { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage } }
+            ));
+
+            const audio = document.getElementById('musicPlayerAudio');
+            const nowPlayingLabel = document.getElementById('nowPlayingLabel');
+            const playerSection = document.getElementById('musicPlayerSection');
+            const emptySection = document.getElementById('musicEmpty');
+            const trackListSection = document.getElementById('musicTrackList');
+            const listEl = document.getElementById('musicTrackListUl');
+
+            async function loadTracks() {
+                const { data: tracks } = await sb
+                    .from('music_tracks')
+                    .select('id, title, artist, public_url')
+                    .order('sort_order', { ascending: true })
+                    .order('created_at', { ascending: true });
+
+                if (!tracks || tracks.length === 0) {
+                    emptySection.style.display = '';
+                    trackListSection.style.display = 'none';
+                    playerSection.style.display = 'none';
+                    return;
+                }
+
+                emptySection.style.display = 'none';
+                trackListSection.style.display = '';
+                playerSection.style.display = '';
+                listEl.innerHTML = '';
+
+                tracks.forEach(function (track) {
+                    const li = document.createElement('li');
+                    li.className = 'music-track-item';
+                    const label = track.artist ? track.title + ' — ' + track.artist : track.title;
+                    li.innerHTML = '<button type="button" class="music-track-btn">' + escapeHtml(label) + '</button>';
+                    li.querySelector('.music-track-btn').addEventListener('click', function () {
+                        audio.src = track.public_url;
+                        audio.load();
+                        audio.play().catch(function () {});
+                        nowPlayingLabel.textContent = label;
+                    });
+                    listEl.appendChild(li);
+                });
+            }
+
+            function escapeHtml(text) {
+                var div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            loadTracks();
+
+            if (window.customAudioPlayerInit) {
+                window.customAudioPlayerInit();
+            }
+        })();
+    </script>
+</body>
+</html>

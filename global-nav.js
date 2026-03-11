@@ -1,5 +1,14 @@
 // global-nav.js
 (() => {
+    function injectFavicon() {
+        if (document.querySelector('link[rel="icon"]')) return;
+        var link = document.createElement('link');
+        link.rel = 'icon';
+        link.href = 'img/favicon.ico';
+        link.type = 'image/x-icon';
+        document.head.appendChild(link);
+    }
+
     function createNav() {
         const header = document.createElement('header');
         header.className = 'global-header';
@@ -21,6 +30,7 @@
                         <li><a href="index.html">Home</a></li>
                        
                         <li><a href="gallery.html">Gallery</a></li>
+                        <li><a href="music.html">Music</a></li>
                         <li><a href="why.html">About</a></li>
                         <li><a href="reviews.html">Reviews</a></li>
                         <li><a href="forums.html">Forums</a></li>
@@ -177,6 +187,13 @@
                         }
                     })
                     .catch(function () { cb(DEFAULT_MODAL_CONFIG); });
+                sb.from('site_settings').select('value').eq('key', 'sound_effects').maybeSingle()
+                    .then(function (res) {
+                        var enabled = res.data && res.data.value && res.data.value.enabled !== false;
+                        if (typeof window !== 'undefined') window.__soundEffectsEnabled = enabled;
+                        if (typeof window.soundEffectsEnabled === 'function') window.soundEffectsEnabled(enabled);
+                    })
+                    .catch(function () {});
             };
             script.onerror = function () { cb(DEFAULT_MODAL_CONFIG); };
             document.head.appendChild(script);
@@ -193,6 +210,13 @@
                 }
             })
             .catch(function () { cb(DEFAULT_MODAL_CONFIG); });
+        sb.from('site_settings').select('value').eq('key', 'sound_effects').maybeSingle()
+            .then(function (res) {
+                var enabled = res.data && res.data.value && res.data.value.enabled !== false;
+                if (typeof window !== 'undefined') window.__soundEffectsEnabled = enabled;
+                if (typeof window.soundEffectsEnabled === 'function') window.soundEffectsEnabled(enabled);
+            })
+            .catch(function () {});
     }
 
     function showAnnouncementModal(config) {
@@ -358,20 +382,33 @@
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () {
+            injectFavicon();
             injectStyles();
             createNav();
             injectCustomAudioScript();
+            injectSoundEffects();
             getModalConfig(function (config) {
                 setTimeout(function () { showAnnouncementModal(config); }, 300);
             });
         });
     } else {
+        injectFavicon();
         injectStyles();
         createNav();
         injectCustomAudioScript();
+        injectSoundEffects();
         getModalConfig(function (config) {
             setTimeout(function () { showAnnouncementModal(config); }, 300);
         });
+    }
+
+    function injectSoundEffects() {
+        if (document.getElementById('sound-effects-script')) return;
+        var s = document.createElement('script');
+        s.id = 'sound-effects-script';
+        s.src = 'sound-effects.js';
+        s.async = true;
+        document.body.appendChild(s);
     }
 
     function injectCustomAudioScript() {
@@ -692,7 +729,7 @@
             };
 
             const fetchSetting = async () => {
-                const { data } = await sb.from('site_settings').select('key,value').in('key', ['physics_mode','maintenance_mode','intro_loop','jumpscare']);
+                const { data } = await sb.from('site_settings').select('key,value').in('key', ['physics_mode','maintenance_mode','intro_loop','jumpscare','sound_effects']);
                 const map = new Map((data || []).map((row) => [row.key, row.value]));
                 applyPhysics(Boolean(map.get('physics_mode')?.enabled));
                 if (map.get('maintenance_mode')?.enabled) {
@@ -701,6 +738,12 @@
                     clearMaintenance();
                 }
                 setIntroLoop(Boolean(map.get('intro_loop')?.enabled));
+                if (typeof window.__soundEffectsEnabled !== 'undefined' || typeof window.soundEffectsEnabled === 'function') {
+                    var sfx = map.get('sound_effects');
+                    var on = sfx && sfx.enabled !== false;
+                    if (typeof window !== 'undefined') window.__soundEffectsEnabled = on;
+                    if (typeof window.soundEffectsEnabled === 'function') window.soundEffectsEnabled(on);
+                }
                 const jumpscare = map.get('jumpscare');
                 if (jumpscare?.nonce) {
                     const nonce = Number(jumpscare?.nonce || 0);
@@ -728,6 +771,11 @@
                     }
                     if (key === 'intro_loop') {
                         setIntroLoop(Boolean(payload.new?.value?.enabled));
+                    }
+                    if (key === 'sound_effects') {
+                        var on = payload.new && payload.new.value && payload.new.value.enabled !== false;
+                        if (typeof window !== 'undefined') window.__soundEffectsEnabled = on;
+                        if (typeof window.soundEffectsEnabled === 'function') window.soundEffectsEnabled(on);
                     }
                     if (key === 'jumpscare') {
                         if (payload.new?.value?.enabled) {
