@@ -105,6 +105,67 @@
         });
     }
 
+    var ANNOUNCEMENT_MODAL_KEY = 'ms_announcement_modal_seen_v1';
+
+    function showAnnouncementModal() {
+        try {
+            if (localStorage.getItem(ANNOUNCEMENT_MODAL_KEY) === '1') return;
+        } catch (e) { return; }
+
+        var overlay = document.createElement('div');
+        overlay.className = 'ms-announcement-modal';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-labelledby', 'ms-announcement-title');
+        overlay.innerHTML = '<div class="ms-announcement-modal-backdrop"></div>' +
+            '<div class="ms-announcement-modal-dialog">' +
+            '<div class="ms-announcement-modal-body">' +
+            '<h2 id="ms-announcement-title">What\'s New</h2>' +
+            '<p style="margin:0">Here’s what’s new on the site:</p>' +
+            '<ul class="ms-announcement-updates">' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>V2 redesign</strong> — New look and feel: Noir Luxe theme, Syne & DM Sans typography, violet accents, and smoother animations across the site.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Nut For Me</strong> — New track from Pegger Productions. Listen in the banner below the nav and on the dedicated track page.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Custom audio player</strong> — In-site player with play/pause, seek bar, and time display that matches the new design.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Track reviews</strong> — Rate and review “Nut For Me” the same way you do site reviews.</span></li>' +
+            '<li><span class="ms-announcement-dot" aria-hidden="true"></span><span><strong>Smoother experience</strong> — Smooth scrolling, scroll-triggered animations, and refined hover states throughout.</span></li>' +
+            '</ul>' +
+            '</div>' +
+            '<div class="ms-announcement-modal-footer">' +
+            '<button type="button" class="ms-announcement-btn">Got it</button>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+
+        document.body.appendChild(overlay);
+
+        function closeModal() {
+            overlay.classList.remove('open');
+            try { localStorage.setItem(ANNOUNCEMENT_MODAL_KEY, '1'); } catch (e) {}
+            setTimeout(function () {
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            }, 320);
+        }
+
+        var btn = overlay.querySelector('.ms-announcement-btn');
+        var backdrop = overlay.querySelector('.ms-announcement-modal-backdrop');
+
+        if (btn) btn.addEventListener('click', closeModal);
+        if (backdrop) backdrop.addEventListener('click', closeModal);
+
+        overlay.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                overlay.classList.add('open');
+                if (btn) btn.focus();
+            });
+        });
+    }
+
     function injectStyles() {
         if (document.getElementById('global-nav-styles')) return;
         const css = `
@@ -131,7 +192,23 @@
             .gn-cta{display:inline-block;background:#a78bfa;color:#0a0a0c;padding:10px 16px;border-radius:9999px;text-decoration:none;font-weight:700}
             .gn-announcement{max-width:1200px;margin:0 auto;padding:0 24px 12px}
             .gn-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.6);opacity:0;pointer-events:none;transition:opacity .32s cubic-bezier(0.25,1,0.5,1);z-index:7990}
+            .gn-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.6);opacity:0;pointer-events:none;transition:opacity .32s cubic-bezier(0.25,1,0.5,1);z-index:7990}
             .gn-backdrop.open{opacity:1;pointer-events:auto}
+            .ms-announcement-modal{position:fixed;inset:0;z-index:25000;display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;visibility:hidden;transition:opacity .32s ease,visibility .32s ease}
+            .ms-announcement-modal.open{opacity:1;visibility:visible}
+            .ms-announcement-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+            .ms-announcement-modal-dialog{position:relative;width:100%;max-width:480px;max-height:90vh;overflow:auto;background:#141418;border:1px solid rgba(255,255,255,0.08);border-radius:20px;box-shadow:0 32px 64px rgba(0,0,0,0.5);font-family:"DM Sans",system-ui,sans-serif;animation:ms-modal-in .35s cubic-bezier(0.25,1,0.5,1) forwards}
+            @keyframes ms-modal-in{from{opacity:0;transform:scale(0.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+            .ms-announcement-modal-dialog h2{font-family:"Syne",system-ui,sans-serif;font-size:1.5rem;font-weight:700;margin:0 0 8px;color:#fafafa}
+            .ms-announcement-modal-dialog .ms-announcement-modal-body{padding:24px 24px 20px;color:#a1a1aa;font-size:0.95rem;line-height:1.6}
+            .ms-announcement-modal-dialog .ms-announcement-updates{list-style:none;padding:0;margin:16px 0 0}
+            .ms-announcement-modal-dialog .ms-announcement-updates li{padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;align-items:flex-start}
+            .ms-announcement-modal-dialog .ms-announcement-updates li:last-child{border-bottom:0}
+            .ms-announcement-modal-dialog .ms-announcement-updates .ms-announcement-dot{flex-shrink:0;width:8px;height:8px;border-radius:50%;background:#a78bfa;margin-top:6px}
+            .ms-announcement-modal-dialog .ms-announcement-updates strong{color:#fafafa;font-weight:600}
+            .ms-announcement-modal-dialog .ms-announcement-modal-footer{padding:16px 24px 24px;display:flex;justify-content:flex-end}
+            .ms-announcement-modal-dialog .ms-announcement-btn{background:#8b5cf6;color:#0a0a0c;border:0;border-radius:9999px;padding:12px 24px;font-weight:700;font-size:0.95rem;cursor:pointer;transition:transform .2s cubic-bezier(0.34,1.56,0.64,1),box-shadow .2s ease}
+            .ms-announcement-modal-dialog .ms-announcement-btn:hover{transform:translateY(-2px);box-shadow:0 12px 24px rgba(139,92,246,0.4)}
             .gn-announcement .gn-ann-bar{display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(90deg,#7c3aed,#a78bfa);color:#0a0a0c;border-radius:20px;padding:12px 18px;font-weight:600;letter-spacing:0.01em;box-shadow:0 12px 24px rgba(139,92,246,0.3);border:1px solid rgba(255,255,255,0.08);text-align:center}
             .gn-announcement .gn-ann-bar .gn-ann-pill{background:rgba(0,0,0,0.15);padding:4px 10px;border-radius:9999px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em}
             .gn-announcement .gn-ann-bar .gn-ann-text{line-height:1.35}
@@ -186,9 +263,17 @@
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => { injectStyles(); createNav(); injectCustomAudioScript(); });
+        document.addEventListener('DOMContentLoaded', function () {
+            injectStyles();
+            createNav();
+            injectCustomAudioScript();
+            setTimeout(showAnnouncementModal, 300);
+        });
     } else {
-        injectStyles(); createNav(); injectCustomAudioScript();
+        injectStyles();
+        createNav();
+        injectCustomAudioScript();
+        setTimeout(showAnnouncementModal, 300);
     }
 
     function injectCustomAudioScript() {
