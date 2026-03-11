@@ -5,14 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Forums - Mason</title>
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <script src="global-nav.js"></script>
+  <script src="animations.js"></script>
   <script src="chatuser.js"></script>
 
   <main class="wrap">
-    <section class="card">
+    <section class="card animate-on-scroll">
       <div class="section-head">
         <div>
           <h1>Forums</h1>
@@ -23,7 +26,7 @@
       <div id="forumsStatus" class="forums-status"></div>
     </section>
 
-    <section class="card section">
+    <section class="card section animate-on-scroll">
       <h2>Start a thread</h2>
       <form id="threadForm" class="form">
         <div class="row stretch">
@@ -44,7 +47,7 @@
     </section>
 
     <section class="section forums-layout">
-      <div class="card forums-list-card">
+      <div class="card forums-list-card animate-on-scroll">
         <div class="section-head">
           <h2>Threads</h2>
           <select id="threadSort" class="forums-inline-select">
@@ -66,7 +69,7 @@
         <div id="threadList" class="forums-thread-list"></div>
       </div>
 
-      <div class="card forums-detail-card">
+      <div class="card forums-detail-card animate-on-scroll">
         <div id="threadDetailEmpty" class="muted">Select a thread to view replies.</div>
         <div id="threadDetail" class="forums-thread-detail" style="display: none;">
           <div id="threadDetailMeta"></div>

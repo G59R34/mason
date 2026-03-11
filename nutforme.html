@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Nut For Me — Pegger Productions</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <script src="global-nav.js"></script>
+    <script src="animations.js"></script>
+
+    <main class="wrap">
+        <section class="card hero">
+            <div class="hero-content">
+                <h1 class="animate-hero">Nut For Me</h1>
+                <p class="muted animate-hero animate-hero-delay-1">Pegger Productions</p>
+                <div class="hero-media animate-hero animate-hero-delay-2" style="max-width: 420px;">
+                    <audio preload="metadata" class="custom-audio-player" aria-label="Play Nut For Me">
+                        <source src="/nutforme.mp3" type="audio/mpeg">
+                    </audio>
+                </div>
+            </div>
+        </section>
+
+        <section class="card section animate-on-scroll" aria-label="Submit a review">
+            <h2>Review this track</h2>
+            <p class="muted">Rate and review &ldquo;Nut For Me&rdquo; — same as site reviews.</p>
+            <form id="trackReviewForm" class="form" style="margin-top: 16px;">
+                <div class="row stretch">
+                    <input id="trackReviewName" name="name" type="text" placeholder="Your name" required />
+                    <select id="trackReviewRating" name="rating" required>
+                        <option value="">Rating</option>
+                        <option value="5">5 — Excellent</option>
+                        <option value="4.5">4.5 — Very Good</option>
+                        <option value="4">4 — Good</option>
+                        <option value="3.5">3.5 — Above Average</option>
+                        <option value="3">3 — Okay</option>
+                        <option value="2.5">2.5 — Below Average</option>
+                        <option value="2">2 — Poor</option>
+                        <option value="1.5">1.5 — Very Poor</option>
+                        <option value="1">1 — Terrible</option>
+                        <option value="0.5">0.5 — Abysmal</option>
+                        <option value="0">0 — No Stars</option>
+                    </select>
+                </div>
+                <textarea id="trackReviewComment" name="comment" placeholder="Write your review..." required></textarea>
+                <div class="row row-end">
+                    <button type="submit">Submit Review</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="card section animate-on-scroll" aria-label="Track reviews">
+            <div class="section-head">
+                <h2>Reviews</h2>
+                <div class="rating-summary">
+                    <span class="avg" id="trackAvgRating">—</span>
+                    <span id="trackAvgStars" class="stars" aria-hidden="true">☆☆☆☆☆</span>
+                    <span class="meta" id="trackReviewCount">(0 reviews)</span>
+                </div>
+            </div>
+            <div id="trackReviewsList" class="reviews list">
+                <div class="muted">Loading reviews...</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+    <script>
+        (async () => {
+            const SUPABASE_URL = 'https://hyehyfbnskiybdspkbxe.supabase.co';
+            const SUPABASE_ANON_KEY = 'sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu';
+            const TRACK_SLUG = 'nutforme';
+
+            if (typeof supabase === 'undefined') {
+                await new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js';
+                    s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+                }).catch(() => {});
+            }
+            if (typeof supabase === 'undefined') return;
+
+            const sb = window.msSupabase || supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                auth: { persistSession: true, autoRefreshToken: true, storageKey: 'mason_auth', storage: window.localStorage }
+            });
+
+            const form = document.getElementById('trackReviewForm');
+            const listEl = document.getElementById('trackReviewsList');
+            const avgEl = document.getElementById('trackAvgRating');
+            const starsEl = document.getElementById('trackAvgStars');
+            const countEl = document.getElementById('trackReviewCount');
+
+            function renderStars(n) {
+                const full = Math.floor(n);
+                const half = Math.abs(n - full - 0.5) < 0.01;
+                const empty = 5 - full - (half ? 1 : 0);
+                return '★'.repeat(full) + (half ? '½' : '') + '☆'.repeat(empty);
+            }
+
+            async function loadReviews() {
+                const { data, error } = await sb
+                    .from('track_reviews')
+                    .select('name, comment, rating, created_at')
+                    .eq('track_slug', TRACK_SLUG)
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    listEl.innerHTML = '<div class="muted">Unable to load reviews. If you just set up the site, run <code>add_track_reviews.sql</code> in Supabase.</div>';
+                    return;
+                }
+
+                const reviews = data || [];
+                if (reviews.length === 0) {
+                    listEl.innerHTML = '<div class="muted">No reviews yet. Be the first to review this track.</div>';
+                    avgEl.textContent = '—';
+                    starsEl.textContent = '☆☆☆☆☆';
+                    countEl.textContent = '(0 reviews)';
+                    return;
+                }
+
+                const avg = reviews.reduce((s, r) => s + Number(r.rating), 0) / reviews.length;
+                avgEl.textContent = avg.toFixed(1);
+                starsEl.textContent = renderStars(avg);
+                countEl.textContent = '(' + reviews.length + ' review' + (reviews.length !== 1 ? 's' : '') + ')';
+
+                listEl.innerHTML = '';
+                reviews.forEach(r => {
+                    const card = document.createElement('div');
+                    card.className = 'review-card';
+                    const meta = document.createElement('div');
+                    meta.className = 'review-meta';
+                    meta.innerHTML = '<span>' + (r.name || 'Anonymous') + '</span><span class="review-stars">' + (r.rating != null ? r.rating + '★' : '') + '</span>';
+                    const text = document.createElement('div');
+                    text.className = 'review-text';
+                    text.textContent = (r.comment || '').trim();
+                    const time = document.createElement('div');
+                    time.className = 'review-time';
+                    time.textContent = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+                    card.appendChild(meta);
+                    card.appendChild(text);
+                    card.appendChild(time);
+                    listEl.appendChild(card);
+                });
+            }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('trackReviewName').value.trim();
+                const comment = document.getElementById('trackReviewComment').value.trim();
+                const rating = parseFloat(document.getElementById('trackReviewRating').value);
+                if (!name || !comment || isNaN(rating)) return;
+
+                const { error } = await sb.from('track_reviews').insert([{
+                    track_slug: TRACK_SLUG,
+                    name,
+                    comment,
+                    rating
+                }]);
+
+                if (error) {
+                    console.error(error);
+                    return;
+                }
+                form.reset();
+                await loadReviews();
+            });
+
+            await loadReviews();
+        })();
+    </script>
+</body>
+</html>

@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Why Mason?</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <script src="global-nav.js"></script>
@@ -220,9 +222,9 @@
                     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     label.setAttribute('x', '0');
                     label.setAttribute('y', `${y + 26}`);
-                    label.setAttribute('fill', '#0f172a');
+                    label.setAttribute('fill', '#fafafa');
                     label.setAttribute('font-size', '15');
-                    label.setAttribute('font-family', 'Space Grotesk, sans-serif');
+                    label.setAttribute('font-family', 'DM Sans, system-ui, sans-serif');
                     label.textContent = d.label;
 
                     const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -239,9 +241,9 @@
                     const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     valueText.setAttribute('x', `${140 + barWidth + 12}`);
                     valueText.setAttribute('y', `${y + 26}`);
-                    valueText.setAttribute('fill', '#64748b');
+                    valueText.setAttribute('fill', '#a1a1aa');
                     valueText.setAttribute('font-size', '14');
-                    valueText.setAttribute('font-family', 'Space Grotesk, sans-serif');
+                    valueText.setAttribute('font-family', 'DM Sans, system-ui, sans-serif');
                     valueText.textContent = formatValue(value, unit);
 
                     const showTip = (evt) => {

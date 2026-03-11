@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Reviews</title>
     <link rel="stylesheet" href="style.css">
-</head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <body>
     <script src="global-nav.js"></script>
+    <script src="animations.js"></script>
   
     <main class="wrap" aria-labelledby="title">
-        <section class="card">
+        <section class="card animate-on-scroll">
             <header class="section-head">
                 <div>
                     <h1 id="title">Mason Reviews</h1>
@@ -33,7 +36,7 @@
             <button id="adminLoginBtn" class="admin-login-btn">Admin Sign In</button>
         </div>
 
-        <section aria-label="submit review" class="card section">
+        <section aria-label="submit review" class="card section animate-on-scroll">
             <form id="reviewForm" class="form">
                 <div class="row stretch">
                     <input id="name" name="name" type="text" placeholder="Your name" required />
@@ -59,7 +62,7 @@
             </form>
         </section>
 
-        <section id="reviewsSection" aria-label="reviews list" class="card section">
+        <section id="reviewsSection" aria-label="reviews list" class="card section animate-on-scroll">
             <div class="reviews list" id="reviewsList">
                 <div class="empty">No reviews yet. Be the first to leave feedback.</div>
             </div>

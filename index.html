@@ -5,46 +5,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>Mason</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body>
     <script src="global-nav.js"></script>
+    <script src="animations.js"></script>
     <script src="chatuser.js"></script>
    
     <main class="wrap">
         <section class="card hero">
             <div class="hero-content">
-              
-                <h1>Hello, I'm Mason.</h1>
-                <p>Book a private session and I will FUCK you.</p>
-                <div class="hero-actions">
+                <h1 class="animate-hero animate-hero-delay-1">Hello, I'm Mason.</h1>
+                <p class="animate-hero animate-hero-delay-2">Book a private session and I will FUCK you.</p>
+                <div class="hero-actions animate-hero animate-hero-delay-3">
                     <a class="btn" href="pricing.html">Book a session</a>
                     <a class="btn btn-ghost" href="reviews.html">See reviews</a>
                     <a class="btn btn-ghost" href="forums.html">Open forums</a>
                 </div>
-                <div class="stats-grid section">
+                <div class="stats-grid section animate-hero animate-hero-delay-4">
                     <div class="stat-card"><strong>Slow replies</strong>Most clients hear back within a month.</div>
                     <div class="stat-card"><strong>Foggy Inconsistent scheduling</strong>Everything is confirmed at some point.</div>
                     <div class="stat-card"><strong>Private chat</strong>Secure, real-time updates on you FUCK session.</div>
                 </div>
             </div>
-            <div class="hero-media">
+            <div class="hero-media animate-hero animate-hero-delay-2">
                 <img src="/img/mason.png" alt="Mason">
             </div>
         </section>
 
-        <section class="section">
+        <section class="section animate-on-scroll animate-stagger">
             <div class="section-head">
                 <h2>Recent reviews</h2>
                 <a href="reviews.html">View all</a>
             </div>
-            <div id="recentReviews" class="grid">
+            <div id="recentReviews" class="grid animate-stagger">
                 <div class="card-soft muted">Loading reviews...</div>
             </div>
         </section>
 
-        <section class="section card" aria-label="mason quote">
+        <section class="section card animate-on-scroll" aria-label="mason quote">
             <div class="section-head">
                 <h2>From Mason</h2>
             </div>
@@ -101,7 +103,7 @@
                 list.innerHTML = '';
                 data.forEach(r => {
                     const card = document.createElement('div');
-                    card.className = 'review-card';
+                    card.className = 'review-card animate-on-scroll';
                     const meta = document.createElement('div');
                     meta.className = 'review-meta';
                     const verified = !!(r.verified || r.owner);
@@ -113,6 +115,7 @@
                     card.appendChild(meta);
                     card.appendChild(text);
                     list.appendChild(card);
+                    if (window.masonAnimateObserve) window.masonAnimateObserve(card);
                 });
             }
 
