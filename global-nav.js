@@ -343,6 +343,14 @@
             .ms-physics-water{position:fixed;left:0;right:0;bottom:0;height:40vh;background:linear-gradient(180deg,rgba(56,189,248,0.08),rgba(14,116,144,0.5));backdrop-filter:blur(2px);z-index:12000;pointer-events:none}
             .ms-maintenance{position:fixed;inset:0;z-index:40000;background:#0b0f1a;display:flex;align-items:center;justify-content:center}
             .ms-maintenance-inner{font-family:Space Grotesk,system-ui,sans-serif;font-size:2rem;color:#f8fafc;text-align:center;padding:2rem;border:1px solid rgba(148,163,184,0.35);border-radius:16px;background:rgba(15,23,42,0.6);box-shadow:0 30px 80px rgba(2,6,23,0.6)}
+            .ms-admin-block-modal{position:fixed;inset:0;z-index:45000;display:flex;align-items:center;justify-content:center;padding:24px;pointer-events:auto}
+            .ms-admin-block-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+            .ms-admin-block-modal-dialog{position:relative;width:100%;max-width:520px;max-height:90vh;overflow:auto;background:#141418;border:1px solid rgba(255,255,255,0.1);border-radius:20px;box-shadow:0 32px 64px rgba(0,0,0,0.6);font-family:"DM Sans",system-ui,sans-serif;padding:28px 28px 24px}
+            .ms-admin-block-modal-dialog h2{font-family:"Syne",system-ui,sans-serif;font-size:1.5rem;font-weight:700;margin:0 0 12px;color:#fafafa}
+            .ms-admin-block-modal-body{color:#a1a1aa;font-size:0.95rem;line-height:1.65;white-space:pre-wrap}
+            .ms-admin-block-modal-cta{margin-top:20px}
+            .ms-admin-block-modal-cta a{display:inline-block;background:#8b5cf6;color:#0a0a0c;padding:12px 24px;border-radius:9999px;font-weight:700;text-decoration:none;transition:transform .2s ease,box-shadow .2s ease}
+            .ms-admin-block-modal-cta a:hover{transform:translateY(-2px);box-shadow:0 12px 24px rgba(139,92,246,0.4)}
             .ms-jumpscare{position:fixed;inset:0;z-index:50000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.8)}
             .ms-jumpscare img{width:100%;height:100%;object-fit:cover;object-position:center;animation:ms-jumpscare-flash 0.12s steps(2) 10}
             .ms-jumpscare.shake{animation:ms-jumpscare-shake 0.12s infinite}
@@ -705,6 +713,45 @@
                 if (overlay) overlay.remove();
             };
 
+            const ensureAdminBlockModal = (config) => {
+                if (!config || !config.enabled) {
+                    const el = document.querySelector('.ms-admin-block-modal');
+                    if (el) el.remove();
+                    document.documentElement.style.overflow = '';
+                    return;
+                }
+                var overlay = document.querySelector('.ms-admin-block-modal');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.className = 'ms-admin-block-modal';
+                    overlay.setAttribute('role', 'dialog');
+                    overlay.setAttribute('aria-modal', 'true');
+                    overlay.setAttribute('aria-labelledby', 'ms-admin-block-title');
+                    overlay.innerHTML = '<div class="ms-admin-block-modal-backdrop"></div><div class="ms-admin-block-modal-dialog"><h2 id="ms-admin-block-title"></h2><div class="ms-admin-block-modal-body"></div><div class="ms-admin-block-modal-cta" style="display:none"></div></div>';
+                    document.body.appendChild(overlay);
+                    document.documentElement.style.overflow = 'hidden';
+                }
+                var titleEl = overlay.querySelector('#ms-admin-block-title');
+                var bodyEl = overlay.querySelector('.ms-admin-block-modal-body');
+                var ctaWrap = overlay.querySelector('.ms-admin-block-modal-cta');
+                if (titleEl) titleEl.textContent = config.title || 'Notice';
+                if (bodyEl) {
+                    bodyEl.textContent = config.body || '';
+                    bodyEl.style.display = (config.body || '').trim() ? '' : 'none';
+                }
+                if (ctaWrap && config.cta_label && config.cta_url) {
+                    ctaWrap.style.display = '';
+                    ctaWrap.innerHTML = '<a href="' + String(config.cta_url).replace(/"/g, '&quot;') + '">' + String(config.cta_label).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</a>';
+                } else {
+                    ctaWrap.style.display = 'none';
+                    ctaWrap.innerHTML = '';
+                }
+            };
+
+            const clearAdminBlockModal = () => {
+                ensureAdminBlockModal({ enabled: false });
+            };
+
             let lastJumpscareNonce = Number(sessionStorage.getItem('ms_jumpscare_nonce') || 0);
             const triggerJumpscare = (nonce) => {
                 if (!nonce || nonce <= lastJumpscareNonce) return;
@@ -729,7 +776,7 @@
             };
 
             const fetchSetting = async () => {
-                const { data } = await sb.from('site_settings').select('key,value').in('key', ['physics_mode','maintenance_mode','intro_loop','jumpscare','sound_effects']);
+                const { data } = await sb.from('site_settings').select('key,value').in('key', ['physics_mode','maintenance_mode','intro_loop','jumpscare','sound_effects','admin_block_modal']);
                 const map = new Map((data || []).map((row) => [row.key, row.value]));
                 applyPhysics(Boolean(map.get('physics_mode')?.enabled));
                 if (map.get('maintenance_mode')?.enabled) {
@@ -751,6 +798,12 @@
                         lastJumpscareNonce = nonce;
                         sessionStorage.setItem('ms_jumpscare_nonce', String(nonce));
                     }
+                }
+                var blockModal = map.get('admin_block_modal');
+                if (blockModal && blockModal.enabled) {
+                    ensureAdminBlockModal(blockModal);
+                } else {
+                    clearAdminBlockModal();
                 }
             };
 
@@ -780,6 +833,13 @@
                     if (key === 'jumpscare') {
                         if (payload.new?.value?.enabled) {
                             triggerJumpscare(Number(payload.new?.value?.nonce || 0));
+                        }
+                    }
+                    if (key === 'admin_block_modal') {
+                        if (payload.new?.value?.enabled) {
+                            ensureAdminBlockModal(payload.new.value);
+                        } else {
+                            clearAdminBlockModal();
                         }
                     }
                 })

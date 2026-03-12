@@ -37,3 +37,6 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO public.site_settings (key, value)
 VALUES ('jumpscare', '{"enabled": false, "nonce": 0}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.site_settings (key, value)
+VALUES ('admin_block_modal', '{"enabled": false, "title": "Site temporarily unavailable", "body": "Please check back later.", "cta_label": "", "cta_url": ""}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

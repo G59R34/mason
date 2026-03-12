@@ -197,6 +197,13 @@ export default function App() {
   const [announcementModalVersion, setAnnouncementModalVersion] = useState(0);
   const [announcementModalStatus, setAnnouncementModalStatus] = useState('');
 
+  const [adminBlockModalEnabled, setAdminBlockModalEnabled] = useState(false);
+  const [adminBlockModalTitle, setAdminBlockModalTitle] = useState('Site temporarily unavailable');
+  const [adminBlockModalBody, setAdminBlockModalBody] = useState('Please check back later.');
+  const [adminBlockModalCtaLabel, setAdminBlockModalCtaLabel] = useState('');
+  const [adminBlockModalCtaUrl, setAdminBlockModalCtaUrl] = useState('');
+  const [adminBlockModalStatus, setAdminBlockModalStatus] = useState('');
+
   const isStaffMode = loginMode === 'staff';
   const isReady = useMemo(() => {
     if (!session) return false;
@@ -597,6 +604,22 @@ export default function App() {
         if (!mounted) return;
         setSoundEffectsEnabled(data?.value?.enabled !== false);
       });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'admin_block_modal')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        const v = data?.value;
+        if (v) {
+          setAdminBlockModalEnabled(Boolean(v.enabled));
+          setAdminBlockModalTitle(v.title ?? 'Site temporarily unavailable');
+          setAdminBlockModalBody(v.body ?? 'Please check back later.');
+          setAdminBlockModalCtaLabel(v.cta_label ?? '');
+          setAdminBlockModalCtaUrl(v.cta_url ?? '');
+        }
+      });
     return () => {
       mounted = false;
     };
@@ -628,6 +651,44 @@ export default function App() {
     await supabase.from('site_settings').upsert([
       { key: 'sound_effects', value: { enabled }, updated_at: new Date().toISOString() }
     ]);
+  }
+
+  function getAdminBlockModalValue() {
+    return {
+      enabled: adminBlockModalEnabled,
+      title: adminBlockModalTitle || 'Notice',
+      body: adminBlockModalBody || '',
+      cta_label: adminBlockModalCtaLabel || '',
+      cta_url: adminBlockModalCtaUrl || ''
+    };
+  }
+
+  async function updateAdminBlockModalEnabled(enabled) {
+    setAdminBlockModalEnabled(enabled);
+    const value = {
+      enabled,
+      title: adminBlockModalTitle || 'Notice',
+      body: adminBlockModalBody || '',
+      cta_label: adminBlockModalCtaLabel || '',
+      cta_url: adminBlockModalCtaUrl || ''
+    };
+    await supabase.from('site_settings').upsert([
+      { key: 'admin_block_modal', value, updated_at: new Date().toISOString() }
+    ]);
+  }
+
+  async function saveAdminBlockModalContent() {
+    setAdminBlockModalStatus('Saving...');
+    const value = getAdminBlockModalValue();
+    const { error } = await supabase.from('site_settings').upsert([
+      { key: 'admin_block_modal', value, updated_at: new Date().toISOString() }
+    ]);
+    if (error) {
+      setAdminBlockModalStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setAdminBlockModalStatus('Saved. Site will update live.');
+    setTimeout(() => setAdminBlockModalStatus(''), 3000);
   }
 
   async function triggerJumpscare() {
@@ -3444,6 +3505,61 @@ export default function App() {
                   Trigger Jumpscare
                 </button>
                 {jumpscareStatus && <span className="muted">{jumpscareStatus}</span>}
+              </div>
+            </div>
+
+            <div className="card form" style={{ marginTop: '1rem' }}>
+              <h3>Site block modal (live)</h3>
+              <p className="muted">When enabled, a full-screen modal blocks the whole site for all visitors. Content updates live when you save. Disable to unblock the site.</p>
+              <label className="gravity-toggle">
+                <input
+                  type="checkbox"
+                  checked={adminBlockModalEnabled}
+                  onChange={(event) => updateAdminBlockModalEnabled(event.target.checked)}
+                />
+                Enable block modal (site disabled)
+              </label>
+              <label>
+                Modal title
+                <input
+                  type="text"
+                  value={adminBlockModalTitle}
+                  onChange={(e) => setAdminBlockModalTitle(e.target.value)}
+                  placeholder="e.g. Site temporarily unavailable"
+                />
+              </label>
+              <label>
+                Message (plain text)
+                <textarea
+                  rows={4}
+                  value={adminBlockModalBody}
+                  onChange={(e) => setAdminBlockModalBody(e.target.value)}
+                  placeholder="e.g. We'll be back shortly."
+                />
+              </label>
+              <label>
+                Button label (optional)
+                <input
+                  type="text"
+                  value={adminBlockModalCtaLabel}
+                  onChange={(e) => setAdminBlockModalCtaLabel(e.target.value)}
+                  placeholder="e.g. Visit status page"
+                />
+              </label>
+              <label>
+                Button URL (optional)
+                <input
+                  type="text"
+                  value={adminBlockModalCtaUrl}
+                  onChange={(e) => setAdminBlockModalCtaUrl(e.target.value)}
+                  placeholder="https://..."
+                />
+              </label>
+              <div className="review-actions" style={{ marginTop: '0.75rem' }}>
+                <button type="button" onClick={saveAdminBlockModalContent}>
+                  Save content (live update)
+                </button>
+                {adminBlockModalStatus && <span className="muted">{adminBlockModalStatus}</span>}
               </div>
             </div>
 
