@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase.js';
+import CustomTitleBar from './CustomTitleBar.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -7,6 +8,7 @@ const TABS = [
   { id: 'conversations', label: 'Conversations' },
   { id: 'reviews', label: 'Reviews' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'clients', label: 'Clients' },
   { id: 'gallery', label: 'Gallery' },
   { id: 'music', label: 'Music' },
   { id: 'why', label: 'Why Editor' },
@@ -67,6 +69,8 @@ export default function App() {
   const [announcementColor, setAnnouncementColor] = useState('#0f766e');
   const [announcementStatus, setAnnouncementStatus] = useState('');
   const [editingAnnouncementId, setEditingAnnouncementId] = useState(null);
+  const [editingReplyReviewId, setEditingReplyReviewId] = useState(null);
+  const [editingReplyText, setEditingReplyText] = useState('');
   const [editAnnouncement, setEditAnnouncement] = useState({ message: '', label: '', color: '' });
   const [conversations, setConversations] = useState([]);
   const [conversationMessages, setConversationMessages] = useState([]);
@@ -90,6 +94,23 @@ export default function App() {
   const [sessionActionStatus, setSessionActionStatus] = useState({});
   const [selectedSession, setSelectedSession] = useState(null);
   const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0, session: null });
+  const [createSessionPopup, setCreateSessionPopup] = useState(null);
+  const [recurringSessionModal, setRecurringSessionModal] = useState(null);
+  const [recurringForm, setRecurringForm] = useState({
+    client_id: '',
+    start_date: '',
+    end_date: '',
+    use_count: false,
+    count: 4,
+    frequency: 'weekly',
+    time: '09:00',
+    duration_minutes: '60',
+    staff_name: '',
+    location: '',
+    status: 'scheduled',
+    session_type: ''
+  });
+  const [recurringStatus, setRecurringStatus] = useState('');
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [hasConversationSubject, setHasConversationSubject] = useState(false);
   const [hasConversationClosedAt, setHasConversationClosedAt] = useState(false);
@@ -105,7 +126,8 @@ export default function App() {
     price: '',
     status: 'scheduled',
     staff_name: '',
-    user_id: ''
+    user_id: '',
+    session_type: ''
   });
   const [adminDisplayName, setAdminDisplayName] = useState('');
   const [settingsStatus, setSettingsStatus] = useState('');
@@ -233,6 +255,27 @@ export default function App() {
   }, [staffBuckets, scheduleDays]);
   const nowOffsetPercent = clamp(((now.getTime() - rangeStart.getTime()) / rangeMs) * 100, 0, 100);
 
+  const clientSessionStats = useMemo(() => {
+    const map = {};
+    clients.forEach((c) => {
+      map[c.user_id] = { sessionCount: 0, lastSession: null, nextSession: null };
+    });
+    const now = new Date();
+    sessions.forEach((s) => {
+      if (!s.user_id) return;
+      if (!map[s.user_id]) map[s.user_id] = { sessionCount: 0, lastSession: null, nextSession: null };
+      map[s.user_id].sessionCount++;
+      const d = s.scheduled_for ? new Date(s.scheduled_for) : null;
+      if (d) {
+        if (d < now && (!map[s.user_id].lastSession || d > map[s.user_id].lastSession))
+          map[s.user_id].lastSession = d;
+        if (d >= now && (!map[s.user_id].nextSession || d < map[s.user_id].nextSession))
+          map[s.user_id].nextSession = d;
+      }
+    });
+    return map;
+  }, [clients, sessions]);
+
   useEffect(() => {
     if (!session) {
       setAdminState({ status: 'idle', error: '' });
@@ -295,6 +338,13 @@ export default function App() {
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 30000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      document.body.classList.add('electron-has-title-bar');
+      return () => document.body.classList.remove('electron-has-title-bar');
+    }
   }, []);
 
   useEffect(() => {
@@ -1079,10 +1129,21 @@ export default function App() {
   async function updateReviewReply(reviewId) {
     const existing = reviews.find((review) => review.id === reviewId);
     const current = existing?.mason_reply || '';
-    const nextReply = window.prompt('Reply as Mason:', current);
-    if (nextReply === null) return;
-    await supabase.from('reviews').update({ mason_reply: nextReply }).eq('id', reviewId);
+    setEditingReplyText(current);
+    setEditingReplyReviewId(reviewId);
+  }
+
+  async function saveReviewReply() {
+    if (editingReplyReviewId == null) return;
+    await supabase.from('reviews').update({ mason_reply: editingReplyText }).eq('id', editingReplyReviewId);
+    setEditingReplyReviewId(null);
+    setEditingReplyText('');
     loadReviews();
+  }
+
+  function cancelReviewReply() {
+    setEditingReplyReviewId(null);
+    setEditingReplyText('');
   }
 
   async function editReview(reviewId) {
@@ -1301,7 +1362,8 @@ export default function App() {
       details: sessionForm.details.trim(),
       scheduled_for: sessionForm.scheduled_for || null,
       location: sessionForm.location.trim() || null,
-      duration_minutes: sessionForm.duration_minutes ? Number(sessionForm.duration_minutes) : null
+      duration_minutes: sessionForm.duration_minutes ? Number(sessionForm.duration_minutes) : null,
+      session_type: sessionForm.session_type?.trim() || null
     };
     const payload = isStaffMode
       ? basePayload
@@ -1327,7 +1389,8 @@ export default function App() {
       price: '',
       status: 'scheduled',
       staff_name: '',
-      user_id: ''
+      user_id: '',
+      session_type: ''
     });
     setEditingSessionId(null);
     loadSessions();
@@ -1345,7 +1408,8 @@ export default function App() {
       price: sessionItem.price ? String(sessionItem.price) : '',
       status: sessionItem.status || 'scheduled',
       staff_name: sessionItem.staff_name || '',
-      user_id: sessionItem.user_id || ''
+      user_id: sessionItem.user_id || '',
+      session_type: sessionItem.session_type || ''
     });
   }
 
@@ -1361,8 +1425,121 @@ export default function App() {
       price: '',
       status: 'scheduled',
       staff_name: '',
-      user_id: ''
+      user_id: '',
+      session_type: ''
     });
+  }
+
+  function openCreateSessionPopup(dateStr, staffName) {
+    setCreateSessionPopup({ date: dateStr, staffName });
+    setSessionForm((prev) => ({
+      ...prev,
+      scheduled_for: `${dateStr}T09:00`,
+      staff_name: staffName || prev.staff_name
+    }));
+  }
+
+  function closeCreateSessionPopup() {
+    setCreateSessionPopup(null);
+    cancelEditSession();
+  }
+
+  function openRecurringModal( preselectedUserId ) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 3);
+    setRecurringForm({
+      client_id: preselectedUserId || '',
+      start_date: start.toISOString().slice(0, 10),
+      end_date: end.toISOString().slice(0, 10),
+      use_count: false,
+      count: 12,
+      frequency: 'weekly',
+      time: '09:00',
+      duration_minutes: '60',
+      staff_name: '',
+      location: '',
+      status: 'scheduled',
+      session_type: ''
+    });
+    setRecurringSessionModal(preselectedUserId != null && preselectedUserId !== '' ? preselectedUserId : '');
+    setRecurringStatus('');
+  }
+
+  function closeRecurringModal() {
+    setRecurringSessionModal(null);
+    setRecurringStatus('');
+  }
+
+  function getRecurringDates() {
+    const { start_date, end_date, use_count, count, frequency, time } = recurringForm;
+    if (!start_date || !time) return [];
+    const [hours, minutes] = time.split(':').map(Number);
+    const start = new Date(start_date);
+    start.setHours(hours, minutes, 0, 0);
+    const dates = [];
+    if (use_count) {
+      let cur = new Date(start);
+      for (let i = 0; i < count; i++) {
+        dates.push(new Date(cur));
+        if (frequency === 'weekly') cur.setDate(cur.getDate() + 7);
+        else if (frequency === 'biweekly') cur.setDate(cur.getDate() + 14);
+        else if (frequency === 'monthly') cur.setMonth(cur.getMonth() + 1);
+      }
+    } else {
+      const end = new Date(end_date);
+      end.setHours(23, 59, 59, 999);
+      let cur = new Date(start);
+      while (cur <= end) {
+        dates.push(new Date(cur));
+        if (frequency === 'weekly') cur.setDate(cur.getDate() + 7);
+        else if (frequency === 'biweekly') cur.setDate(cur.getDate() + 14);
+        else if (frequency === 'monthly') cur.setMonth(cur.getMonth() + 1);
+      }
+    }
+    return dates;
+  }
+
+  async function submitRecurringSessions() {
+    const clientUserId = (recurringSessionModal && recurringSessionModal !== '') ? recurringSessionModal : recurringForm.client_id;
+    if (!clientUserId || typeof clientUserId !== 'string') {
+      setRecurringStatus('Select a client.');
+      return;
+    }
+    const client = clients.find((c) => c.user_id === clientUserId);
+    if (!client) return;
+    const dates = getRecurringDates();
+    if (dates.length === 0) {
+      setRecurringStatus('No dates in range. Adjust start/end or count.');
+      return;
+    }
+    if (dates.length > 200) {
+      setRecurringStatus('Limit 200 sessions per batch.');
+      return;
+    }
+    setRecurringStatus('Creating...');
+    const payloads = dates.map((scheduled_for) => ({
+      customer_name: client.display_name || client.email || 'Client',
+      contact: client.email || '',
+      details: '',
+      scheduled_for: scheduled_for.toISOString(),
+      location: recurringForm.location.trim() || null,
+      duration_minutes: recurringForm.duration_minutes ? Number(recurringForm.duration_minutes) : 60,
+      status: recurringForm.status || 'scheduled',
+      staff_name: recurringForm.staff_name.trim() || null,
+      user_id: clientUserId,
+      session_type: recurringForm.session_type?.trim() || null
+    }));
+    const { error } = await supabase.from('sessions').insert(payloads);
+    if (error) {
+      setRecurringStatus(`Error: ${error.message}`);
+      return;
+    }
+    setRecurringStatus(`Created ${payloads.length} sessions.`);
+    loadSessions();
+    loadDashboard();
+    setTimeout(closeRecurringModal, 1500);
   }
 
   async function saveAdminProfile(event) {
@@ -1859,18 +2036,23 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="screen">
-        <div className="card">
-          <h2>Loading Mason Admin</h2>
-          <p className="muted">Authenticating secure session...</p>
+      <>
+        <CustomTitleBar />
+        <div className="screen">
+          <div className="card">
+            <h2>Loading Mason Admin</h2>
+            <p className="muted">Authenticating secure session...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (!session) {
     return (
-      <div className="screen">
+      <>
+        <CustomTitleBar />
+        <div className="screen">
         <div className="card auth">
           <div>
             <p className="eyebrow">{isStaffMode ? 'Mason Staff Access' : 'Mason Admin Access'}</p>
@@ -1913,12 +2095,15 @@ export default function App() {
           </form>
         </div>
       </div>
+      </>
     );
   }
 
   if ((isStaffMode ? staffState.status : adminState.status) === 'checking') {
     return (
-      <div className="screen">
+      <>
+        <CustomTitleBar />
+        <div className="screen">
         <div className="card">
           <h2>Verifying access</h2>
           <p className="muted">
@@ -1926,12 +2111,15 @@ export default function App() {
           </p>
         </div>
       </div>
+      </>
     );
   }
 
   if ((isStaffMode ? staffState.status : adminState.status) !== 'allowed') {
     return (
-      <div className="screen">
+      <>
+        <CustomTitleBar />
+        <div className="screen">
         <div className="card">
           <h2>Access denied</h2>
           <p className="muted">
@@ -1943,16 +2131,19 @@ export default function App() {
           </button>
         </div>
       </div>
+      </>
     );
   }
 
   return (
-    <div className="app">
+    <>
+      <CustomTitleBar />
+      <div className="app">
       <aside className="sidebar">
         <div className="brand">
           <div className="logo">MA</div>
           <div>
-            <p className="eyebrow">{isStaffMode ? 'Mason Staff' : 'Mason Admin'}</p>
+            <p className="eyebrow">{isStaffMode ? 'Mason Staff' : 'Sex With Mason Admin'}</p>
             <p className="muted">{isStaffMode ? 'Appointments' : 'Operations Console'}</p>
           </div>
         </div>
@@ -2049,7 +2240,19 @@ export default function App() {
                           const key = day.toISOString().slice(0, 10);
                           const items = row.byDay.get(key) || [];
                           return (
-                            <div key={key} className="schedule-cell">
+                            <div
+                              key={key}
+                              className="schedule-cell"
+                              onContextMenu={
+                                !isStaffMode && items.length === 0
+                                  ? (e) => {
+                                      e.preventDefault();
+                                      openCreateSessionPopup(key, row.staff);
+                                    }
+                                  : undefined
+                              }
+                              title={!isStaffMode && items.length === 0 ? 'Right-click to create session' : undefined}
+                            >
                               {items.length === 0 && <span className="schedule-empty-cell">—</span>}
                               {items.map(({ sessionItem, start, end }) => (
                                 <button
@@ -2404,23 +2607,108 @@ export default function App() {
                       {review.name || 'Anonymous'} <span className="pill">{review.rating}★</span>
                     </p>
                     <p>{review.comment}</p>
-                    {review.mason_reply && (
+                    {review.mason_reply && editingReplyReviewId !== review.id && (
                       <p className="muted">Mason reply: {review.mason_reply}</p>
                     )}
-                  </div>
-                  <div className="review-actions">
-                    <button type="button" onClick={() => updateReviewReply(review.id)}>
-                      {review.mason_reply ? 'Edit reply' : 'Reply'}
-                    </button>
-                    <button type="button" className="ghost" onClick={() => editReview(review.id)}>
-                      Edit
-                    </button>
-                    <button type="button" className="danger" onClick={() => deleteReview(review.id)}>
-                      Delete
-                    </button>
+                    {editingReplyReviewId === review.id ? (
+                      <div className="reply" style={{ marginTop: 8 }}>
+                        <label>
+                          Reply as Mason
+                          <textarea
+                            value={editingReplyText}
+                            onChange={(e) => setEditingReplyText(e.target.value)}
+                            rows={3}
+                            placeholder="Type your reply..."
+                          />
+                        </label>
+                        <div className="row">
+                          <button type="button" onClick={saveReviewReply}>
+                            Save reply
+                          </button>
+                          <button type="button" className="ghost" onClick={cancelReviewReply}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="review-actions">
+                        <button type="button" onClick={() => updateReviewReply(review.id)}>
+                          {review.mason_reply ? 'Edit reply' : 'Reply'}
+                        </button>
+                        <button type="button" className="ghost" onClick={() => editReview(review.id)}>
+                          Edit
+                        </button>
+                        <button type="button" className="danger" onClick={() => deleteReview(review.id)}>
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {!isStaffMode && activeTab === 'clients' && (
+          <section className="stack">
+            <div className="card list">
+              <div className="header" style={{ marginBottom: 12 }}>
+                <h3>Client list</h3>
+                <div className="header-actions">
+                  <button type="button" onClick={() => openRecurringModal()}>
+                    Create recurring sessions
+                  </button>
+                </div>
+              </div>
+              <p className="muted" style={{ marginBottom: 12 }}>
+                Create one-off or recurring (weekly/bi-weekly/monthly) sessions for a client.
+              </p>
+              {clients.length === 0 && <p className="muted">No clients in user profiles yet.</p>}
+              <div className="list" style={{ gap: 0 }}>
+                {clients.map((client) => {
+                  const stats = clientSessionStats[client.user_id] || { sessionCount: 0, lastSession: null, nextSession: null };
+                  return (
+                    <div key={client.user_id} className="list-row">
+                      <div style={{ display: 'grid', gap: 4 }}>
+                        <p style={{ margin: 0, fontWeight: 'bold' }}>{clientLabel(client)}</p>
+                        <p className="muted" style={{ margin: 0, fontSize: 11 }}>
+                          {client.email || client.user_id}
+                        </p>
+                        <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                          <span className="pill">{stats.sessionCount} sessions</span>
+                          {stats.lastSession && (
+                            <span className="muted">Last: {stats.lastSession.toLocaleDateString()}</span>
+                          )}
+                          {stats.nextSession && (
+                            <span className="muted">Next: {stats.nextSession.toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="row">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSessionForm((prev) => ({
+                              ...prev,
+                              customer_name: client.display_name || client.email || '',
+                              contact: client.email || '',
+                              user_id: client.user_id,
+                              scheduled_for: new Date().toISOString().slice(0, 16)
+                            }));
+                            setCreateSessionPopup({ date: new Date().toISOString().slice(0, 10), staffName: '' });
+                          }}
+                        >
+                          Create session
+                        </button>
+                        <button type="button" className="ghost" onClick={() => openRecurringModal(client.user_id)}>
+                          Create recurring
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </section>
         )}
@@ -2477,9 +2765,19 @@ export default function App() {
                   />
                 </label>
                 <label>
+                  Session type
+                  <input
+                    name="session_type"
+                    value={sessionForm.session_type}
+                    onChange={handleSessionChange}
+                    placeholder="e.g. Checkup, Cleaning, Follow-up"
+                  />
+                </label>
+                <label>
                   Book with
                   <select name="staff_name" value={sessionForm.staff_name} onChange={handleSessionChange}>
                     <option value="">No preference</option>
+                    <option value="Unassigned">Unassigned</option>
                     {staff
                       .filter((row) => row.active || row.name === sessionForm.staff_name)
                       .map((row) => (
@@ -2587,6 +2885,15 @@ export default function App() {
                     value={sessionForm.location}
                     onChange={handleSessionChange}
                     placeholder="Address or on-site"
+                  />
+                </label>
+                <label>
+                  Session type
+                  <input
+                    name="session_type"
+                    value={sessionForm.session_type}
+                    onChange={handleSessionChange}
+                    placeholder="e.g. Checkup"
                   />
                 </label>
                 <label>
@@ -3652,6 +3959,328 @@ export default function App() {
             {whyStatus && <p className="muted">{whyStatus}</p>}
           </section>
         )}
+        {createSessionPopup && !isStaffMode && (
+          <div
+            className="create-session-popup-overlay"
+            onClick={closeCreateSessionPopup}
+            onKeyDown={(e) => e.key === 'Escape' && closeCreateSessionPopup()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-session-popup-title"
+          >
+            <div
+              className="create-session-popup-window"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="create-session-popup-title-bar">
+                <span id="create-session-popup-title">Create session</span>
+                <button type="button" className="create-session-popup-close" onClick={closeCreateSessionPopup}>
+                  ×
+                </button>
+              </div>
+              <div className="create-session-popup-body">
+                <form
+                  className="card form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await createSession(e);
+                    closeCreateSessionPopup();
+                  }}
+                >
+                  <p className="muted" style={{ marginBottom: 8 }}>
+                    {createSessionPopup.date} • {createSessionPopup.staffName}
+                  </p>
+                  <label>
+                    Client name
+                    <input
+                      name="customer_name"
+                      value={sessionForm.customer_name}
+                      onChange={handleSessionChange}
+                      placeholder="Client name"
+                    />
+                  </label>
+                  <label>
+                    Contact
+                    <input
+                      name="contact"
+                      value={sessionForm.contact}
+                      onChange={handleSessionChange}
+                      placeholder="Phone or email"
+                    />
+                  </label>
+                  <label>
+                    Details
+                    <textarea
+                      name="details"
+                      value={sessionForm.details}
+                      onChange={handleSessionChange}
+                      rows={3}
+                      placeholder="Session notes"
+                    />
+                  </label>
+                  <label>
+                    Scheduled for
+                    <input
+                      type="datetime-local"
+                      name="scheduled_for"
+                      value={sessionForm.scheduled_for}
+                      onChange={handleSessionChange}
+                    />
+                  </label>
+                  <label>
+                    Location
+                    <input
+                      name="location"
+                      value={sessionForm.location}
+                      onChange={handleSessionChange}
+                      placeholder="Address or on-site"
+                    />
+                  </label>
+                  <label>
+                    Session type
+                    <input
+                      name="session_type"
+                      value={sessionForm.session_type}
+                      onChange={handleSessionChange}
+                      placeholder="e.g. Checkup, Cleaning"
+                    />
+                  </label>
+                  <label>
+                    Book with
+                    <select name="staff_name" value={sessionForm.staff_name} onChange={handleSessionChange}>
+                      <option value="">No preference</option>
+                      <option value="Unassigned">Unassigned</option>
+                      {staff
+                        .filter((row) => row.active || row.name === sessionForm.staff_name)
+                        .map((row) => (
+                          <option key={row.id} value={row.name}>
+                            {row.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Duration (minutes)
+                    <input
+                      type="number"
+                      name="duration_minutes"
+                      value={sessionForm.duration_minutes}
+                      onChange={handleSessionChange}
+                      placeholder="60"
+                    />
+                  </label>
+                  <label>
+                    Price
+                    <input
+                      type="number"
+                      name="price"
+                      value={sessionForm.price}
+                      onChange={handleSessionChange}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    Status
+                    <select name="status" value={sessionForm.status} onChange={handleSessionChange}>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="denied">Denied</option>
+                      <option value="scheduled">Scheduled</option>
+                    </select>
+                  </label>
+                  <label>
+                    Assign to client
+                    <select name="user_id" value={sessionForm.user_id} onChange={handleSessionChange}>
+                      <option value="">Unassigned</option>
+                      {clients.map((client) => (
+                        <option key={client.user_id} value={client.user_id}>
+                          {clientLabel(client)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="row">
+                    <button type="submit">Save session</button>
+                    <button type="button" className="ghost" onClick={closeCreateSessionPopup}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+        {recurringSessionModal !== null && !isStaffMode && (
+          <div
+            className="create-session-popup-overlay"
+            onClick={closeRecurringModal}
+            onKeyDown={(e) => e.key === 'Escape' && closeRecurringModal()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recurring-session-popup-title"
+          >
+            <div
+              className="create-session-popup-window"
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: 420 }}
+            >
+              <div className="create-session-popup-title-bar">
+                <span id="recurring-session-popup-title">Create recurring sessions</span>
+                <button type="button" className="create-session-popup-close" onClick={closeRecurringModal}>
+                  ×
+                </button>
+              </div>
+              <div className="create-session-popup-body">
+                {recurringSessionModal === '' ? (
+                  <label>
+                    Client
+                    <select
+                      value={recurringForm.client_id}
+                      onChange={(e) => setRecurringForm((prev) => ({ ...prev, client_id: e.target.value }))}
+                    >
+                      <option value="">Select client</option>
+                      {clients.map((c) => (
+                        <option key={c.user_id} value={c.user_id}>
+                          {clientLabel(c)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <p className="muted" style={{ marginBottom: 8 }}>
+                    Client: {clientLabel(clients.find((c) => c.user_id === recurringSessionModal))}
+                  </p>
+                )}
+                <label>
+                  Start date
+                  <input
+                    type="date"
+                    value={recurringForm.start_date}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                  />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={recurringForm.use_count}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, use_count: e.target.checked }))}
+                  />
+                  Use number of occurrences
+                </label>
+                {recurringForm.use_count ? (
+                  <label>
+                    Number of sessions
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={recurringForm.count}
+                      onChange={(e) => setRecurringForm((prev) => ({ ...prev, count: Number(e.target.value) || 4 }))}
+                    />
+                  </label>
+                ) : (
+                  <label>
+                    End date
+                    <input
+                      type="date"
+                      value={recurringForm.end_date}
+                      onChange={(e) => setRecurringForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                    />
+                  </label>
+                )}
+                <label>
+                  Frequency
+                  <select
+                    value={recurringForm.frequency}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, frequency: e.target.value }))}
+                  >
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </label>
+                <label>
+                  Time
+                  <input
+                    type="time"
+                    value={recurringForm.time}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, time: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Duration (minutes)
+                  <input
+                    type="number"
+                    value={recurringForm.duration_minutes}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, duration_minutes: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Staff
+                  <select
+                    value={recurringForm.staff_name}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, staff_name: e.target.value }))}
+                  >
+                    <option value="">Unassigned</option>
+                    {staff.filter((r) => r.active).map((row) => (
+                      <option key={row.id} value={row.name}>
+                        {row.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Location
+                  <input
+                    value={recurringForm.location}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, location: e.target.value }))}
+                    placeholder="Optional"
+                  />
+                </label>
+                <label>
+                  Session type
+                  <input
+                    value={recurringForm.session_type}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, session_type: e.target.value }))}
+                    placeholder="e.g. Checkup, Cleaning"
+                  />
+                </label>
+                <label>
+                  Status
+                  <select
+                    value={recurringForm.status}
+                    onChange={(e) => setRecurringForm((prev) => ({ ...prev, status: e.target.value }))}
+                  >
+                    <option value="scheduled">Scheduled</option>
+                    <option value="requested">Requested</option>
+                    <option value="approved">Approved</option>
+                  </select>
+                </label>
+                {(() => {
+                  const dates = getRecurringDates();
+                  return (
+                    <p className="muted" style={{ marginTop: 8, marginBottom: 8 }}>
+                      This will create <strong>{dates.length}</strong> sessions.
+                    </p>
+                  );
+                })()}
+                {recurringStatus && <p className="muted" style={{ marginBottom: 8 }}>{recurringStatus}</p>}
+                <div className="row">
+                  <button
+                    type="button"
+                    onClick={submitRecurringSessions}
+                    disabled={getRecurringDates().length === 0}
+                  >
+                    Create {getRecurringDates().length} sessions
+                  </button>
+                  <button type="button" className="ghost" onClick={closeRecurringModal}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {contextMenu.open && contextMenu.session && (
           <div className="session-context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
             <button
@@ -3705,5 +4334,6 @@ export default function App() {
         )}
       </main>
     </div>
+    </>
   );
 }

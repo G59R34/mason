@@ -4,33 +4,135 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Session Chat — Mason</title>
-  <link rel="stylesheet" href="style.css">
   <style>
-    body{background:#f7fafc}
-    .container{max-width:980px;margin:28px auto;padding:20px;background:#fff;border-radius:16px;box-shadow:0 18px 40px rgba(15,23,42,0.12)}
-    .header{display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .meta{color:#64748b;font-size:0.9rem}
-    .messages{list-style:none;padding:0;margin:16px 0;display:grid;gap:10px;max-height:520px;overflow:auto}
-    .msg{padding:12px;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc}
-    .msg.admin{background:#ecfeff;border-color:#cffafe}
-    .msg .meta{font-size:0.78rem;margin-bottom:6px}
-    .form{display:flex;gap:10px;margin-top:12px}
-    .form input[type="text"]{flex:1;padding:10px;border:1px solid #e2e8f0;border-radius:10px}
-    .form button{padding:10px 16px;border-radius:999px;border:0;background:#0ea5a4;color:#fff;font-weight:700}
-    .ghost{background:#fff;border:1px solid #e2e8f0;color:#0f172a}
-    .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#e2e8f0;font-size:12px;font-weight:600}
+    /* Windows 95 / archaic corporate styling to match Mason Admin */
+    :root {
+      --win-bg: #c0c0c0;
+      --win-face: #c0c0c0;
+      --win-highlight: #ffffff;
+      --win-light: #dfdfdf;
+      --win-shadow: #808080;
+      --win-darkshadow: #404040;
+      --win-title: #000080;
+      --win-title-text: #ffffff;
+      --win-text: #000000;
+      --win-muted: #404040;
+      --win-border-width: 2px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Tahoma, "MS Sans Serif", Arial, sans-serif;
+      font-size: 11px;
+      color: var(--win-text);
+      background: var(--win-bg);
+      min-height: 100vh;
+      padding: 12px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 12px;
+      background: var(--win-face);
+      border: var(--win-border-width) outset var(--win-light);
+      border-color: var(--win-highlight) var(--win-shadow) var(--win-shadow) var(--win-highlight);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: var(--win-border-width) solid var(--win-shadow);
+    }
+    .header h1 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .meta {
+      color: var(--win-muted);
+      font-size: 11px;
+    }
+    .messages {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0;
+      display: grid;
+      gap: 8px;
+      max-height: 480px;
+      overflow: auto;
+      border: var(--win-border-width) inset var(--win-shadow);
+      background: var(--win-highlight);
+      padding: 8px;
+    }
+    .msg {
+      padding: 8px 10px;
+      border: 1px solid var(--win-shadow);
+      background: var(--win-face);
+    }
+    .msg.admin {
+      background: #d0d0ff;
+      border-color: var(--win-title);
+    }
+    .msg .meta {
+      font-size: 10px;
+      margin-bottom: 4px;
+    }
+    .form {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      align-items: center;
+    }
+    .form input[type="text"] {
+      flex: 1;
+      padding: 6px 8px;
+      border: var(--win-border-width) inset var(--win-shadow);
+      border-color: var(--win-shadow) var(--win-highlight) var(--win-highlight) var(--win-shadow);
+      background: var(--win-highlight);
+      font-family: inherit;
+      font-size: 11px;
+    }
+    .form button {
+      padding: 6px 14px;
+      border: var(--win-border-width) outset var(--win-light);
+      border-color: var(--win-highlight) var(--win-shadow) var(--win-shadow) var(--win-highlight);
+      background: var(--win-face);
+      color: var(--win-text);
+      font-weight: bold;
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .form button:hover {
+      border-color: var(--win-highlight) var(--win-shadow) var(--win-shadow) var(--win-highlight);
+    }
+    .form button:active {
+      border-style: inset;
+      border-color: var(--win-shadow) var(--win-highlight) var(--win-highlight) var(--win-shadow);
+    }
+    .form button.ghost {
+      background: var(--win-face);
+      border: var(--win-border-width) outset var(--win-light);
+    }
+    #notice {
+      margin-top: 8px;
+      min-height: 1em;
+    }
   </style>
 </head>
 <body>
   <main class="container">
     <div class="header">
       <div>
-        <h1 style="margin:0 0 6px">Session chat</h1>
+        <h1>Session chat</h1>
         <div id="sessionMeta" class="meta"></div>
       </div>
       <div class="meta" id="chatStatus"></div>
     </div>
-    <div id="notice" class="meta" style="margin-top:10px"></div>
+    <div id="notice" class="meta"></div>
     <ul id="messages" class="messages"></ul>
     <form id="chatForm" class="form">
       <input id="chatInput" type="text" placeholder="Write a message..." />

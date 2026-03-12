@@ -22,13 +22,9 @@
         playBtn.type = 'button';
         playBtn.className = 'custom-audio-play';
         playBtn.setAttribute('aria-label', 'Play');
-        var base = '';
-        if (window.location.protocol !== 'file:') {
-            base = (window.location.pathname.replace(/\/[^/]*$/, '/') || '/');
-        }
-        var playSrc = base + 'play.png';
-        var pauseSrc = base + 'pause.png';
-        playBtn.innerHTML = '<img src="' + playSrc + '" alt="Play" class="custom-audio-icon-play"><img src="' + pauseSrc + '" alt="Pause" class="custom-audio-icon-pause">';
+        var playIcon = '<svg class="custom-audio-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+        var pauseIcon = '<svg class="custom-audio-icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+        playBtn.innerHTML = playIcon + pauseIcon;
 
         var progressWrap = document.createElement('div');
         progressWrap.className = 'custom-audio-progress-wrap';
