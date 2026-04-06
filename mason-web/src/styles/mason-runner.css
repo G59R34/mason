@@ -1,0 +1,223 @@
+.mason-runner-page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.mason-runner-hero {
+  margin-bottom: 20px;
+}
+
+.mason-runner-hero h1 {
+  margin-bottom: 6px;
+}
+
+.mason-runner-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .mason-runner-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mason-runner-canvas-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  box-shadow: var(--shadow), 0 0 0 1px rgba(139, 92, 246, 0.08);
+  background: #0a0612;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mason-runner-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
+.mason-runner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(15, 10, 28, 0.75), rgba(6, 4, 12, 0.92));
+  pointer-events: none;
+}
+
+.mason-runner-overlay.is-pulse .mason-runner-overlay-hint {
+  opacity: 0.65;
+}
+
+.mason-runner-overlay-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 5vw, 2.1rem);
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, #e9d5ff, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.mason-runner-overlay-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  transition: opacity 0.45s ease;
+}
+
+.mason-runner-overlay--dead {
+  pointer-events: auto;
+  background: radial-gradient(ellipse 90% 80% at 50% 45%, rgba(40, 12, 20, 0.88), rgba(8, 4, 12, 0.94));
+}
+
+.mason-runner-dead-title {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: #fb7185;
+}
+
+.mason-runner-dead-score {
+  margin: 0 0 20px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.mason-runner-again {
+  min-height: 48px;
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.mason-runner-score-float {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 4vw, 1.85rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fde68a;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.mason-runner-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mason-runner-name {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mason-runner-name label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.mason-runner-submit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.mason-runner-submit-note {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.mason-runner-leaderboard {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ring);
+  background: rgba(12, 12, 16, 0.65);
+  overflow: hidden;
+}
+
+.mason-runner-lb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ring);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.mason-runner-lb-rows {
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mason-runner-lb-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 72px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.mason-runner-lb-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mason-runner-lb-rank {
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.mason-runner-lb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.mason-runner-lb-score {
+  text-align: right;
+  font-weight: 700;
+  color: var(--accent-warm);
+  font-variant-numeric: tabular-nums;
+}
+
+.mason-runner-lb-empty {
+  padding: 20px 14px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.mason-runner-tip {
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
