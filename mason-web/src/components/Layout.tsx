@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useSiteEffects } from '../hooks/useSiteEffects';
+import { DEFAULT_MASONCORD_PUBLIC_URL, useSiteEffects } from '../hooks/useSiteEffects';
 import { CustomAudioPlayer } from './CustomAudioPlayer';
+import { FloatingAnnouncement } from './FloatingAnnouncement';
+import { HeaderAnnouncements } from './HeaderAnnouncements';
+import { WhatsNewModal } from './WhatsNewModal';
 
 type NavItem =
   | { kind: 'section'; id: string; label: string }
@@ -71,7 +74,9 @@ function MainNavLink({
 }
 
 export function Layout() {
-  const { maintenance, blockModal } = useSiteEffects();
+  const { maintenance, blockModal, masoncordPublicUrl } = useSiteEffects();
+  const masoncordHref =
+    masoncordPublicUrl.trim() || import.meta.env.VITE_MASONCORD_URL?.trim() || DEFAULT_MASONCORD_PUBLIC_URL;
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
 
@@ -159,6 +164,9 @@ export function Layout() {
             </svg>
             <span className="app-logo-text">Sex With Mason</span>
           </NavLink>
+          <div className="app-header-center">
+            <HeaderAnnouncements />
+          </div>
           <button
             type="button"
             className="app-nav-toggle"
@@ -186,6 +194,9 @@ export function Layout() {
         </div>
       </header>
 
+      <FloatingAnnouncement />
+      <WhatsNewModal />
+
       <div className="audio-banner">
         <div className="audio-banner-inner">
           <div className="audio-banner-title">Nut For Me — Pegger Productions</div>
@@ -209,6 +220,9 @@ export function Layout() {
           <a href="/#music">Music</a>
           <a href="/#pricing">Pricing</a>
           <a href="/#contact">Contact</a>
+          <a href={masoncordHref} target="_blank" rel="noreferrer">
+            Masoncord
+          </a>
           <NavLink to="/session">Session chat</NavLink>
         </div>
       </footer>

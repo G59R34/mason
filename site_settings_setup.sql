@@ -40,3 +40,11 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO public.site_settings (key, value)
 VALUES ('admin_block_modal', '{"enabled": false, "title": "Site temporarily unavailable", "body": "Please check back later.", "cta_label": "", "cta_url": ""}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
+
+-- Public URLs (main marketing site + Masoncord); mason-web / masoncord read these live; admin can edit in Settings
+INSERT INTO public.site_settings (key, value)
+VALUES ('main_site_url', '{"url": "https://sexwithmason.com"}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.site_settings (key, value)
+VALUES ('masoncord_url', '{"url": "https://cord.sexwithmason.com"}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

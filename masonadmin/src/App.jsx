@@ -203,6 +203,9 @@ export default function App() {
   const [adminBlockModalCtaLabel, setAdminBlockModalCtaLabel] = useState('');
   const [adminBlockModalCtaUrl, setAdminBlockModalCtaUrl] = useState('');
   const [adminBlockModalStatus, setAdminBlockModalStatus] = useState('');
+  const [publicMainSiteUrl, setPublicMainSiteUrl] = useState('https://sexwithmason.com');
+  const [publicMasoncordUrl, setPublicMasoncordUrl] = useState('https://cord.sexwithmason.com');
+  const [publicUrlsStatus, setPublicUrlsStatus] = useState('');
 
   const isStaffMode = loginMode === 'staff';
   const isReady = useMemo(() => {
@@ -619,6 +622,26 @@ export default function App() {
           setAdminBlockModalCtaLabel(v.cta_label ?? '');
           setAdminBlockModalCtaUrl(v.cta_url ?? '');
         }
+      });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'main_site_url')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        const u = data?.value?.url;
+        if (typeof u === 'string' && u.trim()) setPublicMainSiteUrl(u.trim());
+      });
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'masoncord_url')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        const u = data?.value?.url;
+        if (typeof u === 'string' && u.trim()) setPublicMasoncordUrl(u.trim());
       });
     return () => {
       mounted = false;
@@ -1601,6 +1624,24 @@ export default function App() {
     loadSessions();
     loadDashboard();
     setTimeout(closeRecurringModal, 1500);
+  }
+
+  async function savePublicUrls(event) {
+    event.preventDefault();
+    setPublicUrlsStatus('Saving...');
+    const main = publicMainSiteUrl.trim() || 'https://sexwithmason.com';
+    const cord = publicMasoncordUrl.trim() || 'https://cord.sexwithmason.com';
+    const ts = new Date().toISOString();
+    const { error } = await supabase.from('site_settings').upsert([
+      { key: 'main_site_url', value: { url: main }, updated_at: ts },
+      { key: 'masoncord_url', value: { url: cord }, updated_at: ts }
+    ]);
+    if (error) {
+      setPublicUrlsStatus(`Failed: ${error.message}`);
+      return;
+    }
+    setPublicUrlsStatus('Saved. Masoncord and the main site pick these up live.');
+    setTimeout(() => setPublicUrlsStatus(''), 4000);
   }
 
   async function saveAdminProfile(event) {
@@ -3401,6 +3442,33 @@ export default function App() {
               </label>
               {settingsStatus && <p className="muted">{settingsStatus}</p>}
               <button type="submit">Save</button>
+            </form>
+            <form className="card form" onSubmit={savePublicUrls}>
+              <h3>Public URLs (production)</h3>
+              <p className="muted">
+                Main marketing site and Masoncord. Used on the public site footer (Masoncord link) and inside Masoncord (&quot;Main website&quot;). Ensure{' '}
+                <code>site_settings</code> has these keys (see site_settings_setup.sql).
+              </p>
+              <label>
+                Main site URL
+                <input
+                  type="url"
+                  value={publicMainSiteUrl}
+                  onChange={(event) => setPublicMainSiteUrl(event.target.value)}
+                  placeholder="https://sexwithmason.com"
+                />
+              </label>
+              <label>
+                Masoncord URL
+                <input
+                  type="url"
+                  value={publicMasoncordUrl}
+                  onChange={(event) => setPublicMasoncordUrl(event.target.value)}
+                  placeholder="https://cord.sexwithmason.com"
+                />
+              </label>
+              {publicUrlsStatus && <p className="muted">{publicUrlsStatus}</p>}
+              <button type="submit">Save public URLs</button>
             </form>
             <div className="card list">
               <h3>Staff</h3>

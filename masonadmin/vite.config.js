@@ -8,4 +8,9 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
   },
+  build: {
+    sourcemap: false,
+    target: 'es2020',
+    cssMinify: true,
+  },
 });
