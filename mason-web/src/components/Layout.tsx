@@ -20,13 +20,17 @@ export function Layout() {
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
 
+  const isGame = location.pathname === '/game';
+
   useEffect(() => {
-    const lock = Boolean(blockModal?.enabled || maintenance);
+    const lock = Boolean(blockModal?.enabled || maintenance) || isGame;
     document.documentElement.style.overflow = lock ? 'hidden' : '';
+    document.body.style.overflow = isGame ? 'hidden' : '';
     return () => {
       document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
     };
-  }, [blockModal?.enabled, maintenance]);
+  }, [blockModal?.enabled, maintenance, isGame]);
 
   useEffect(() => {
     setNavOpen(false);
@@ -48,6 +52,33 @@ export function Layout() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  if (isGame) {
+    return (
+      <div className="app-shell app-shell--game-fs">
+        <Outlet />
+        {maintenance && (
+          <div className="ms-maintenance" role="alert">
+            <div className="ms-maintenance-inner">Mason is With a client</div>
+          </div>
+        )}
+        {blockModal?.enabled && (
+          <div className="ms-admin-block-modal" role="dialog" aria-modal aria-labelledby="block-title">
+            <div className="ms-admin-block-modal-backdrop" />
+            <div className="ms-admin-block-modal-dialog">
+              <h2 id="block-title">{blockModal.title || 'Notice'}</h2>
+              {blockModal.body ? <div className="ms-admin-block-modal-body">{blockModal.body}</div> : null}
+              {blockModal.cta_label && blockModal.cta_url ? (
+                <div className="ms-admin-block-modal-cta">
+                  <a href={blockModal.cta_url}>{blockModal.cta_label}</a>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

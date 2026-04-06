@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { MasonRunnerGame } from '../components/MasonRunnerGame';
 import { fetchMasonRunnerLeaderboard, submitMasonRunnerScore, type MasonRunnerRow } from '../lib/masonRunnerLeaderboard';
 import { supabase } from '../lib/supabase';
@@ -7,6 +8,8 @@ import '../styles/mason-runner.css';
 const NAME_KEY = 'ms_runner_display_name';
 
 export function GamePage() {
+  const fsRef = useRef<HTMLDivElement>(null);
+  const [fsActive, setFsActive] = useState(false);
   const [liveScore, setLiveScore] = useState(0);
   const [lastRun, setLastRun] = useState(0);
   const [playerName, setPlayerName] = useState('');
@@ -22,6 +25,22 @@ export function GamePage() {
       if (s) setPlayerName(s);
     } catch {
       /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFs = () => setFsActive(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  const toggleBrowserFullscreen = useCallback(() => {
+    const el = fsRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      void el.requestFullscreen?.().catch(() => {});
+    } else {
+      void document.exitFullscreen?.().catch(() => {});
     }
   }, []);
 
@@ -85,24 +104,24 @@ export function GamePage() {
   }
 
   return (
-    <div className="mason-runner-page">
-      <section className="card mason-runner-hero">
-        <h1>Mason Runner</h1>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          Jump the cacti — speed ramps up the longer you last. Drop a Mason sprite into <code>src/assets/mason.png</code> when ready; the runner
-          uses a stylized stand-in until then.
-        </p>
-      </section>
+    <div className="mason-runner-fs" ref={fsRef}>
+      <header className="mason-runner-fs-bar">
+        <Link to="/" className="mason-runner-fs-back">
+          ← Site
+        </Link>
+        <span className="mason-runner-fs-title">Mason Runner</span>
+        <button type="button" className="mason-runner-fs-fsbtn" onClick={toggleBrowserFullscreen}>
+          {fsActive ? 'Exit fullscreen' : 'Fullscreen'}
+        </button>
+      </header>
 
-      <div className="mason-runner-layout">
-        <div>
+      <div className="mason-runner-fs-main">
+        <div className="mason-runner-fs-play">
           <MasonRunnerGame onScoreUpdate={onScoreUpdate} onGameOver={onGameOver} />
-          <p className="mason-runner-tip" style={{ marginTop: 14 }}>
-            Tip: rhythm beats panic — tap early. Speed ramps up the longer you survive.
-          </p>
+          <p className="mason-runner-tip mason-runner-tip--fs">Space · tap · click to jump · speed increases over time</p>
         </div>
 
-        <aside className="mason-runner-side card section" style={{ boxShadow: 'var(--shadow)', margin: 0 }}>
+        <aside className="mason-runner-side card section mason-runner-side--fs">
           <div className="mason-runner-name">
             <label htmlFor="runner-name">Your name on the board</label>
             <input
@@ -120,11 +139,11 @@ export function GamePage() {
               {submitting ? 'Posting…' : 'Submit last run'}
             </button>
             <span className="muted" style={{ fontSize: '0.9rem' }}>
-              Last run: <strong style={{ color: 'var(--accent-warm)' }}>{lastRun.toLocaleString()}</strong>
+              Last: <strong style={{ color: 'var(--accent-warm)' }}>{lastRun.toLocaleString()}</strong>
               {liveScore > 0 && (
                 <>
                   {' '}
-                  · current: {liveScore.toLocaleString()}
+                  · now {liveScore.toLocaleString()}
                 </>
               )}
             </span>
@@ -142,7 +161,7 @@ export function GamePage() {
               </p>
             )}
             {!lbError && rows.length === 0 && !lbLoading && (
-              <p className="mason-runner-lb-empty">No scores yet — be first after you run the SQL migration.</p>
+              <p className="mason-runner-lb-empty">No scores yet — run the SQL migration in Supabase.</p>
             )}
             <div className="mason-runner-lb-rows">
               {rows.map((r, i) => (

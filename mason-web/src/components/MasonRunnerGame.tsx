@@ -4,7 +4,7 @@ import cactusUrl from '../assets/dinocactus.png';
 type GamePhase = 'idle' | 'playing' | 'dead';
 
 const GRAVITY = 0.88;
-const JUMP_V = -15.4;
+const JUMP_V = -16.1;
 const BASE_SPEED = 7.8;
 const MAX_SPEED = 17.5;
 /** Horizontal gap between consecutive cactus *spawn points* (randomized each spawn). */
@@ -29,6 +29,32 @@ function aabb(
   const qx = bw * pad;
   const qy = bh * pad;
   return ax + px < bx + bw - qx && ax + aw - px > bx + qx && ay + py < by + bh - qy && ay + ah - py > by + qy;
+}
+
+/** Next gap in px: wide variance — occasional tight clusters vs. long clear stretches. */
+function rollGapPx() {
+  const u = Math.random();
+  if (u < 0.18) {
+    return MIN_GAP + Math.random() * 120;
+  }
+  if (u > 0.85) {
+    return 560 + Math.random() * (MAX_GAP - 560);
+  }
+  return 220 + Math.random() * 380;
+}
+
+/** Tighter than draw rect so near-misses feel fair (Chrome-style). */
+function cactusHitbox(o: Obstacle, groundY: number) {
+  const oy = groundY - o.h;
+  const ix = o.w * 0.14;
+  const topTrim = o.h * 0.1;
+  const bottomTrim = o.h * 0.04;
+  return {
+    x: o.x + ix,
+    y: oy + topTrim,
+    w: o.w - ix * 2,
+    h: o.h - topTrim - bottomTrim,
+  };
 }
 
 function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -106,7 +132,7 @@ export function MasonRunnerGame({
     let frame = 0;
     let runFrame = 0;
     let shake = 0;
-    let gapTarget = MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
+    let gapTarget = rollGapPx();
 
     phaseRef.current = 'idle';
     lastHudRef.current = -1;
@@ -114,7 +140,12 @@ export function MasonRunnerGame({
     const resize = () => {
       const r = wrap.getBoundingClientRect();
       W = Math.max(320, Math.floor(r.width));
-      H = Math.min(440, Math.max(260, Math.floor(r.width * 0.4)));
+      const parentH = Math.floor(r.height);
+      if (parentH >= 200) {
+        H = Math.min(580, Math.max(240, parentH));
+      } else {
+        H = Math.min(440, Math.max(260, Math.floor(r.width * 0.4)));
+      }
       dpr = Math.min(window.devicePixelRatio || 1, 2.5);
       canvas.width = Math.floor(W * dpr);
       canvas.height = Math.floor(H * dpr);
@@ -134,14 +165,15 @@ export function MasonRunnerGame({
 
     function spawnObstacle() {
       const im = imgCactus.current;
-      const baseH = im ? Math.min(im.height, (groundY - 40) * 0.58) : groundY * 0.48;
+      const maxH = (groundY - 52) * 0.34;
+      const baseH = im ? Math.min(maxH, im.height) : maxH * 0.85;
       const scale = baseH / (im?.height || 48);
-      const w = im ? im.width * scale : 40;
+      const w = im ? im.width * scale : 26;
       const h = im ? im.height * scale : baseH;
       const last = obstacles[obstacles.length - 1];
       const nx = last ? last.x + last.w + gapTarget : W + 48;
       obstacles.push({ x: nx, w, h });
-      gapTarget = MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
+      gapTarget = rollGapPx();
     }
 
     function resetRun() {
@@ -153,7 +185,7 @@ export function MasonRunnerGame({
       playerY = groundY - playerH;
       shake = 0;
       runFrame = 0;
-      gapTarget = MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
+      gapTarget = rollGapPx();
       spawnObstacle();
     }
 
@@ -316,8 +348,8 @@ export function MasonRunnerGame({
         const px = playerX;
         const py = playerY;
         for (const o of obstacles) {
-          const oy = groundY - o.h;
-          if (aabb(px, py, playerW, playerH, o.x, oy, o.w, o.h)) {
+          const hb = cactusHitbox(o, groundY);
+          if (aabb(px, py, playerW, playerH, hb.x, hb.y, hb.w, hb.h, 0.12)) {
             die();
             break;
           }
