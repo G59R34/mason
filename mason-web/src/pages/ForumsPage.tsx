@@ -206,7 +206,7 @@ export function ForumsPage() {
       <section className="card">
         <div className="section-head">
           <div>
-            <h1>Forums</h1>
+            <h2>Forums</h2>
             <p className="muted">Threads, replies, and voting in one place.</p>
           </div>
           <span className="pill">{user ? `Signed in` : 'Guest mode'}</span>

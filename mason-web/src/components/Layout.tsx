@@ -3,17 +3,72 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useSiteEffects } from '../hooks/useSiteEffects';
 import { CustomAudioPlayer } from './CustomAudioPlayer';
 
-const nav = [
-  { to: '/', label: 'Home' },
-  { to: '/gallery', label: 'Gallery' },
-  { to: '/game', label: 'Game' },
-  { to: '/why', label: 'About' },
-  { to: '/reviews', label: 'Reviews' },
-  { to: '/forums', label: 'Forums' },
-  { to: '/pricing', label: 'Pricing' },
-  { to: '/contact', label: 'Contact' },
-  { to: '/account', label: 'Account' },
+type NavItem =
+  | { kind: 'section'; id: string; label: string }
+  | { kind: 'route'; to: string; label: string; end?: boolean };
+
+const nav: NavItem[] = [
+  { kind: 'section', id: 'top', label: 'Home' },
+  { kind: 'section', id: 'gallery', label: 'Gallery' },
+  { kind: 'route', to: '/game', label: 'Game' },
+  { kind: 'section', id: 'about', label: 'About' },
+  { kind: 'section', id: 'reviews', label: 'Reviews' },
+  { kind: 'section', id: 'forums', label: 'Forums' },
+  { kind: 'section', id: 'pricing', label: 'Pricing' },
+  { kind: 'section', id: 'contact', label: 'Contact' },
+  { kind: 'route', to: '/account', label: 'Account' },
 ];
+
+function scrollToSection(id: string) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  window.history.replaceState(null, '', id === 'top' ? '/' : `/#${id}`);
+}
+
+function MainNavLink({
+  item,
+  onNavigate,
+}: {
+  item: NavItem;
+  onNavigate: () => void;
+}) {
+  const { pathname, hash } = useLocation();
+
+  if (item.kind === 'route') {
+    return (
+      <NavLink
+        to={item.to}
+        className={({ isActive }) => (isActive ? 'active' : '')}
+        end={item.end}
+        onClick={onNavigate}
+      >
+        {item.label}
+      </NavLink>
+    );
+  }
+
+  const active =
+    pathname === '/' &&
+    (item.id === 'top' ? !hash || hash === '#top' : hash === `#${item.id}`);
+
+  const href = item.id === 'top' ? '/' : `/#${item.id}`;
+
+  return (
+    <a
+      href={href}
+      className={active ? 'active' : ''}
+      onClick={(e) => {
+        if (pathname === '/') {
+          e.preventDefault();
+          scrollToSection(item.id);
+          onNavigate();
+        }
+      }}
+    >
+      {item.label}
+    </a>
+  );
+}
 
 export function Layout() {
   const { maintenance, blockModal } = useSiteEffects();
@@ -84,7 +139,18 @@ export function Layout() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header-inner">
-          <NavLink to="/" className="app-logo" end onClick={() => setNavOpen(false)}>
+          <NavLink
+            to="/"
+            className="app-logo"
+            end
+            onClick={(e) => {
+              if (location.pathname === '/') {
+                e.preventDefault();
+                scrollToSection('top');
+              }
+              setNavOpen(false);
+            }}
+          >
             <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden>
               <path
                 fill="currentColor"
@@ -113,16 +179,8 @@ export function Layout() {
             onClick={() => setNavOpen(false)}
           />
           <nav id="primary-nav" className={`app-nav ${navOpen ? 'is-open' : ''}`} aria-label="Main">
-            {nav.map(({ to, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) => (isActive ? 'active' : '')}
-                end={to === '/'}
-                onClick={() => setNavOpen(false)}
-              >
-                {label}
-              </NavLink>
+            {nav.map((item) => (
+              <MainNavLink key={item.kind === 'section' ? item.id : item.to} item={item} onNavigate={() => setNavOpen(false)} />
             ))}
           </nav>
         </div>
@@ -134,9 +192,9 @@ export function Layout() {
           <div className="audio-banner-player">
             <CustomAudioPlayer src="/nutforme.mp3" aria-label="Play Nut For Me" />
           </div>
-          <NavLink to="/nutforme" className="btn btn-ghost audio-banner-cta" onClick={() => setNavOpen(false)}>
+          <a href="/#music" className="btn btn-ghost audio-banner-cta" onClick={() => setNavOpen(false)}>
             Review this track
-          </NavLink>
+          </a>
         </div>
       </div>
 
@@ -148,7 +206,9 @@ export function Layout() {
         <div className="app-footer-inner">
           <NavLink to="/order">Order</NavLink>
           <NavLink to="/game">Game</NavLink>
-          <NavLink to="/music">Music</NavLink>
+          <a href="/#music">Music</a>
+          <a href="/#pricing">Pricing</a>
+          <a href="/#contact">Contact</a>
           <NavLink to="/session">Session chat</NavLink>
         </div>
       </footer>

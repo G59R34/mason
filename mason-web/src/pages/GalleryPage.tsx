@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type Img = { public_url: string; caption?: string | null };
@@ -18,14 +17,14 @@ export function GalleryPage() {
   if (!items.length) {
     return (
       <section className="card">
-        <h1>Gallery</h1>
+        <h2>Gallery</h2>
         <p className="muted">New work drops here first.</p>
         <div className="section card" style={{ borderStyle: 'dashed' }}>
           <h2>No images yet</h2>
           <p className="muted">Check back soon for new shots.</p>
-          <Link to="/contact" className="btn">
+          <a href="/#contact" className="btn">
             Contact Mason
-          </Link>
+          </a>
         </div>
       </section>
     );
@@ -34,7 +33,7 @@ export function GalleryPage() {
   return (
     <>
       <section className="card">
-        <h1>Gallery</h1>
+        <h2>Gallery</h2>
         <p className="muted">New work drops here first.</p>
       </section>
       <section className="grid section">

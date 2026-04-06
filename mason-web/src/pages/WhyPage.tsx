@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type ValueCard = { title: string; body: string };
@@ -214,7 +213,7 @@ export function WhyPage() {
       <section className="card hero">
         <div>
           <div className="eyebrow">Why Mason</div>
-          <h1>Why Mason?</h1>
+          <h2>Why Mason?</h2>
           <p>Mason Wants To FUCK</p>
           <div className="pill">Slow Ass response • No communication • Straight Business</div>
         </div>
@@ -262,7 +261,9 @@ export function WhyPage() {
 
       <section className="cta-banner">
         <div>Want Mason to FUCK you? book a session.</div>
-        <Link to="/pricing">View Pricing</Link>
+        <a href="/#pricing" className="btn" style={{ display: 'inline-flex' }}>
+          View Pricing
+        </a>
       </section>
     </>
   );

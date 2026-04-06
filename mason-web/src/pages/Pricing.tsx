@@ -102,7 +102,7 @@ export function Pricing() {
   return (
     <>
       <section className="card">
-        <h1>{title}</h1>
+        <h2>{title}</h2>
         <p className="muted">{subtitle}</p>
       </section>
       <section className="grid section" aria-label="pricing plans">
@@ -137,7 +137,11 @@ export function Pricing() {
             {customCta}
           </a>
         ) : (
-          <Link to={customUrl || '/contact'} className="btn btn-dark" style={{ marginTop: 12 }}>
+          <Link
+            to={customUrl === '/contact' || !customUrl ? { pathname: '/', hash: 'contact' } : customUrl}
+            className="btn btn-dark"
+            style={{ marginTop: 12 }}
+          >
             {customCta}
           </Link>
         )}

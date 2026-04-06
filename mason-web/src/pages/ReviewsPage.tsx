@@ -136,7 +136,7 @@ export function ReviewsPage() {
       <section className="card">
         <div className="section-head">
           <div>
-            <h1>Mason Reviews</h1>
+            <h2>Mason Reviews</h2>
             <p style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }} className="muted">
               <span style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--accent)' }}>{avg.toFixed(1)}</span>
               <span style={{ color: 'var(--accent-warm)' }}>{stars(avg)}</span>

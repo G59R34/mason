@@ -42,7 +42,7 @@ export function ContactPage() {
   return (
     <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
       <section className="card">
-        <h1>Contact Mason</h1>
+        <h2>Contact Mason</h2>
         <p className="muted">Start a direct chat, or pick up where you left off.</p>
         <div className="pill" style={{ marginTop: 12 }}>
           Fast response • Clear communication • No fluff

@@ -49,7 +49,7 @@ export function NutForMePage() {
     <>
       <section className="card hero">
         <div>
-          <h1>Nut For Me</h1>
+          <h2>Nut For Me</h2>
           <p className="muted">Pegger Productions</p>
           <div style={{ marginTop: 20 }}>
             <CustomAudioPlayer src="/nutforme.mp3" aria-label="Play Nut For Me" />
