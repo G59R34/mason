@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd masonadmin && npm install",
+  "buildCommand": "cd masonadmin && npm run build",
+  "outputDirectory": "masonadmin/dist",
+  "routes": [
+    {
+      "src": "/env\\.js$",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
