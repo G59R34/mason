@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd masonadmin && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm install",
-  "buildCommand": "cd masonadmin && npm run build",
-  "outputDirectory": "masonadmin/dist",
+  "installCommand": "ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "routes": [
     {
       "src": "/env\\.js$",
