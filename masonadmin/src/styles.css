@@ -705,6 +705,15 @@ button.danger {
   min-height: 80px;
 }
 
+/* ---- Hamburger toggle (hidden on desktop) ---- */
+.mobile-nav-toggle {
+  display: none;
+}
+
+.mobile-nav-backdrop {
+  display: none;
+}
+
 @media (max-width: 1024px) {
   .app {
     grid-template-columns: 1fr;
@@ -727,6 +736,272 @@ button.danger {
 
   .note {
     grid-column: span 1;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 13px;
+  }
+
+  button, input, textarea, select {
+    font-size: 13px;
+  }
+
+  /* ---- Mobile hamburger toggle ---- */
+  .mobile-nav-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 1002;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: var(--win-border-width) outset var(--win-light);
+    border-color: var(--win-highlight) var(--win-shadow) var(--win-shadow) var(--win-highlight);
+    background: var(--win-face);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-nav-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 18px;
+  }
+
+  .mobile-nav-bars span {
+    display: block;
+    height: 2px;
+    background: var(--win-text);
+    transition: transform 0.2s, opacity 0.2s;
+  }
+
+  .mobile-nav-bars.is-open span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+  }
+  .mobile-nav-bars.is-open span:nth-child(2) {
+    opacity: 0;
+  }
+  .mobile-nav-bars.is-open span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  /* ---- Sidebar as slide-out drawer ---- */
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 1001;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    border-right: var(--win-border-width) solid var(--win-shadow);
+    border-bottom: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    background: var(--win-bg);
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .profile {
+    margin-top: auto;
+  }
+
+  /* ---- Main content ---- */
+  .main {
+    padding: 8px;
+    padding-top: 50px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .header h1 {
+    font-size: 1.2em;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .header-actions button {
+    flex: 1;
+  }
+
+  /* ---- Larger touch targets ---- */
+  button {
+    min-height: 36px;
+    padding: 6px 14px;
+  }
+
+  .nav button {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  input, textarea {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+
+  select {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  /* ---- Cards and grids ---- */
+  .grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat {
+    min-height: 60px;
+  }
+
+  .note {
+    grid-column: span 2;
+  }
+
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  /* ---- List rows ---- */
+  .list-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 10px;
+  }
+
+  /* ---- Schedule board: horizontal scroll ---- */
+  .schedule-board {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .schedule-head,
+  .schedule-row {
+    min-width: 700px;
+  }
+
+  .schedule-board {
+    --staff-col-width: 120px;
+  }
+
+  .schedule-cell {
+    min-height: 60px;
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  /* ---- Reviews ---- */
+  .review-actions {
+    flex-direction: column;
+  }
+
+  .review-actions button {
+    width: 100%;
+  }
+
+  /* ---- Session cards ---- */
+  .session-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .session-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-detail-actions {
+    flex-direction: column;
+  }
+
+  .session-detail-actions button {
+    width: 100%;
+  }
+
+  /* ---- Conversations ---- */
+  .message-meta {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* ---- Popups / modals ---- */
+  .create-session-popup-overlay {
+    padding: 12px;
+  }
+
+  .create-session-popup-window {
+    max-height: 85vh;
+  }
+
+  /* ---- Context menu ---- */
+  .session-context-menu {
+    min-width: 200px;
+  }
+
+  .session-context-menu button {
+    padding: 8px 12px;
+  }
+
+  /* ---- Auth (login) ---- */
+  .screen {
+    padding: 12px;
+  }
+
+  .auth {
+    gap: 14px;
+  }
+}
+
+@media (max-width: 400px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .note {
+    grid-column: span 1;
+  }
+
+  .main {
+    padding: 6px;
+    padding-top: 48px;
+  }
+
+  .header h1 {
+    font-size: 1.1em;
+  }
+
+  .brand .eyebrow {
+    font-size: 9px;
   }
 }
 

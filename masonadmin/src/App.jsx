@@ -61,6 +61,7 @@ export default function App() {
     return window.localStorage.getItem('ms_login_mode') || 'admin';
   });
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [counts, setCounts] = useState(emptyCounts);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementText, setAnnouncementText] = useState('');
@@ -2241,7 +2242,11 @@ export default function App() {
     <>
       <CustomTitleBar />
       <div className="app">
-      <aside className="sidebar">
+      <button type="button" className="mobile-nav-toggle" aria-label="Toggle navigation" onClick={() => setMobileNavOpen(o => !o)}>
+        <span className={`mobile-nav-bars${mobileNavOpen ? ' is-open' : ''}`}><span /><span /><span /></span>
+      </button>
+      {mobileNavOpen && <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={`sidebar${mobileNavOpen ? ' is-open' : ''}`}>
         <div className="brand">
           <div className="logo">MA</div>
           <div>
@@ -2254,7 +2259,7 @@ export default function App() {
             <button
               key={tab.id}
               className={tab.id === activeTab ? 'active' : ''}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { setActiveTab(tab.id); setMobileNavOpen(false); }}
               type="button"
             >
               {tab.label}
