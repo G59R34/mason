@@ -1,5 +1,5 @@
 window.__ENV__ = {
-  VITE_SUPABASE_URL: "",
-  VITE_SUPABASE_ANON_KEY: "",
+  VITE_SUPABASE_URL: "https://hyehyfbnskiybdspkbxe.supabase.co",
+  VITE_SUPABASE_ANON_KEY: "sb_publishable_Spz2O3ITj_9Q7cT84pKG6w_2h4yOFyu",
   VITE_STORAGE_KEY: "mason_auth"
 };

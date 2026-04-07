@@ -118,18 +118,88 @@
 @media (max-width: 900px) {
   .mason-runner-fs-main {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(280px, 1fr) auto;
+    grid-template-rows: minmax(220px, 1fr) auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
 
   .mason-runner-fs-play .mason-runner-canvas-wrap {
-    min-height: 240px;
+    min-height: 200px;
     flex: 1;
   }
 
   .mason-runner-side--fs .mason-runner-lb-rows {
     max-height: min(38vh, 320px);
+  }
+
+  .mason-runner-tip--fs {
+    font-size: 0.75rem;
+    padding: 2px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .mason-runner-fs {
+    padding: max(4px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom))
+      max(6px, env(safe-area-inset-left));
+  }
+
+  .mason-runner-fs-bar {
+    padding-bottom: 8px;
+    margin-bottom: 2px;
+    gap: 6px;
+  }
+
+  .mason-runner-fs-back {
+    font-size: 0.82rem;
+    padding: 8px 8px;
+  }
+
+  .mason-runner-fs-fsbtn {
+    font-size: 0.78rem;
+    padding: 8px 10px;
+  }
+
+  .mason-runner-fs-main {
+    grid-template-rows: minmax(180px, 1fr) auto;
+    gap: 8px;
+  }
+
+  .mason-runner-fs-play .mason-runner-canvas-wrap {
+    min-height: 160px;
+  }
+
+  .mason-runner-overlay-title {
+    font-size: clamp(1.2rem, 6vw, 1.6rem);
+  }
+
+  .mason-runner-overlay-hint {
+    font-size: 0.82rem;
+  }
+
+  .mason-runner-dead-title {
+    font-size: 1.3rem;
+  }
+
+  .mason-runner-dead-score {
+    font-size: 1.05rem;
+    margin-bottom: 14px;
+  }
+
+  .mason-runner-again {
+    min-height: 44px;
+    padding-left: 22px;
+    padding-right: 22px;
+    font-size: 0.9rem;
+  }
+
+  .mason-runner-side--fs {
+    padding: 10px !important;
+  }
+
+  .mason-runner-lb-row {
+    padding: 8px 10px;
+    font-size: 0.85rem;
   }
 }
 
@@ -140,9 +210,11 @@
   border: 1px solid rgba(139, 92, 246, 0.35);
   box-shadow: var(--shadow), 0 0 0 1px rgba(139, 92, 246, 0.08);
   background: #0a0612;
-  touch-action: manipulation;
+  touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .mason-runner-canvas {

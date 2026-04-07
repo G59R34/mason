@@ -3,11 +3,13 @@ import cactusUrl from '../assets/dinocactus.png';
 
 type GamePhase = 'idle' | 'playing' | 'dead';
 
+const REF_W = 960;
+const REF_H = 360;
+
 const GRAVITY = 0.88;
 const JUMP_V = -16.1;
 const BASE_SPEED = 7.8;
 const MAX_SPEED = 17.5;
-/** Horizontal gap between consecutive cactus *spawn points* (randomized each spawn). */
 const MIN_GAP = 160;
 const MAX_GAP = 780;
 
@@ -31,16 +33,16 @@ function aabb(
   return ax + px < bx + bw - qx && ax + aw - px > bx + qx && ay + py < by + bh - qy && ay + ah - py > by + qy;
 }
 
-/** Next gap in px: wide variance — occasional tight clusters vs. long clear stretches. */
-function rollGapPx() {
+function rollGapPx(wScale: number) {
+  const s = Math.max(0.45, wScale);
   const u = Math.random();
   if (u < 0.18) {
-    return MIN_GAP + Math.random() * 120;
+    return (MIN_GAP + Math.random() * 120) * s;
   }
   if (u > 0.85) {
-    return 560 + Math.random() * (MAX_GAP - 560);
+    return (560 + Math.random() * (MAX_GAP - 560)) * s;
   }
-  return 220 + Math.random() * 380;
+  return (220 + Math.random() * 380) * s;
 }
 
 /** Tighter than draw rect so near-misses feel fair (Chrome-style). */
@@ -132,7 +134,9 @@ export function MasonRunnerGame({
     let frame = 0;
     let runFrame = 0;
     let shake = 0;
-    let gapTarget = rollGapPx();
+    let wScale = 1;
+    let hScale = 1;
+    let gapTarget = rollGapPx(1);
 
     phaseRef.current = 'idle';
     lastHudRef.current = -1;
@@ -153,8 +157,12 @@ export function MasonRunnerGame({
       canvas.style.height = `${H}px`;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       groundY = H - Math.max(72, H * 0.22);
+
+      wScale = W / REF_W;
+      hScale = H / REF_H;
+
       playerX = W * 0.12;
-      playerW = Math.min(58, W * 0.058);
+      playerW = Math.max(32, Math.min(58, W * 0.075));
       playerH = playerW * 1.18;
       playerY = groundY - playerH;
     };
@@ -166,14 +174,14 @@ export function MasonRunnerGame({
     function spawnObstacle() {
       const im = imgCactus.current;
       const maxH = (groundY - 52) * 0.34;
-      const baseH = im ? Math.min(maxH, im.height) : maxH * 0.85;
-      const scale = baseH / (im?.height || 48);
-      const w = im ? im.width * scale : 26;
-      const h = im ? im.height * scale : baseH;
+      const baseH = im ? Math.min(maxH, im.height * hScale) : maxH * 0.85;
+      const sc = baseH / (im?.height || 48);
+      const w = im ? im.width * sc : Math.max(20, 26 * wScale);
+      const h = im ? im.height * sc : baseH;
       const last = obstacles[obstacles.length - 1];
       const nx = last ? last.x + last.w + gapTarget : W + 48;
       obstacles.push({ x: nx, w, h });
-      gapTarget = rollGapPx();
+      gapTarget = rollGapPx(wScale);
     }
 
     function resetRun() {
@@ -185,7 +193,7 @@ export function MasonRunnerGame({
       playerY = groundY - playerH;
       shake = 0;
       runFrame = 0;
-      gapTarget = rollGapPx();
+      gapTarget = rollGapPx(wScale);
       spawnObstacle();
     }
 
@@ -200,7 +208,7 @@ export function MasonRunnerGame({
         return;
       }
       if (grounded) {
-        vy = JUMP_V;
+        vy = JUMP_V * Math.max(0.65, hScale);
         grounded = false;
       }
     }
@@ -313,18 +321,21 @@ export function MasonRunnerGame({
       const dt = rawDt / 16.67;
       frame += 1;
 
+      const s = Math.max(0.55, wScale);
+
       if (phaseRef.current === 'playing') {
         runFrame += 1;
-        speed = Math.min(MAX_SPEED, BASE_SPEED + distance * 0.00011);
+        speed = Math.min(MAX_SPEED * s, BASE_SPEED * s + distance * 0.00011 * s);
         distance += speed * dt * 1.5;
-        const displayScore = Math.floor(distance / 8);
+        const displayScore = Math.floor(distance / (8 * s));
         if (displayScore !== lastHudRef.current) {
           lastHudRef.current = displayScore;
           setHudScore(displayScore);
           onScoreUpdate?.(displayScore);
         }
 
-        vy += GRAVITY * dt;
+        const hs = Math.max(0.65, hScale);
+        vy += GRAVITY * hs * dt;
         playerY += vy * dt;
         if (playerY >= groundY - playerH) {
           playerY = groundY - playerH;
@@ -341,7 +352,7 @@ export function MasonRunnerGame({
         for (const o of obstacles) {
           rightmost = Math.max(rightmost, o.x + o.w);
         }
-        if (rightmost < W + 320) {
+        if (rightmost < W + 320 * s) {
           spawnObstacle();
         }
 
