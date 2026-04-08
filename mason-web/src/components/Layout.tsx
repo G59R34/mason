@@ -20,6 +20,7 @@ const nav: NavItem[] = [
   { kind: 'section', id: 'forums', label: 'Forums' },
   { kind: 'section', id: 'pricing', label: 'Pricing' },
   { kind: 'section', id: 'contact', label: 'Contact' },
+  { kind: 'route', to: '/tickets', label: 'Tickets' },
   { kind: 'route', to: '/account', label: 'Account' },
 ];
 
@@ -225,6 +226,7 @@ export function Layout() {
           <a href={masoncordHref} target="_blank" rel="noreferrer">
             Masoncord
           </a>
+          <NavLink to="/tickets">Tickets</NavLink>
           <NavLink to="/session">Session chat</NavLink>
         </div>
       </footer>

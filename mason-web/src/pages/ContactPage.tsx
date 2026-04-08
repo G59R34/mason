@@ -1,26 +1,34 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { addTicketIdToStorage, CURRENT_TICKET_KEY, CUSTOMER_NAME_KEY } from '../lib/ticketStorage';
 import { supabase } from '../lib/supabase';
 
 export function ContactPage() {
+  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('');
   const [storedId] = useState<string | null>(() =>
-    typeof localStorage !== 'undefined' ? localStorage.getItem('ms_conversation_id') : null
+    typeof localStorage !== 'undefined' ? localStorage.getItem(CURRENT_TICKET_KEY) : null
   );
 
   async function startChat(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !message.trim()) return;
     setStatus('Sending...');
-    const { data: cdata, error: cerr } = await supabase.from('conversations').insert([{ customer_name: name.trim() }]).select('id').limit(1);
+    const { data: cdata, error: cerr } = await supabase
+      .from('conversations')
+      .insert([{ customer_name: name.trim() }])
+      .select('id')
+      .limit(1);
     if (cerr || !cdata?.[0]) {
       setStatus('Could not create conversation.');
       return;
     }
     const cid = cdata[0].id as string;
-    localStorage.setItem('ms_conversation_id', cid);
-    localStorage.setItem('ms_customer_name', name.trim());
+    localStorage.setItem(CURRENT_TICKET_KEY, cid);
+    localStorage.setItem(CUSTOMER_NAME_KEY, name.trim());
+    addTicketIdToStorage(cid);
     const { error: merr } = await supabase.from('conversation_messages').insert([
       { conversation_id: cid, sender: name.trim(), body: message.trim(), sender_role: 'user' },
     ]);
@@ -28,7 +36,8 @@ export function ContactPage() {
       setStatus('Conversation created but message failed.');
       return;
     }
-    window.location.assign(`/usertickets.html?conversation=${encodeURIComponent(cid)}`);
+    setStatus('');
+    navigate(`/tickets?conversation=${encodeURIComponent(cid)}`, { replace: true });
   }
 
   function resume(e: React.FormEvent) {
@@ -36,7 +45,8 @@ export function ContactPage() {
     const fd = new FormData(e.target as HTMLFormElement);
     const id = String(fd.get('conversationId') || '').trim();
     if (!id) return;
-    window.location.assign(`/usertickets.html?conversation=${encodeURIComponent(id)}`);
+    addTicketIdToStorage(id);
+    navigate(`/tickets?conversation=${encodeURIComponent(id)}`);
   }
 
   return (
@@ -52,7 +62,13 @@ export function ContactPage() {
         <h2>Start a chat</h2>
         <form className="form" onSubmit={startChat}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
-          <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Tell Mason what you need..." required rows={5} />
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Tell Mason what you need..."
+            required
+            rows={5}
+          />
           <button type="submit" className="btn">
             Send & Open Chat
           </button>
@@ -72,9 +88,13 @@ export function ContactPage() {
           {storedId ? `Saved conversation: ${storedId}` : 'No saved conversation on this device yet.'}
         </p>
         {storedId && (
-          <a href={`/usertickets.html?conversation=${encodeURIComponent(storedId)}`} className="btn btn-ghost" style={{ marginTop: 8, display: 'inline-flex' }}>
+          <Link
+            to={`/tickets?conversation=${encodeURIComponent(storedId)}`}
+            className="btn btn-ghost"
+            style={{ marginTop: 8, display: 'inline-flex' }}
+          >
             Open saved conversation
-          </a>
+          </Link>
         )}
       </section>
     </div>

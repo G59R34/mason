@@ -2,9 +2,11 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { Layout } from './components/Layout';
 import { SiteOnePage } from './pages/SiteOnePage';
 import { GamePage } from './pages/GamePage';
+import { AccountPage } from './pages/AccountPage';
 import { LegacyRedirect } from './pages/LegacyRedirect';
 import { NotFound } from './pages/NotFound';
 import { SchedulePage } from './pages/SchedulePage';
+import { UserTicketsPage } from './pages/UserTicketsPage';
 
 const router = createBrowserRouter([
   {
@@ -19,7 +21,8 @@ const router = createBrowserRouter([
       { path: 'pricing', element: <Navigate to={{ pathname: '/', hash: 'pricing' }} replace /> },
       { path: 'contact', element: <Navigate to={{ pathname: '/', hash: 'contact' }} replace /> },
       { path: 'nutforme', element: <Navigate to={{ pathname: '/', hash: 'music' }} replace /> },
-      { path: 'account', element: <LegacyRedirect href="/account.html" /> },
+      { path: 'account', element: <AccountPage /> },
+      { path: 'tickets', element: <UserTicketsPage /> },
       { path: 'order', element: <LegacyRedirect href="/order.html" /> },
       { path: 'game', element: <GamePage /> },
       { path: 'schedule', element: <SchedulePage /> },
