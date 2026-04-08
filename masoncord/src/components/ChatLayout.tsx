@@ -237,7 +237,7 @@ export function ChatLayout() {
         <a className="mc-topbar-link" href={mainSiteUrl}>
           Main website
         </a>
-        <span className="mc-topbar-badge">Same account as mason-web</span>
+       
       </header>
       <div className="mc-body">
         <aside className="mc-rail" aria-label="Server">

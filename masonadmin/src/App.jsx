@@ -2821,9 +2821,9 @@ export default function App() {
         )}
 
         {activeTab === 'sessions' && (
-          <section className={isStaffMode ? 'stack' : 'two-col'}>
+          <section className={isStaffMode ? 'stack sessions-tab' : 'two-col sessions-tab'}>
             {!isStaffMode && (
-              <form className="card form" onSubmit={createSession}>
+              <form className="card form session-create-form" onSubmit={createSession}>
                 <h3>Create session</h3>
                 <label>
                   Client name
@@ -2843,13 +2843,13 @@ export default function App() {
                     placeholder="Phone or email"
                   />
                 </label>
-                <label>
+                <label className="session-create-span">
                   Details
                   <textarea
                     name="details"
                     value={sessionForm.details}
                     onChange={handleSessionChange}
-                    rows={3}
+                    rows={2}
                     placeholder="Session notes"
                   />
                 </label>
@@ -2934,7 +2934,7 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-                <div className="row">
+                <div className="row session-create-span">
                   <button type="submit">{editingSessionId ? 'Update session' : 'Save session'}</button>
                   {editingSessionId && (
                     <button type="button" className="ghost" onClick={cancelEditSession}>
@@ -2946,7 +2946,7 @@ export default function App() {
             )}
 
             {isStaffMode && editingSessionId && (
-              <form className="card form" onSubmit={createSession}>
+              <form className="card form session-create-form" onSubmit={createSession}>
                 <h3>Edit appointment</h3>
                 <label>
                   Client name
@@ -2966,13 +2966,13 @@ export default function App() {
                     placeholder="Phone or email"
                   />
                 </label>
-                <label>
+                <label className="session-create-span">
                   Details
                   <textarea
                     name="details"
                     value={sessionForm.details}
                     onChange={handleSessionChange}
-                    rows={3}
+                    rows={2}
                     placeholder="Session notes"
                   />
                 </label>
@@ -3013,7 +3013,7 @@ export default function App() {
                     placeholder="60"
                   />
                 </label>
-                <div className="row">
+                <div className="row session-create-span">
                   <button type="submit">Save changes</button>
                   <button type="button" className="ghost" onClick={cancelEditSession}>
                     Cancel edit
@@ -3022,7 +3022,7 @@ export default function App() {
               </form>
             )}
 
-            <div className="card list">
+            <div className="card list sessions-list-panel">
               <div className="row" style={{ justifyContent: 'space-between' }}>
                 <h3>{isStaffMode ? 'Your appointments' : 'Upcoming sessions'}</h3>
                 {!isStaffMode && (
@@ -3066,7 +3066,7 @@ export default function App() {
                       </div>
                       {!isStaffMode && (
                         <div className="session-actions">
-                          <label>
+                          <label className="session-assign-label">
                             Assign client
                             <select
                               value={sessionItem.user_id || ''}
@@ -3080,7 +3080,7 @@ export default function App() {
                               ))}
                             </select>
                           </label>
-                          <div className="row">
+                          <div className="row session-card-actions-row">
                             <button type="button" onClick={() => updateSessionStatus(sessionItem.id, 'approved')}>
                               Approve
                             </button>
@@ -3108,7 +3108,7 @@ export default function App() {
                         </div>
                       )}
                       {isStaffMode && (
-                        <div className="row">
+                        <div className="row session-card-actions-row">
                           <button type="button" onClick={() => updateSessionStatus(sessionItem.id, 'approved')}>
                             Approve
                           </button>
@@ -3130,7 +3130,7 @@ export default function App() {
                         <label>
                           Admin feedback (private)
                           <textarea
-                            rows={3}
+                            rows={2}
                             value={sessionNoteDrafts[sessionItem.id] ?? sessionItem.admin_feedback ?? ''}
                             onChange={(event) =>
                               setSessionNoteDrafts((prev) => ({
@@ -3141,7 +3141,7 @@ export default function App() {
                             placeholder="Internal notes about this appointment."
                           />
                         </label>
-                        <div className="row">
+                        <div className="row session-card-actions-row">
                           <button type="button" className="ghost" onClick={() => saveSessionFeedback(sessionItem.id)}>
                             Save feedback
                           </button>
@@ -3150,7 +3150,7 @@ export default function App() {
                         <label>
                           Message to client
                           <textarea
-                            rows={3}
+                            rows={2}
                             value={sessionMessageDrafts[sessionItem.id] ?? ''}
                             onChange={(event) =>
                               setSessionMessageDrafts((prev) => ({
@@ -3161,7 +3161,7 @@ export default function App() {
                             placeholder="Send an update directly to the client."
                           />
                         </label>
-                        <div className="row">
+                        <div className="row session-card-actions-row">
                           <button type="button" onClick={() => sendSessionMessage(sessionItem)}>
                             Send message
                           </button>
@@ -3181,7 +3181,7 @@ export default function App() {
                         <label>
                           Message to client
                           <textarea
-                            rows={3}
+                            rows={2}
                             value={sessionMessageDrafts[sessionItem.id] ?? ''}
                             onChange={(event) =>
                               setSessionMessageDrafts((prev) => ({
@@ -3192,7 +3192,7 @@ export default function App() {
                             placeholder="Send an update directly to the client."
                           />
                         </label>
-                        <div className="row">
+                        <div className="row session-card-actions-row">
                           <button type="button" onClick={() => sendSessionMessage(sessionItem)}>
                             Send message
                           </button>

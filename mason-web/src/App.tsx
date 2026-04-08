@@ -4,6 +4,7 @@ import { SiteOnePage } from './pages/SiteOnePage';
 import { GamePage } from './pages/GamePage';
 import { LegacyRedirect } from './pages/LegacyRedirect';
 import { NotFound } from './pages/NotFound';
+import { SchedulePage } from './pages/SchedulePage';
 
 const router = createBrowserRouter([
   {
@@ -21,6 +22,7 @@ const router = createBrowserRouter([
       { path: 'account', element: <LegacyRedirect href="/account.html" /> },
       { path: 'order', element: <LegacyRedirect href="/order.html" /> },
       { path: 'game', element: <GamePage /> },
+      { path: 'schedule', element: <SchedulePage /> },
       { path: 'music', element: <LegacyRedirect href="/music.html" /> },
       { path: 'session', element: <LegacyRedirect href="/sessionchat.html" /> },
       { path: '*', element: <NotFound /> },

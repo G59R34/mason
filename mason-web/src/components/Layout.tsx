@@ -14,6 +14,7 @@ const nav: NavItem[] = [
   { kind: 'section', id: 'top', label: 'Home' },
   { kind: 'section', id: 'gallery', label: 'Gallery' },
   { kind: 'route', to: '/game', label: 'Game' },
+  { kind: 'route', to: '/schedule', label: 'Schedule' },
   { kind: 'section', id: 'about', label: 'About' },
   { kind: 'section', id: 'reviews', label: 'Reviews' },
   { kind: 'section', id: 'forums', label: 'Forums' },
@@ -217,6 +218,7 @@ export function Layout() {
         <div className="app-footer-inner">
           <NavLink to="/order">Order</NavLink>
           <NavLink to="/game">Game</NavLink>
+          <NavLink to="/schedule">Schedule</NavLink>
           <a href="/#music">Music</a>
           <a href="/#pricing">Pricing</a>
           <a href="/#contact">Contact</a>
