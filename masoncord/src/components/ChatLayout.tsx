@@ -24,6 +24,7 @@ export function ChatLayout() {
   const [ready, setReady] = useState(false);
   const [nickOpen, setNickOpen] = useState(false);
   const [nickDraft, setNickDraft] = useState('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const myMembership = members.find((m) => m.user_id === user?.id);
 
@@ -228,6 +229,9 @@ export function ChatLayout() {
   return (
     <div className="mc-shell">
       <header className="mc-topbar">
+        <button type="button" className="mc-drawer-toggle" aria-label="Toggle channels" onClick={() => setDrawerOpen((o) => !o)}>
+          <span className={`mc-drawer-bars${drawerOpen ? ' is-open' : ''}`}><span /><span /><span /></span>
+        </button>
         <div className="mc-topbar-brand">
           <span className="mc-topbar-mark" aria-hidden>
             💜
@@ -239,13 +243,14 @@ export function ChatLayout() {
         </a>
        
       </header>
+      {drawerOpen && <div className="mc-drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
       <div className="mc-body">
-        <aside className="mc-rail" aria-label="Server">
+        <aside className={`mc-rail${drawerOpen ? ' is-open' : ''}`} aria-label="Server">
           <div className="mc-rail-icon" title={server?.name ?? 'Masoncord'}>
             {server?.icon_emoji ?? '💜'}
           </div>
         </aside>
-        <aside className="mc-channels">
+        <aside className={`mc-channels${drawerOpen ? ' is-open' : ''}`}>
           <div className="mc-channels-head">
             <h2>{server?.name ?? 'Masoncord'}</h2>
             <p className="mc-channels-sub">{server?.description}</p>
@@ -257,6 +262,7 @@ export function ChatLayout() {
                 key={ch.id}
                 to={`/channel/${ch.id}`}
                 className={({ isActive }) => `mc-channel-link ${isActive ? 'active' : ''}`}
+                onClick={() => setDrawerOpen(false)}
               >
                 <span className="mc-channel-hash">#</span>
                 <span className="mc-channel-name">{ch.name}</span>

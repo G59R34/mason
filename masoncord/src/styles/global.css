@@ -1108,6 +1108,15 @@ body {
   text-align: center;
 }
 
+/* ---- Mobile drawer toggle (hidden on desktop) ---- */
+.mc-drawer-toggle {
+  display: none;
+}
+
+.mc-drawer-backdrop {
+  display: none;
+}
+
 @media (max-width: 1100px) {
   .mc-body {
     grid-template-columns: 64px minmax(200px, 260px) minmax(0, 1fr);
@@ -1134,5 +1143,283 @@ body {
   .mc-panel-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ---- Full mobile layout (phone) ---- */
+@media (max-width: 520px) {
+  /* Hamburger toggle */
+  .mc-drawer-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+  }
+
+  .mc-drawer-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 20px;
+  }
+
+  .mc-drawer-bars span {
+    display: block;
+    height: 2px;
+    background: var(--mc-muted);
+    border-radius: 1px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  .mc-drawer-bars.is-open span:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+  .mc-drawer-bars.is-open span:nth-child(2) {
+    opacity: 0;
+  }
+  .mc-drawer-bars.is-open span:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+
+  /* Backdrop */
+  .mc-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  /* Topbar: compact single row */
+  .mc-topbar {
+    grid-template-columns: auto 1fr auto;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .mc-topbar-brand {
+    gap: 8px;
+  }
+
+  .mc-topbar-mark {
+    font-size: 1.1rem;
+  }
+
+  .mc-topbar-name {
+    font-size: 0.92rem;
+  }
+
+  .mc-topbar-link {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+    justify-self: end;
+  }
+
+  .mc-topbar-badge {
+    display: none;
+  }
+
+  /* Body: single column (only main visible) */
+  .mc-body {
+    grid-template-columns: 1fr;
+  }
+
+  /* Rail: fixed drawer */
+  .mc-rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 56px;
+    z-index: 101;
+    transform: translateX(-100%);
+    transition: transform 0.25s var(--mc-ease);
+  }
+
+  .mc-rail.is-open {
+    transform: translateX(0);
+  }
+
+  /* Channels: fixed drawer next to rail */
+  .mc-channels {
+    position: fixed;
+    top: 0;
+    left: 56px;
+    bottom: 0;
+    width: min(260px, calc(100vw - 72px));
+    z-index: 100;
+    border-right: 1px solid var(--mc-border);
+    transform: translateX(calc(-100% - 56px));
+    transition: transform 0.25s var(--mc-ease);
+    background: rgba(18, 15, 26, 0.98);
+  }
+
+  .mc-channels.is-open {
+    transform: translateX(0);
+  }
+
+  /* Main: full width */
+  .mc-main {
+    border-right: none;
+  }
+
+  /* Messages: tighter padding */
+  .mc-messages {
+    padding: 6px 12px 12px;
+  }
+
+  /* Message grid: smaller avatar column */
+  .mc-msg {
+    grid-template-columns: 38px 1fr;
+    gap: 3px 10px;
+    padding: 2px 4px 4px 4px;
+    margin: 0 -4px;
+  }
+
+  .mc-msg-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 0.82rem;
+  }
+
+  /* Show message actions on touch (no hover needed) */
+  .mc-msg-actions {
+    opacity: 1;
+  }
+
+  .mc-msg-action {
+    font-size: 0.78rem;
+    padding: 4px 2px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Panel head */
+  .mc-panel-head {
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .mc-channel-title-row h1 {
+    font-size: 1.08rem;
+  }
+
+  .mc-panel-tools {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .mc-search-input {
+    width: 100%;
+    max-width: none;
+  }
+
+  .mc-panel-site {
+    display: none;
+  }
+
+  /* Composer */
+  .mc-composer-wrap {
+    padding: 0 10px 10px;
+  }
+
+  .mc-composer {
+    padding: 10px 12px;
+  }
+
+  .mc-composer-input {
+    font-size: 16px;
+    min-height: 42px;
+  }
+
+  .mc-composer-hint {
+    display: none;
+  }
+
+  .mc-btn-send {
+    padding: 10px 18px;
+    font-size: 0.85rem;
+  }
+
+  /* Reply banner */
+  .mc-reply-banner {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+  }
+
+  /* Channel links: larger tap targets */
+  .mc-channel-link {
+    padding: 12px 12px;
+    font-size: 0.92rem;
+  }
+
+  /* User bar */
+  .mc-user-bar {
+    padding: 10px;
+  }
+
+  .mc-btn-ghost {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+  }
+
+  .mc-btn-ghost--tiny {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* Day divider */
+  .mc-day-divider {
+    margin: 14px 0 10px;
+    font-size: 0.68rem;
+  }
+
+  /* Reaction pills: slightly larger for touch */
+  .mc-react-pill {
+    padding: 5px 10px;
+    font-size: 0.9rem;
+  }
+
+  .mc-react-quick {
+    font-size: 1.15rem;
+    padding: 4px 6px;
+    min-height: 32px;
+    min-width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Login adjustments */
+  .mc-login {
+    padding: 16px;
+  }
+
+  .mc-login-card {
+    padding: 28px 22px;
+  }
+
+  .mc-login-logo {
+    font-size: 2.25rem;
+  }
+
+  .mc-login-brand h1 {
+    font-size: 1.5rem;
+  }
+
+  /* Members panel (already hidden at 1100px, but ensure) */
+  .mc-members {
+    display: none;
   }
 }
