@@ -553,6 +553,26 @@ a:hover {
   position: relative;
 }
 
+/* Game route: same global player, fixed so audio survives route and stays usable */
+.audio-banner.audio-banner--dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  border-bottom: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.game-route-outlet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .audio-banner::after {
   content: '';
   position: absolute;

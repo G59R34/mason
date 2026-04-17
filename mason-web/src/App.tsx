@@ -7,6 +7,7 @@ import { LegacyRedirect } from './pages/LegacyRedirect';
 import { NotFound } from './pages/NotFound';
 import { SchedulePage } from './pages/SchedulePage';
 import { UserTicketsPage } from './pages/UserTicketsPage';
+import { DiscographyPage } from './pages/DiscographyPage';
 
 const router = createBrowserRouter([
   {
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: 'order', element: <LegacyRedirect href="/order.html" /> },
       { path: 'game', element: <GamePage /> },
       { path: 'schedule', element: <SchedulePage /> },
+      { path: 'discography', element: <DiscographyPage /> },
       { path: 'music', element: <LegacyRedirect href="/music.html" /> },
       { path: 'session', element: <LegacyRedirect href="/sessionchat.html" /> },
       { path: '*', element: <NotFound /> },

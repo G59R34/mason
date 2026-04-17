@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type Img = { public_url: string; caption?: string | null };
@@ -22,9 +23,9 @@ export function GalleryPage() {
         <div className="section card" style={{ borderStyle: 'dashed' }}>
           <h2>No images yet</h2>
           <p className="muted">Check back soon for new shots.</p>
-          <a href="/#contact" className="btn">
+          <Link to={{ pathname: '/', hash: 'contact' }} className="btn">
             Contact Mason
-          </a>
+          </Link>
         </div>
       </section>
     );

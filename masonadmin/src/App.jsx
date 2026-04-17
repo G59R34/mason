@@ -10,7 +10,7 @@ const TABS = [
   { id: 'sessions', label: 'Sessions' },
   { id: 'clients', label: 'Clients' },
   { id: 'gallery', label: 'Gallery' },
-  { id: 'music', label: 'Music' },
+  { id: 'music', label: 'Discography' },
   { id: 'why', label: 'Why Editor' },
   { id: 'pricing', label: 'Pricing' },
   { id: 'super', label: 'SUPER ADMIN STUFF' },
@@ -207,6 +207,10 @@ export default function App() {
   const [publicMainSiteUrl, setPublicMainSiteUrl] = useState('https://sexwithmason.com');
   const [publicMasoncordUrl, setPublicMasoncordUrl] = useState('https://cord.sexwithmason.com');
   const [publicUrlsStatus, setPublicUrlsStatus] = useState('');
+  const discographyPublicUrl = useMemo(
+    () => `${(publicMainSiteUrl.trim() || 'https://sexwithmason.com').replace(/\/$/, '')}/discography`,
+    [publicMainSiteUrl]
+  );
 
   const isStaffMode = loginMode === 'staff';
   const isReady = useMemo(() => {
@@ -3799,6 +3803,21 @@ export default function App() {
 
         {activeTab === 'music' && (
           <section className="stack">
+            <div className="card">
+              <h2 style={{ marginTop: 0 }}>PEGGER Productions — Discography</h2>
+              <p className="muted" style={{ marginBottom: 0 }}>
+                MP3s you upload are stored in Supabase and listed on the public site’s{' '}
+                <a href={discographyPublicUrl} target="_blank" rel="noopener noreferrer">
+                  Discography
+                </a>{' '}
+                page (same catalog as the legacy{' '}
+                <a href="/music.html" target="_blank" rel="noopener noreferrer">
+                  Mason Music Player
+                </a>
+                ). Set the main site URL under Settings if the preview link should point at staging.
+              </p>
+            </div>
+
             <form className="card form" onSubmit={uploadMusicTrack}>
               <h3>Upload single track</h3>
               <label>
@@ -3820,7 +3839,7 @@ export default function App() {
                   type="text"
                   value={musicArtist}
                   onChange={(e) => setMusicArtist(e.target.value)}
-                  placeholder="Artist name"
+                  placeholder="e.g. PEGGER Productions"
                 />
               </label>
               <label>
@@ -3864,8 +3883,18 @@ export default function App() {
             </form>
 
             <div className="card list">
-              <h3>Tracks (Mason Music Player)</h3>
-              <p className="muted">Tracks appear on the <a href="/music.html" target="_blank" rel="noopener noreferrer">Mason Music Player</a> page.</p>
+              <h3>Catalog</h3>
+              <p className="muted">
+                Public listening:{' '}
+                <a href={discographyPublicUrl} target="_blank" rel="noopener noreferrer">
+                  Open discography
+                </a>
+                . Legacy player:{' '}
+                <a href="/music.html" target="_blank" rel="noopener noreferrer">
+                  music.html
+                </a>
+                .
+              </p>
               {musicTracks.length === 0 && <p className="muted">No tracks yet.</p>}
               {musicTracks.map((track) => (
                 <div key={track.id} className="list-row" style={{ alignItems: 'flex-start' }}>
@@ -3894,6 +3923,12 @@ export default function App() {
                         onChange={(e) => updateMusicTrackField(track, 'sort_order', e.target.value)}
                       />
                     </label>
+                    <div>
+                      <span className="muted" style={{ display: 'block', marginBottom: 6 }}>
+                        Preview
+                      </span>
+                      <audio controls src={track.public_url} style={{ width: '100%', maxWidth: 420 }} />
+                    </div>
                   </div>
                   <div className="review-actions">
                     <button type="button" onClick={() => saveMusicTrack(track)}>Save</button>

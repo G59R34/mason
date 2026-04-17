@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { DEFAULT_MASONCORD_PUBLIC_URL, useSiteEffects } from '../hooks/useSiteEffects';
-import { CustomAudioPlayer } from './CustomAudioPlayer';
 import { FloatingAnnouncement } from './FloatingAnnouncement';
 import { HeaderAnnouncements } from './HeaderAnnouncements';
+import { SiteAudioBanner } from './SiteAudioBanner';
 import { WhatsNewModal } from './WhatsNewModal';
 
 type NavItem =
@@ -13,6 +13,7 @@ type NavItem =
 const nav: NavItem[] = [
   { kind: 'section', id: 'top', label: 'Home' },
   { kind: 'section', id: 'gallery', label: 'Gallery' },
+  { kind: 'route', to: '/discography', label: 'Discography' },
   { kind: 'route', to: '/game', label: 'Game' },
   { kind: 'route', to: '/schedule', label: 'Schedule' },
   { kind: 'section', id: 'about', label: 'About' },
@@ -56,22 +57,22 @@ function MainNavLink({
     pathname === '/' &&
     (item.id === 'top' ? !hash || hash === '#top' : hash === `#${item.id}`);
 
-  const href = item.id === 'top' ? '/' : `/#${item.id}`;
+  const sectionTo = item.id === 'top' ? '/' : { pathname: '/' as const, hash: item.id };
 
   return (
-    <a
-      href={href}
+    <Link
+      to={sectionTo}
       className={active ? 'active' : ''}
       onClick={(e) => {
+        onNavigate();
         if (pathname === '/') {
           e.preventDefault();
           scrollToSection(item.id);
-          onNavigate();
         }
       }}
     >
       {item.label}
-    </a>
+    </Link>
   );
 }
 
@@ -115,121 +116,97 @@ export function Layout() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (isGame) {
-    return (
-      <div className="app-shell app-shell--game-fs">
-        <Outlet />
-        {maintenance && (
-          <div className="ms-maintenance" role="alert">
-            <div className="ms-maintenance-inner">Mason is With a client</div>
-          </div>
-        )}
-        {blockModal?.enabled && (
-          <div className="ms-admin-block-modal" role="dialog" aria-modal aria-labelledby="block-title">
-            <div className="ms-admin-block-modal-backdrop" />
-            <div className="ms-admin-block-modal-dialog">
-              <h2 id="block-title">{blockModal.title || 'Notice'}</h2>
-              {blockModal.body ? <div className="ms-admin-block-modal-body">{blockModal.body}</div> : null}
-              {blockModal.cta_label && blockModal.cta_url ? (
-                <div className="ms-admin-block-modal-cta">
-                  <a href={blockModal.cta_url}>{blockModal.cta_label}</a>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="app-header-inner">
-          <NavLink
-            to="/"
-            className="app-logo"
-            end
-            onClick={(e) => {
-              if (location.pathname === '/') {
-                e.preventDefault();
-                scrollToSection('top');
-              }
-              setNavOpen(false);
-            }}
-          >
-            <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden>
-              <path
-                fill="currentColor"
-                d="M12 2L2 7v7c0 5 4 8 10 8s10-3 10-8V7l-10-5z"
+    <div className={isGame ? 'app-shell app-shell--game-fs' : 'app-shell'}>
+      {!isGame && (
+        <>
+          <header className="app-header">
+            <div className="app-header-inner">
+              <NavLink
+                to="/"
+                className="app-logo"
+                end
+                onClick={(e) => {
+                  if (location.pathname === '/') {
+                    e.preventDefault();
+                    scrollToSection('top');
+                  }
+                  setNavOpen(false);
+                }}
+              >
+                <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden>
+                  <path
+                    fill="currentColor"
+                    d="M12 2L2 7v7c0 5 4 8 10 8s10-3 10-8V7l-10-5z"
+                  />
+                </svg>
+                <span className="app-logo-text">Sex With Mason</span>
+              </NavLink>
+              <div className="app-header-center">
+                <HeaderAnnouncements />
+              </div>
+              <button
+                type="button"
+                className="app-nav-toggle"
+                aria-expanded={navOpen}
+                aria-controls="primary-nav"
+                onClick={() => setNavOpen((o) => !o)}
+              >
+                <span className="visually-hidden">Menu</span>
+                <span className={`app-nav-toggle-bars ${navOpen ? 'is-open' : ''}`} aria-hidden>
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </button>
+              <div
+                className={`app-nav-backdrop ${navOpen ? 'is-visible' : ''}`}
+                aria-hidden
+                onClick={() => setNavOpen(false)}
               />
-            </svg>
-            <span className="app-logo-text">Sex With Mason</span>
-          </NavLink>
-          <div className="app-header-center">
-            <HeaderAnnouncements />
+              <nav id="primary-nav" className={`app-nav ${navOpen ? 'is-open' : ''}`} aria-label="Main">
+                {nav.map((item) => (
+                  <MainNavLink key={item.kind === 'section' ? item.id : item.to} item={item} onNavigate={() => setNavOpen(false)} />
+                ))}
+              </nav>
+            </div>
+          </header>
+
+          <FloatingAnnouncement />
+          <WhatsNewModal />
+        </>
+      )}
+
+      <SiteAudioBanner variant={isGame ? 'dock' : 'inline'} />
+
+      {!isGame ? (
+        <main className="main-content">
+          <Outlet />
+        </main>
+      ) : (
+        <div className="game-route-outlet">
+          <Outlet />
+        </div>
+      )}
+
+      {!isGame && (
+        <footer className="app-footer">
+          <div className="app-footer-inner">
+            <NavLink to="/order">Order</NavLink>
+            <NavLink to="/game">Game</NavLink>
+            <NavLink to="/schedule">Schedule</NavLink>
+            <NavLink to="/discography">Discography</NavLink>
+            <Link to={{ pathname: '/', hash: 'music' }}>Music</Link>
+            <Link to={{ pathname: '/', hash: 'pricing' }}>Pricing</Link>
+            <Link to={{ pathname: '/', hash: 'contact' }}>Contact</Link>
+            <a href={masoncordHref} target="_blank" rel="noreferrer">
+              Masoncord
+            </a>
+            <NavLink to="/tickets">Tickets</NavLink>
+            <NavLink to="/session">Session chat</NavLink>
           </div>
-          <button
-            type="button"
-            className="app-nav-toggle"
-            aria-expanded={navOpen}
-            aria-controls="primary-nav"
-            onClick={() => setNavOpen((o) => !o)}
-          >
-            <span className="visually-hidden">Menu</span>
-            <span className={`app-nav-toggle-bars ${navOpen ? 'is-open' : ''}`} aria-hidden>
-              <span />
-              <span />
-              <span />
-            </span>
-          </button>
-          <div
-            className={`app-nav-backdrop ${navOpen ? 'is-visible' : ''}`}
-            aria-hidden
-            onClick={() => setNavOpen(false)}
-          />
-          <nav id="primary-nav" className={`app-nav ${navOpen ? 'is-open' : ''}`} aria-label="Main">
-            {nav.map((item) => (
-              <MainNavLink key={item.kind === 'section' ? item.id : item.to} item={item} onNavigate={() => setNavOpen(false)} />
-            ))}
-          </nav>
-        </div>
-      </header>
-
-      <FloatingAnnouncement />
-      <WhatsNewModal />
-
-      <div className="audio-banner">
-        <div className="audio-banner-inner">
-          <div className="audio-banner-title">Nut For Me — Pegger Productions</div>
-          <div className="audio-banner-player">
-            <CustomAudioPlayer src="/nutforme.mp3" aria-label="Play Nut For Me" />
-          </div>
-          <a href="/#music" className="btn btn-ghost audio-banner-cta" onClick={() => setNavOpen(false)}>
-            Review this track
-          </a>
-        </div>
-      </div>
-
-      <main className="main-content">
-        <Outlet />
-      </main>
-
-      <footer className="app-footer">
-        <div className="app-footer-inner">
-          <NavLink to="/order">Order</NavLink>
-          <NavLink to="/game">Game</NavLink>
-          <NavLink to="/schedule">Schedule</NavLink>
-          <a href="/#music">Music</a>
-          <a href="/#pricing">Pricing</a>
-          <a href="/#contact">Contact</a>
-          <a href={masoncordHref} target="_blank" rel="noreferrer">
-            Masoncord
-          </a>
-          <NavLink to="/tickets">Tickets</NavLink>
-          <NavLink to="/session">Session chat</NavLink>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {maintenance && (
         <div className="ms-maintenance" role="alert">

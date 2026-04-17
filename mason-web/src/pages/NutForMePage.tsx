@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { CustomAudioPlayer } from '../components/CustomAudioPlayer';
+import { DEFAULT_SITE_TRACK, useGlobalPlayer } from '../context/GlobalPlayerContext';
 
 const TRACK_SLUG = 'nutforme';
 
 export function NutForMePage() {
+  const { playTrack, isActiveTrackId } = useGlobalPlayer();
   const [reviews, setReviews] = useState<{ name: string; comment: string; rating: number; created_at: string }[]>([]);
   const [name, setName] = useState('');
   const [comment, setComment] = useState('');
@@ -52,7 +53,13 @@ export function NutForMePage() {
           <h2>Nut For Me</h2>
           <p className="muted">Pegger Productions</p>
           <div style={{ marginTop: 20 }}>
-            <CustomAudioPlayer src="/nutforme.mp3" aria-label="Play Nut For Me" />
+            <button
+              type="button"
+              className={isActiveTrackId(DEFAULT_SITE_TRACK.id) ? 'btn' : 'btn btn-ghost'}
+              onClick={() => playTrack(DEFAULT_SITE_TRACK)}
+            >
+              {isActiveTrackId(DEFAULT_SITE_TRACK.id) ? 'Playing in site bar' : 'Play in site bar'}
+            </button>
           </div>
         </div>
       </section>
