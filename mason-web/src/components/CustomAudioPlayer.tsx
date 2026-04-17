@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+const VOLUME_STORAGE_KEY = 'mason_audio_volume';
+
+function readStoredVolume(): number {
+  try {
+    const raw = localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (raw == null) return 1;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) return 1;
+    return Math.max(0, Math.min(1, n));
+  } catch {
+    return 1;
+  }
+}
+
 function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   const m = Math.floor(seconds / 60);
@@ -23,6 +37,8 @@ export function CustomAudioPlayer({ src, playSignal = 0, 'aria-label': ariaLabel
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [pct, setPct] = useState(0);
+  const [volume, setVolume] = useState(() => readStoredVolume());
+  const volumeRef = useRef(volume);
 
   const tick = useCallback(() => {
     const a = audioRef.current;
@@ -42,7 +58,14 @@ export function CustomAudioPlayer({ src, playSignal = 0, 'aria-label': ariaLabel
     a.pause();
     a.src = src;
     void a.load();
+    a.volume = volumeRef.current;
   }, [src]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+    const a = audioRef.current;
+    if (a) a.volume = volume;
+  }, [volume]);
 
   useEffect(() => {
     const a = audioRef.current;
@@ -140,6 +163,32 @@ export function CustomAudioPlayer({ src, playSignal = 0, 'aria-label': ariaLabel
       <div className="custom-audio-time">
         {formatTime(current)} / {formatTime(duration)}
       </div>
+      <label className="custom-audio-volume">
+        <span className="visually-hidden">Volume</span>
+        <span className="custom-audio-volume-icon" aria-hidden>
+          {volume === 0 ? '🔇' : volume < 0.45 ? '🔉' : '🔊'}
+        </span>
+        <input
+          type="range"
+          className="custom-audio-volume-input"
+          min={0}
+          max={1}
+          step={0.02}
+          value={volume}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(volume * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setVolume(v);
+            try {
+              localStorage.setItem(VOLUME_STORAGE_KEY, String(v));
+            } catch {
+              /* ignore quota / private mode */
+            }
+          }}
+        />
+      </label>
     </div>
   );
 }

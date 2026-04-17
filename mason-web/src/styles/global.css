@@ -1359,6 +1359,62 @@ textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.custom-audio-volume {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.custom-audio-volume-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.custom-audio-volume-input {
+  width: 72px;
+  height: 6px;
+  appearance: none;
+  border-radius: 999px;
+  background: var(--ring);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.custom-audio-volume-input::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+  border: 2px solid rgba(10, 10, 12, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.custom-audio-volume-input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+  border: 2px solid rgba(10, 10, 12, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.custom-audio-volume-input::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ring);
+}
+
+@media (max-width: 480px) {
+  .custom-audio-volume-input {
+    width: 56px;
+  }
+}
+
 /* Maintenance & block modal */
 .ms-maintenance {
   position: fixed;
