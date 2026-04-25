@@ -1,0 +1,93 @@
+/* —— Scroll-driven 3D shell (html.imm-mode): perspective on main, not a literal cube. —— */
+
+html.imm-mode .imm-reveal-3d {
+  transform-style: preserve-3d;
+}
+
+html.imm-mode .imm-cube-viewport {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  perspective: 1900px;
+  perspective-origin: 50% 8%;
+  transform-style: preserve-3d;
+}
+
+html.imm-mode .imm-cube-face--content {
+  transform-style: preserve-3d;
+  transform: rotateX(calc(-1.5deg + var(--imm-scroll, 0) * 4deg))
+    rotateY(calc(var(--imm-nav-px, 0) * 2deg))
+    translateZ(0);
+  transform-origin: 50% 0%;
+  will-change: transform;
+}
+
+html.imm-mode .imm-cube-face--content .card,
+html.imm-mode .imm-cube-face--content .game-teaser,
+html.imm-mode .imm-cube-face--content .portal-page,
+html.imm-mode .imm-cube-face--content .schedule-page,
+html.imm-mode .imm-cube-face--content .reels-page {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition:
+    transform 0.45s cubic-bezier(0.25, 1, 0.5, 1),
+    box-shadow 0.45s ease,
+    border-color 0.3s ease;
+}
+
+html.imm-mode .imm-cube-face--content .card:hover,
+html.imm-mode .imm-cube-face--content .game-teaser:hover {
+  transform: translateZ(22px) rotateX(-2.5deg);
+}
+
+html.imm-mode .imm-cube-sections .site-section {
+  transform-style: preserve-3d;
+}
+
+html.imm-mode .imm-cube-sections .site-section:nth-child(3n + 1) {
+  transform: translateZ(0);
+}
+
+html.imm-mode .imm-cube-sections .site-section:nth-child(3n + 2) {
+  transform: translateZ(6px);
+}
+
+html.imm-mode .imm-cube-sections .site-section:nth-child(3n) {
+  transform: translateZ(2px);
+}
+
+html.imm-mode .audio-banner {
+  transform-style: preserve-3d;
+  transform: translateZ(12px);
+  box-shadow:
+    0 -1px 0 rgba(139, 92, 246, 0.12),
+    0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+html.imm-mode .immersive-footer {
+  transform-style: preserve-3d;
+  transform: translateZ(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.imm-mode .imm-cube-face--content,
+  html.imm-mode .imm-cube-face--content .card,
+  html.imm-mode .imm-cube-face--content .game-teaser,
+  html.imm-mode .imm-cube-sections .site-section,
+  html.imm-mode .audio-banner,
+  html.imm-mode .immersive-footer {
+    transform: none !important;
+  }
+
+  html.imm-mode .imm-cube-face--content .card:hover,
+  html.imm-mode .imm-cube-face--content .game-teaser:hover {
+    transform: none !important;
+  }
+}
+
+html.embed-handheld.imm-mode .imm-cube-face--content,
+html.embed-handheld.imm-mode .imm-cube-sections .site-section,
+html.embed-handheld.imm-mode .audio-banner,
+html.embed-handheld.imm-mode .immersive-footer {
+  transform: none !important;
+}

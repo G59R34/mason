@@ -3,9 +3,10 @@ import { Reveal, RevealItem, RevealStagger } from '../components/Reveal';
 
 export function HomeHero() {
   return (
-    <div className="home-hero-wrap">
+    <div className="home-hero-wrap imm-hero-wrap">
+      <div className="imm-hero-orb" aria-hidden />
       <Reveal>
-        <section className="card hero home-hero-card">
+        <section className="card hero home-hero-card imm-hero-card">
           <div>
             <p className="home-hero-eyebrow">Private sessions · Real talk</p>
             <h1 className="home-hero-title">Hello, I&apos;m Mason.</h1>

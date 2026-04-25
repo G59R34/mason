@@ -1,0 +1,2 @@
+/* Tailwind: prefixed utilities (e.g. imm-flex) to avoid clashing with global.css */
+@import 'tailwindcss' prefix(imm);

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Mason Handheld
+Comment=Handheld shell for Mason (mason-web)
+Exec=mason-handheld %u
+Icon=mason-handheld
+Terminal=false
+Categories=Game;Network;
+Keywords=mason;handheld;steam;gamepad;
+StartupWMClass=mason-handheld
+MimeType=x-scheme-handler/https;x-scheme-handler/http;

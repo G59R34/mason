@@ -1,0 +1,193 @@
+/*
+ * Mason Handheld & large-screen embed mode
+ * Activated when mason-web is loaded with ?embed=handheld (e.g. from mason-handheld).
+ * Goals: responsive TV / 1600×900 / Deck, large touch targets, visible focus for controllers.
+ */
+
+html.embed-handheld {
+  --hh-touch: 48px;
+  --hh-focus: 3px solid rgba(167, 139, 250, 0.95);
+}
+
+html.embed-handheld body {
+  font-size: clamp(16px, 1.1vw + 14px, 18px);
+}
+
+html.embed-handheld *:focus-visible {
+  outline: var(--hh-focus);
+  outline-offset: 3px;
+}
+
+/* Wider canvas on big screens; still comfortable on handheld */
+html.embed-handheld .main-content {
+  max-width: min(100%, 1600px);
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+  padding-bottom: max(96px, env(safe-area-inset-bottom));
+}
+
+html.embed-handheld .app-footer-inner {
+  max-width: min(100%, 1600px);
+  gap: 14px 22px;
+}
+
+html.embed-handheld .app-footer a {
+  min-height: var(--hh-touch);
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  border-radius: 12px;
+}
+
+html.embed-handheld .app-footer a:focus-visible {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+/* Header — larger menu control */
+html.embed-handheld .app-header-inner {
+  min-height: 64px;
+  padding-top: max(8px, env(safe-area-inset-top));
+}
+
+html.embed-handheld .app-nav-toggle {
+  min-width: 52px;
+  min-height: 52px;
+  padding: 12px;
+}
+
+html.embed-handheld .app-logo {
+  gap: 12px;
+}
+
+html.embed-handheld .app-logo-text {
+  font-size: clamp(1rem, 2vw, 1.15rem);
+}
+
+/* Drawer nav — thumb-friendly rows */
+@media (max-width: 900px) {
+  html.embed-handheld .app-nav a {
+    min-height: 52px;
+    padding: 14px 18px;
+    font-size: 1.05rem;
+  }
+}
+
+/* Cards & buttons site-wide */
+html.embed-handheld .card {
+  border-radius: var(--radius-sm);
+}
+
+html.embed-handheld .btn {
+  min-height: var(--hh-touch);
+  padding: 12px 20px;
+  font-size: 1rem;
+}
+
+html.embed-handheld .btn.btn-ghost {
+  min-height: 44px;
+}
+
+/* One-page sections — breathing room on TV */
+html.embed-handheld .site-section {
+  padding-bottom: clamp(40px, 7vw, 88px);
+}
+
+html.embed-handheld .home-hero-actions {
+  gap: 16px;
+}
+
+html.embed-handheld .home-hero-actions .btn {
+  min-height: 52px;
+}
+
+/* Contact / grid sections */
+html.embed-handheld .grid {
+  gap: 20px !important;
+}
+
+@media (max-width: 900px) {
+  html.embed-handheld .grid[style*='grid-template-columns'] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Portal-style pages (account, tickets, schedule) */
+html.embed-handheld .portal-page,
+html.embed-handheld .schedule-page {
+  max-width: min(100%, 960px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+html.embed-handheld .portal-page-inner,
+html.embed-handheld .schedule-page-inner {
+  max-width: 100%;
+}
+
+html.embed-handheld .tickets-toolbar {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+html.embed-handheld .tickets-toolbar .tickets-select-label select {
+  min-height: 52px;
+  font-size: 1rem;
+}
+
+html.embed-handheld .tickets-reply input,
+html.embed-handheld .tickets-reply textarea {
+  min-height: 52px;
+  font-size: 1rem;
+}
+
+html.embed-handheld .tickets-reply textarea {
+  min-height: 120px;
+}
+
+html.embed-handheld .form input,
+html.embed-handheld .form textarea,
+html.embed-handheld .form select {
+  min-height: 48px;
+  font-size: 1rem;
+}
+
+html.embed-handheld .form textarea {
+  min-height: 120px;
+}
+
+html.embed-handheld .form-grid-2 {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 700px) {
+  html.embed-handheld .form-grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Schedule list density */
+html.embed-handheld .schedule-card {
+  padding: 22px 24px;
+}
+
+/* Audio banner — slightly taller tap targets */
+html.embed-handheld .audio-banner-inner {
+  min-height: 56px;
+}
+
+@media (min-width: 1200px) {
+  html.embed-handheld .main-content {
+    padding-top: 32px;
+  }
+}
+
+html.embed-handheld .reels-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  html.embed-handheld .reels-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+}

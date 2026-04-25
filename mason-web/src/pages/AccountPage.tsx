@@ -463,6 +463,9 @@ export function AccountPage() {
                 </button>
                 {profileStatus && <p className="muted">{profileStatus}</p>}
               </form>
+              <p className="muted" style={{ marginTop: 12 }}>
+                <Link to="/reels">Mason Reels</Link> — upload short videos with this account.
+              </p>
               <button type="button" className="btn btn-ghost" onClick={() => void onLogout()}>
                 Log out
               </button>

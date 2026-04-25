@@ -1,5 +1,13 @@
-import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
+import { useCallback, useRef, useState } from 'react';
+import {
+  createBrowserRouter,
+  createMemoryRouter,
+  Navigate,
+  RouterProvider,
+  type RouteObject,
+} from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { shouldShowStartupSplash, StartupAnimation } from './components/StartupAnimation';
 import { SiteOnePage } from './pages/SiteOnePage';
 import { GamePage } from './pages/GamePage';
 import { AccountPage } from './pages/AccountPage';
@@ -8,8 +16,10 @@ import { NotFound } from './pages/NotFound';
 import { SchedulePage } from './pages/SchedulePage';
 import { UserTicketsPage } from './pages/UserTicketsPage';
 import { DiscographyPage } from './pages/DiscographyPage';
+import { ReelsPage } from './pages/ReelsPage';
+import { DesktopWindowFrame } from './components/DesktopWindowFrame';
 
-const router = createBrowserRouter([
+const routeTree: RouteObject[] = [
   {
     path: '/',
     element: <Layout />,
@@ -28,13 +38,35 @@ const router = createBrowserRouter([
       { path: 'game', element: <GamePage /> },
       { path: 'schedule', element: <SchedulePage /> },
       { path: 'discography', element: <DiscographyPage /> },
+      { path: 'reels', element: <ReelsPage /> },
       { path: 'music', element: <LegacyRedirect href="/music.html" /> },
       { path: 'session', element: <LegacyRedirect href="/sessionchat.html" /> },
       { path: '*', element: <NotFound /> },
     ],
   },
-]);
+];
+
+/** `file://` + BrowserRouter uses the filesystem path as the URL path — no routes match. */
+const useFileSafeRouter =
+  typeof window !== 'undefined' && window.location.protocol === 'file:';
+
+const router = useFileSafeRouter
+  ? createMemoryRouter(routeTree, { initialEntries: ['/'] })
+  : createBrowserRouter(routeTree);
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  const [showSplash, setShowSplash] = useState(shouldShowStartupSplash);
+  const splashDone = useRef(false);
+  const onSplashComplete = useCallback(() => {
+    if (splashDone.current) return;
+    splashDone.current = true;
+    setShowSplash(false);
+  }, []);
+
+  return (
+    <DesktopWindowFrame>
+      {showSplash ? <StartupAnimation onComplete={onSplashComplete} /> : null}
+      <RouterProvider router={router} />
+    </DesktopWindowFrame>
+  );
 }
