@@ -6,21 +6,26 @@ type Variant = 'inline' | 'dock';
 
 export function SiteAudioBanner({ variant }: { variant: Variant }) {
   const { activeTrack, playToken } = useGlobalPlayer();
-  const title = `${activeTrack.title} — ${activeTrack.subtitle}`;
 
   return (
     <div className={`audio-banner${variant === 'dock' ? ' audio-banner--dock' : ''}`}>
-      <div className="audio-banner-inner">
-        <div className="audio-banner-title">{title}</div>
-        <div className="audio-banner-player">
+      <div className="audio-banner__inner">
+        <div className="audio-banner__meta">
+          <span className="audio-banner__label">Now playing</span>
+          <span className="audio-banner__title">
+            {activeTrack.title}
+            <span className="audio-banner__sub"> · {activeTrack.subtitle}</span>
+          </span>
+        </div>
+        <div className="audio-banner__player">
           <CustomAudioPlayer
             src={activeTrack.src}
             playSignal={playToken}
             aria-label={`Play ${activeTrack.title}`}
           />
         </div>
-        <NavLink to="/discography" className="btn btn-ghost audio-banner-cta">
-          Browse discography
+        <NavLink to="/discography" className="audio-banner__link">
+          Discography
         </NavLink>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ReviewItem } from '../components/ReviewItem';
+import { SectionIntro } from '../components/SectionIntro';
 import {
   fetchAdminUserIds,
   fetchRepliesForReviewIds,
@@ -39,6 +40,7 @@ export function ReviewsPage() {
   const [name, setName] = useState('');
   const [comment, setComment] = useState('');
   const [rating, setRating] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     fetchAdminUserIds().then(setAdminIds);
@@ -122,43 +124,43 @@ export function ReviewsPage() {
     await load();
   }
 
-  const extrasMissing =
-    extras && (!extras.replies || !extras.votes) ? (
-      <div className="reviews-debug">
-        Some optional review features are unavailable because database tables are missing. Run{' '}
-        <code>add_review_replies_and_votes.sql</code> (or <code>add_review_replies_and_votes_safe.sql</code>) in Supabase to enable
-        replies and voting.
-      </div>
-    ) : null;
-
   return (
-    <>
-      <section className="card">
-        <div className="section-head">
-          <div>
-            <h2>Mason Reviews</h2>
-            <p style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }} className="muted">
-              <span style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--accent)' }}>{avg.toFixed(1)}</span>
-              <span style={{ color: 'var(--accent-warm)' }}>{stars(avg)}</span>
-              <span>({list.length} reviews)</span>
-            </p>
-            {loadError && (
-              <p style={{ color: '#f87171', marginTop: 8 }}>
-                {loadError} — confirm <code>.env</code> has <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, then
-                restart <code>npm run dev</code>.
-              </p>
-            )}
-          </div>
+    <div>
+      <SectionIntro eyebrow="Reviews" title="What clients say" lead="Ratings and replies from real sessions.">
+        <div className="rating">
+          <strong>{avg.toFixed(1)}</strong>
+          <span className="rating__stars" aria-hidden>
+            {stars(avg)}
+          </span>
+          <span className="muted">{list.length} reviews</span>
         </div>
-      </section>
+      </SectionIntro>
 
-      {extrasMissing}
+      {loadError && (
+        <p className="notice notice--error">
+          {loadError} — confirm <code>.env</code> has <code>VITE_SUPABASE_URL</code> and{' '}
+          <code>VITE_SUPABASE_ANON_KEY</code>, then restart the dev server.
+        </p>
+      )}
 
-      <section className="card section">
+      {extras && (!extras.replies || !extras.votes) ? (
+        <p className="notice">
+          Replies and voting are unavailable until the review tables are added in Supabase.
+        </p>
+      ) : null}
+
+      <details className="disclosure">
+        <summary>Write a review</summary>
         <form className="form" onSubmit={submit}>
           <div className="form-grid-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
-            <select value={rating} onChange={(e) => setRating(e.target.value)} required>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              aria-label="Your name"
+              required
+            />
+            <select value={rating} onChange={(e) => setRating(e.target.value)} aria-label="Rating" required>
               <option value="">Rating</option>
               {[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0].map((x) => (
                 <option key={x} value={x}>
@@ -167,30 +169,39 @@ export function ReviewsPage() {
               ))}
             </select>
           </div>
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write your review..." required rows={4} />
-          <button type="submit" className="btn">
-            Submit Review
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Write your review..."
+            aria-label="Your review"
+            required
+            rows={4}
+          />
+          <button type="submit" className="btn btn--sm">
+            Submit review
           </button>
         </form>
-      </section>
+      </details>
 
-      <section className="card section">
-        <h2 className="section-head">All reviews</h2>
-        <div style={{ display: 'grid', gap: 16 }}>
-          {list.map((r) => (
-            <ReviewItem
-              key={r.id}
-              review={r}
-              score={voteScores[r.id] ?? 0}
-              replies={repliesByReview[r.id] ?? []}
-              extras={extras ?? { replies: false, votes: false }}
-              adminIds={adminIds}
-              onUpdated={load}
-            />
-          ))}
-          {list.length === 0 && <p className="muted">No reviews yet.</p>}
-        </div>
-      </section>
-    </>
+      <div className="review-list">
+        {(showAll ? list : list.slice(0, 4)).map((r) => (
+          <ReviewItem
+            key={r.id}
+            review={r}
+            score={voteScores[r.id] ?? 0}
+            replies={repliesByReview[r.id] ?? []}
+            extras={extras ?? { replies: false, votes: false }}
+            adminIds={adminIds}
+            onUpdated={load}
+          />
+        ))}
+        {list.length === 0 && <p className="muted">No reviews yet. Be the first.</p>}
+        {!showAll && list.length > 4 ? (
+          <button type="button" className="btn btn-ghost" onClick={() => setShowAll(true)}>
+            Show all {list.length} reviews
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }

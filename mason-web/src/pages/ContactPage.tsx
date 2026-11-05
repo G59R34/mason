@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { SectionIntro } from '../components/SectionIntro';
 import { addTicketIdToStorage, CURRENT_TICKET_KEY, CUSTOMER_NAME_KEY } from '../lib/ticketStorage';
 import { supabase } from '../lib/supabase';
 
@@ -50,53 +51,57 @@ export function ContactPage() {
   }
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-      <section className="card">
-        <h2>Contact Mason</h2>
-        <p className="muted">Start a direct chat, or pick up where you left off.</p>
-        <div className="pill" style={{ marginTop: 12 }}>
-          Fast response • Clear communication • No fluff
-        </div>
-      </section>
-      <section className="card">
-        <h2>Start a chat</h2>
-        <form className="form" onSubmit={startChat}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Tell Mason what you need..."
-            required
-            rows={5}
-          />
-          <button type="submit" className="btn">
-            Send & Open Chat
-          </button>
-          {status && <p className="muted">{status}</p>}
-        </form>
-      </section>
-      <section className="card">
-        <h2>Resume a conversation</h2>
-        <p className="muted">Use your saved conversation link or ID.</p>
-        <form className="form" onSubmit={resume}>
-          <input name="conversationId" placeholder="Conversation ID" />
-          <button type="submit" className="btn">
-            Open Conversation
-          </button>
-        </form>
-        <p className="muted" style={{ marginTop: 8 }}>
-          {storedId ? `Saved conversation: ${storedId}` : 'No saved conversation on this device yet.'}
-        </p>
-        {storedId && (
-          <Link
-            to={`/tickets?conversation=${encodeURIComponent(storedId)}`}
-            className="btn btn-ghost"
-            style={{ marginTop: 8, display: 'inline-flex' }}
-          >
-            Open saved conversation
-          </Link>
-        )}
-      </section>
+    <div>
+      <SectionIntro eyebrow="Contact" title="Talk to Mason" lead="Start a direct chat, or pick up where you left off." />
+
+      <div className="contact-grid">
+        <section className="card">
+          <h3>Start a chat</h3>
+          <p className="muted">Fast response • Clear communication • No fluff</p>
+          <form className="form" onSubmit={startChat}>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              aria-label="Your name"
+              required
+            />
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Tell Mason what you need..."
+              aria-label="Message"
+              required
+              rows={5}
+            />
+            <button type="submit" className="btn btn--sm">
+              Send &amp; open chat
+            </button>
+            {status && <p className="muted">{status}</p>}
+          </form>
+        </section>
+
+        <aside className="card card--quiet">
+          <h3>Already talking to Mason?</h3>
+          <p className="muted">
+            {storedId ? 'Continue your last conversation on this device.' : 'Use your saved conversation ID to jump back in.'}
+          </p>
+          {storedId && (
+            <Link to={`/tickets?conversation=${encodeURIComponent(storedId)}`} className="btn btn--sm">
+              Open saved conversation
+            </Link>
+          )}
+          <details className="disclosure disclosure--flat">
+            <summary>Resume with an ID</summary>
+            <form className="form" onSubmit={resume}>
+              <input name="conversationId" placeholder="Conversation ID" aria-label="Conversation ID" />
+              <button type="submit" className="btn btn-ghost btn--sm">
+                Open conversation
+              </button>
+            </form>
+          </details>
+        </aside>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SectionIntro } from '../components/SectionIntro';
 import { supabase } from '../lib/supabase';
 
 type ValueCard = { title: string; body: string };
@@ -36,127 +37,45 @@ function formatValue(val: number, unit: 'cm' | 'in') {
 function WhyChart({
   data,
   unit,
-  scale,
   onUnitChange,
-  onScaleChange,
 }: {
   data: Measurement[];
   unit: 'cm' | 'in';
-  scale: number;
   onUnitChange: (u: 'cm' | 'in') => void;
-  onScaleChange: (s: number) => void;
 }) {
-  const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
-
-  const bars = useMemo(() => {
-    const rows = data.map((item) => ({
-      label: item.label,
-      valueCm: Number(item.value_cm),
-      color: item.color || '#0ea5a4',
-    }));
-    if (!rows.length) return { rows: [] as typeof rows, maxValue: 0.00001, scaleFactor: 1 };
-    const maxValue = Math.max(...rows.map((d) => d.valueCm), 0.00001);
-    const width = 880;
-    const scaleFactor = (width - 160) / (maxValue * scale);
-    return { rows, maxValue, scaleFactor };
-  }, [data, scale]);
+  const maxValue = Math.max(...data.map((d) => Number(d.value_cm) || 0), 0.00001);
 
   return (
     <section className="chart-card" aria-label="Weiner length comparison">
-      <div className="chart-header">
+      <div className="chart-card__head">
         <div>
-          <h2>Weiner length comparison</h2>
-          <p className="muted">Compare Mason, an ant, and an average human. Hover or tap the bars.</p>
+          <h3>Weiner length comparison</h3>
+          <p className="muted">Mason, an ant, and an average human.</p>
         </div>
-        <div className="chart-controls">
-          <label className="toggle">
-            Units:
-            <select value={unit} onChange={(e) => onUnitChange(e.target.value as 'cm' | 'in')}>
-              <option value="cm">cm</option>
-              <option value="in">in</option>
-            </select>
-          </label>
-          <label>
-            Zoom
-            <input type="range" min={1} max={5} step={0.1} value={scale} onChange={(e) => onScaleChange(Number(e.target.value))} />
-          </label>
-        </div>
+        <label className="field-inline">
+          <span>Units</span>
+          <select value={unit} onChange={(e) => onUnitChange(e.target.value as 'cm' | 'in')}>
+            <option value="cm">cm</option>
+            <option value="in">in</option>
+          </select>
+        </label>
       </div>
-      <div className="chart-area" style={{ position: 'relative' }}>
-        <svg
-          width="100%"
-          height="240"
-          viewBox="0 0 900 240"
-          role="img"
-          aria-label="Length chart"
-          onMouseLeave={() => setTip(null)}
-        >
-          {bars.rows.map((d, i) => {
-            const barHeight = 38;
-            const gap = 20;
-            const y = 20 + i * (barHeight + gap);
-            const value = toUnit(d.valueCm, unit);
-            const barWidth = Math.max(6, d.valueCm * bars.scaleFactor);
-            return (
-              <g key={d.label + i}>
-                <text x={0} y={y + 26} fill="#fafafa" fontSize={15} fontFamily="DM Sans, system-ui, sans-serif">
-                  {d.label}
-                </text>
-                <rect
-                  x={140}
-                  y={y}
-                  rx={12}
-                  ry={12}
-                  width={barWidth}
-                  height={barHeight}
-                  fill={d.color}
-                  style={{ cursor: 'pointer', transition: 'width 0.4s ease' }}
-                  onMouseMove={(e) => {
-                    const rect = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect();
-                    setTip({
-                      x: e.clientX - rect.left,
-                      y: e.clientY - rect.top,
-                      text: `${d.label}: ${formatValue(value, unit)}`,
-                    });
-                  }}
-                  onClick={(e) => {
-                    const rect = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect();
-                    setTip({
-                      x: e.clientX - rect.left,
-                      y: e.clientY - rect.top,
-                      text: `${d.label}: ${formatValue(value, unit)}`,
-                    });
-                  }}
-                />
-                <text x={140 + barWidth + 12} y={y + 26} fill="#a1a1aa" fontSize={14} fontFamily="DM Sans, system-ui, sans-serif">
-                  {formatValue(value, unit)}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        {tip && (
-          <div
-            className="tooltip show"
-            style={{
-              position: 'absolute',
-              left: tip.x,
-              top: tip.y,
-              pointerEvents: 'none',
-            }}
-          >
-            {tip.text}
-          </div>
-        )}
-      </div>
-      <div className="chart-legend">
-        {bars.rows.map((d) => (
-          <span key={d.label} className="legend-pill">
-            <span className="legend-dot" style={{ background: d.color }} />
-            {d.label}
-          </span>
-        ))}
-      </div>
+
+      <ul className="bar-chart">
+        {data.map((item) => {
+          const valueCm = Number(item.value_cm) || 0;
+          const pct = Math.max(1.5, (valueCm / maxValue) * 100);
+          return (
+            <li key={item.label} className="bar-chart__row">
+              <span className="bar-chart__label">{item.label}</span>
+              <span className="bar-chart__track">
+                <span className="bar-chart__fill" style={{ width: `${pct}%`, background: item.color || '#8b5cf6' }} />
+              </span>
+              <span className="bar-chart__value">{formatValue(toUnit(valueCm, unit), unit)}</span>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -166,7 +85,6 @@ export function WhyPage() {
   const [quotes, setQuotes] = useState<Quote[]>(fallbackQuotes);
   const [chartItems, setChartItems] = useState<Measurement[]>(fallbackChart);
   const [unit, setUnit] = useState<'cm' | 'in'>('cm');
-  const [scale, setScale] = useState(1.8);
 
   const load = useCallback(async () => {
     let nextCards = fallbackCards;
@@ -210,62 +128,60 @@ export function WhyPage() {
   }, [load]);
 
   return (
-    <>
-      <section className="card hero">
+    <div>
+      <SectionIntro eyebrow="Why Mason" title="Why Mason?" lead="Mason wants to FUCK." />
+
+      <p className="tag-line">Slow ass response • No communication • Straight business</p>
+
+      <dl className="facts">
         <div>
-          <div className="eyebrow">Why Mason</div>
-          <h2>Why Mason?</h2>
-          <p>Mason Wants To FUCK</p>
-          <div className="pill">Slow Ass response • No communication • Straight Business</div>
+          <dt>Average response time</dt>
+          <dd>4 to 12 business days</dd>
         </div>
-        <div className="stats">
-          <div className="stat-card">
-            <strong>4 to 12 Business Days</strong>
-            Average response time
-          </div>
-          <div className="stat-card">
-            <strong>3%</strong>
-            Happy clients
-          </div>
-          <div className="stat-card">
-            <strong>12700+</strong>
-            Sessions delivered
-          </div>
+        <div>
+          <dt>Happy clients</dt>
+          <dd>3%</dd>
         </div>
+        <div>
+          <dt>Sessions delivered</dt>
+          <dd>12,700+</dd>
+        </div>
+      </dl>
+
+      <section className="section">
+        <h3 className="subhead">What clients value most</h3>
+        <ul className="tile-grid">
+          {cards.map((c, i) => (
+            <li key={`${c.title}-${i}`} className="tile">
+              <h4>{c.title}</h4>
+              <p className="muted">{c.body}</p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="section">
-        <h2>What clients value most</h2>
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-          {cards.map((c, i) => (
-            <div key={i} className="card">
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="section client-quotes">
-        <h2>Client quotes</h2>
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+        <h3 className="subhead">Client quotes</h3>
+        <ul className="tile-grid">
           {quotes.map((q, i) => (
-            <blockquote key={i} className="quote">
-              <p>{q.quote}</p>
-              <cite>— {q.author}</cite>
-            </blockquote>
+            <li key={`${q.author}-${i}`} className="tile tile--quote">
+              <blockquote>
+                <p>{q.quote}</p>
+                <cite>— {q.author}</cite>
+              </blockquote>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
 
-      <WhyChart data={chartItems} unit={unit} scale={scale} onUnitChange={setUnit} onScaleChange={setScale} />
+      <WhyChart data={chartItems} unit={unit} onUnitChange={setUnit} />
 
-      <section className="cta-banner">
-        <div>Want Mason to FUCK you? book a session.</div>
-        <Link to={{ pathname: '/', hash: 'pricing' }} className="btn" style={{ display: 'inline-flex' }}>
-          View Pricing
+      <div className="cta-band">
+        <p>Want Mason to FUCK you? Book a session.</p>
+        <Link to={{ pathname: '/', hash: 'pricing' }} className="btn">
+          View pricing
         </Link>
-      </section>
-    </>
+      </div>
+    </div>
   );
 }

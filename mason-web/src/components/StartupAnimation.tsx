@@ -99,6 +99,8 @@ export function StartupAnimation({ onComplete }: Props) {
 
 export function shouldShowStartupSplash(): boolean {
   if (typeof window === 'undefined') return false;
+  /* The splash only belongs to the desktop app; the website should paint instantly. */
+  if (!window.desktopWindow?.isDesktop) return false;
   if (document.documentElement.classList.contains('embed-handheld')) return false;
   if (window.location.pathname === '/game' || window.location.pathname.startsWith('/game/')) {
     return false;

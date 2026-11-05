@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SectionIntro } from '../components/SectionIntro';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_SITE_TRACK, useGlobalPlayer } from '../context/GlobalPlayerContext';
 
@@ -11,6 +12,7 @@ export function NutForMePage() {
   const [comment, setComment] = useState('');
   const [rating, setRating] = useState('');
   const [avg, setAvg] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   async function load() {
     const { data, error } = await supabase
@@ -47,28 +49,40 @@ export function NutForMePage() {
   }
 
   return (
-    <>
-      <section className="card hero">
-        <div>
-          <h2>Nut For Me</h2>
-          <p className="muted">Pegger Productions</p>
-          <div style={{ marginTop: 20 }}>
-            <button
-              type="button"
-              className={isActiveTrackId(DEFAULT_SITE_TRACK.id) ? 'btn' : 'btn btn-ghost'}
-              onClick={() => playTrack(DEFAULT_SITE_TRACK)}
-            >
-              {isActiveTrackId(DEFAULT_SITE_TRACK.id) ? 'Playing in site bar' : 'Play in site bar'}
-            </button>
-          </div>
+    <div>
+      <SectionIntro eyebrow="Music" title="Nut For Me" lead="Pegger Productions — stream the single, leave a rating.">
+        {avg != null ? <span className="pill">★ {avg.toFixed(1)} average</span> : null}
+      </SectionIntro>
+
+      <div className="track-card">
+        <div className="track-card__art" aria-hidden>
+          ♪
         </div>
-      </section>
-      <section className="card section">
-        <h2>Review this track</h2>
+        <div className="track-card__copy">
+          <h3>Nut For Me</h3>
+          <p className="muted">Pegger Productions</p>
+        </div>
+        <button
+          type="button"
+          className={isActiveTrackId(DEFAULT_SITE_TRACK.id) ? 'btn' : 'btn btn-ghost'}
+          onClick={() => playTrack(DEFAULT_SITE_TRACK)}
+        >
+          {isActiveTrackId(DEFAULT_SITE_TRACK.id) ? 'Playing in site bar' : 'Play in site bar'}
+        </button>
+      </div>
+
+      <details className="disclosure">
+        <summary>Review this track</summary>
         <form className="form" onSubmit={submit}>
           <div className="form-grid-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
-            <select value={rating} onChange={(e) => setRating(e.target.value)} required>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              aria-label="Your name"
+              required
+            />
+            <select value={rating} onChange={(e) => setRating(e.target.value)} aria-label="Rating" required>
               <option value="">Rating</option>
               {[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0].map((x) => (
                 <option key={x} value={x}>
@@ -77,31 +91,44 @@ export function NutForMePage() {
               ))}
             </select>
           </div>
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write your review..." required rows={4} />
-          <button type="submit" className="btn">
-            Submit Review
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Write your review..."
+            aria-label="Your review"
+            required
+            rows={4}
+          />
+          <button type="submit" className="btn btn--sm">
+            Submit review
           </button>
         </form>
-      </section>
-      <section className="card section">
-        <div className="section-head">
-          <h2>Reviews</h2>
-          {avg != null && <span className="muted">Average {avg.toFixed(1)}</span>}
-        </div>
-        {reviews.map((r, i) => (
-          <div key={i} className="review-card" style={{ marginBottom: 12 }}>
-            <div className="review-meta">
-              <span>{r.name}</span>
-              <span>{r.rating}★</span>
-            </div>
-            <p style={{ marginTop: 8 }}>{r.comment}</p>
-            <p className="muted" style={{ fontSize: '0.85rem' }}>
-              {new Date(r.created_at).toLocaleString()}
-            </p>
-          </div>
-        ))}
-        {reviews.length === 0 && <p className="muted">No reviews yet.</p>}
-      </section>
-    </>
+      </details>
+
+      {reviews.length === 0 ? (
+        <p className="muted">No reviews yet.</p>
+      ) : (
+        <ul className="review-grid">
+          {(showAll ? reviews : reviews.slice(0, 6)).map((r, i) => (
+            <li key={`${r.name}-${i}`} className="review-card">
+              <div className="review-meta">
+                <strong>{r.name}</strong>
+                <span className="rating__stars" aria-hidden>
+                  {'★'.repeat(Math.round(Number(r.rating)))}
+                </span>
+              </div>
+              <p>{r.comment}</p>
+              <p className="muted meta-small">{new Date(r.created_at).toLocaleDateString()}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!showAll && reviews.length > 6 ? (
+        <button type="button" className="btn btn-ghost track-reviews-more" onClick={() => setShowAll(true)}>
+          Show all {reviews.length} track reviews
+        </button>
+      ) : null}
+    </div>
   );
 }

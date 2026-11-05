@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SectionIntro } from '../components/SectionIntro';
 import { supabase } from '../lib/supabase';
 
 type Img = { public_url: string; caption?: string | null };
@@ -15,53 +16,56 @@ export function GalleryPage() {
     })();
   }, []);
 
-  if (!items.length) {
-    return (
-      <section className="card">
-        <h2>Gallery</h2>
-        <p className="muted">New work drops here first.</p>
-        <div className="section card" style={{ borderStyle: 'dashed' }}>
-          <h2>No images yet</h2>
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(null);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [lightbox]);
+
+  return (
+    <div>
+      <SectionIntro eyebrow="Gallery" title="Recent work" lead="New work drops here first." />
+
+      {items.length === 0 ? (
+        <div className="empty">
+          <h3>No images yet</h3>
           <p className="muted">Check back soon for new shots.</p>
-          <Link to={{ pathname: '/', hash: 'contact' }} className="btn">
+          <Link to={{ pathname: '/', hash: 'contact' }} className="btn btn-ghost">
             Contact Mason
           </Link>
         </div>
-      </section>
-    );
-  }
-
-  return (
-    <>
-      <section className="card">
-        <h2>Gallery</h2>
-        <p className="muted">New work drops here first.</p>
-      </section>
-      <section className="grid section">
-        {items.map((img, i) => (
-          <figure
-            key={i}
-            className="card"
-            style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }}
-            onClick={() => setLightbox(img)}
-          >
-            <img src={img.public_url} alt={img.caption || ''} style={{ width: '100%', height: 240, objectFit: 'cover' }} />
-            {img.caption && (
-              <figcaption className="muted" style={{ padding: 12 }}>
-                {img.caption}
-              </figcaption>
-            )}
-          </figure>
-        ))}
-      </section>
-      {lightbox && (
-        <div className="lightbox" onClick={() => setLightbox(null)} role="presentation">
-          <div onClick={(e) => e.stopPropagation()}>
-            <img src={lightbox.public_url} alt={lightbox.caption || ''} />
-            {lightbox.caption && <p className="muted" style={{ textAlign: 'center', marginTop: 12 }}>{lightbox.caption}</p>}
-          </div>
-        </div>
+      ) : (
+        <ul className="gallery-grid">
+          {items.map((img, i) => (
+            <li key={`${img.public_url}-${i}`}>
+              <button type="button" className="gallery-tile" onClick={() => setLightbox(img)}>
+                <img src={img.public_url} alt={img.caption || `Gallery image ${i + 1}`} loading="lazy" />
+                {img.caption ? <span className="gallery-tile__caption">{img.caption}</span> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-    </>
+
+      {lightbox ? (
+        <div className="lightbox" role="dialog" aria-modal="true" aria-label="Gallery image" onClick={() => setLightbox(null)}>
+          <button type="button" className="lightbox__close" aria-label="Close image" onClick={() => setLightbox(null)}>
+            <span aria-hidden>×</span>
+          </button>
+          <figure className="lightbox__figure" onClick={(e) => e.stopPropagation()}>
+            <img src={lightbox.public_url} alt={lightbox.caption || 'Gallery image'} />
+            {lightbox.caption ? <figcaption>{lightbox.caption}</figcaption> : null}
+          </figure>
+        </div>
+      ) : null}
+    </div>
   );
 }

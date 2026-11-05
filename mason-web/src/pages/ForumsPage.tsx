@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SectionIntro } from '../components/SectionIntro';
 import { supabase } from '../lib/supabase';
 
 const CATEGORIES = ['general', 'sessions', 'flicks', 'support'];
@@ -51,6 +52,7 @@ export function ForumsPage() {
   const [newBody, setNewBody] = useState('');
   const [replyBody, setReplyBody] = useState('');
   const [replyAuthor, setReplyAuthor] = useState('');
+  const detailRef = useRef<HTMLDivElement>(null);
 
   const refreshUser = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
@@ -106,7 +108,12 @@ export function ForumsPage() {
   }, [refreshUser, loadThreads, loadReplies, selectedId]);
 
   useEffect(() => {
-    if (selectedId) loadReplies(selectedId);
+    if (selectedId) {
+      loadReplies(selectedId);
+      if (window.matchMedia('(max-width: 980px)').matches) {
+        detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
   }, [selectedId, loadReplies]);
 
   const filtered = useMemo(() => {
@@ -201,25 +208,59 @@ export function ForumsPage() {
     await loadThreads();
   }
 
-  return (
-    <>
-      <section className="card">
-        <div className="section-head">
-          <div>
-            <h2>Forums</h2>
-            <p className="muted">Threads, replies, and voting in one place.</p>
-          </div>
-          <span className="pill">{user ? `Signed in` : 'Guest mode'}</span>
-        </div>
-        {status && <p style={{ color: '#f87171' }}>{status}</p>}
-      </section>
+  const voteRow = (score: number, onVote: (delta: number) => void, label: string) => (
+    <div className="vote-row">
+      <button type="button" className="vote-btn" onClick={() => onVote(1)} aria-label={`Upvote ${label}`}>
+        ▲
+      </button>
+      <span className="vote-row__score">{score}</span>
+      <button type="button" className="vote-btn" onClick={() => onVote(-1)} aria-label={`Downvote ${label}`}>
+        ▼
+      </button>
+    </div>
+  );
 
-      <section className="card section">
-        <h2>Start a thread</h2>
+  return (
+    <div>
+      <SectionIntro eyebrow="Forums" title="The forum" lead="Threads, replies, and voting in one place.">
+        <span className="pill">{user ? 'Signed in' : 'Guest mode'}</span>
+      </SectionIntro>
+
+      {status && (
+        <p className="notice notice--error" role="alert">
+          {status}
+        </p>
+      )}
+
+      <div className="toolbar">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search threads"
+          aria-label="Search threads"
+          type="search"
+        />
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="Filter by category">
+          <option value="all">All categories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort threads">
+          <option value="recent">Most recent</option>
+          <option value="top">Top voted</option>
+          <option value="active">Most active</option>
+        </select>
+      </div>
+
+      <details className="disclosure">
+        <summary>Start a thread</summary>
         <form className="form" onSubmit={postThread}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Thread title" required style={{ flex: 1, minWidth: 200 }} />
-            <select value={newCat} onChange={(e) => setNewCat(e.target.value)}>
+          <div className="form-grid-2">
+            <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Thread title" aria-label="Thread title" required />
+            <select value={newCat} onChange={(e) => setNewCat(e.target.value)} aria-label="Category">
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -228,118 +269,128 @@ export function ForumsPage() {
             </select>
           </div>
           {!user && (
-            <input value={newAuthor} onChange={(e) => setNewAuthor(e.target.value)} placeholder="Display name (guest)" />
+            <input
+              value={newAuthor}
+              onChange={(e) => setNewAuthor(e.target.value)}
+              placeholder="Display name (guest)"
+              aria-label="Display name"
+            />
           )}
-          <textarea value={newBody} onChange={(e) => setNewBody(e.target.value)} placeholder="Write your thread..." required rows={4} />
-          <button type="submit" className="btn">
-            Post Thread
+          <textarea
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+            placeholder="Write your thread..."
+            aria-label="Thread body"
+            required
+            rows={4}
+          />
+          <button type="submit" className="btn btn--sm">
+            Post thread
           </button>
         </form>
-      </section>
+      </details>
 
-      <div className="forums-layout section">
-        <div className="card">
-          <div className="section-head">
-            <h2>Threads</h2>
-            <select value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="recent">Most recent</option>
-              <option value="top">Top voted</option>
-              <option value="active">Most active</option>
-            </select>
-          </div>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." style={{ marginBottom: 12 }} />
-          <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ marginBottom: 12 }}>
-            <option value="all">All categories</option>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <div>
-            {filtered.map((t) => (
-              <div
-                key={t.id}
-                className={`forums-thread-item ${selectedId === t.id ? 'active' : ''}`}
-                onClick={() => setSelectedId(t.id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && setSelectedId(t.id)}
-              >
-                <h3 style={{ margin: '0 0 6px' }}>{t.title}</h3>
-                <div className="review-meta">
-                  <span>{t.author_name}</span>
-                  {(t.verified || t.owner) && <span className="verified-badge">VERIFIED</span>}
-                  <span className="pill">{t.category}</span>
-                </div>
-                <p className="muted" style={{ marginTop: 8 }}>
-                  {(t.body || '').slice(0, 160)}
-                  {(t.body || '').length > 160 ? '…' : ''}
-                </p>
-                <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <span className="muted">Score {votes[t.id] ?? 0}</span>
-                  <span className="muted">{t.reply_count ?? 0} replies</span>
-                </div>
-              </div>
-            ))}
-            {filtered.length === 0 && <p className="muted">No threads found.</p>}
-          </div>
-        </div>
+      <div className={`forums-layout${selected ? ' forums-layout--split' : ''}`}>
+        {selected && (
+          <div className="card forums-detail" ref={detailRef}>
+            <div className="forums-detail__head">
+              <h3>{selected.title}</h3>
+              <button type="button" className="btn btn-ghost btn--sm" onClick={() => setSelectedId(null)}>
+                All threads
+              </button>
+            </div>
 
-        <div className="card">
-          {!selected && <p className="muted">Select a thread to view replies.</p>}
-          {selected && (
-            <>
-              <h2 style={{ marginTop: 0 }}>{selected.title}</h2>
-              <div className="review-meta">
-                <span>{selected.author_name}</span>
-                {(selected.verified || selected.owner) && <span className="verified-badge">VERIFIED</span>}
-              </div>
-              <p style={{ whiteSpace: 'pre-wrap', marginTop: 12 }}>{selected.body}</p>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button type="button" className="btn btn-ghost" onClick={() => voteThread(1)}>
-                  Upvote
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => voteThread(-1)}>
-                  Downvote
-                </button>
-              </div>
-              <h3 style={{ marginTop: 24 }}>Replies</h3>
+            <div className="review-meta">
+              <span>{selected.author_name}</span>
+              {(selected.verified || selected.owner) && <span className="verified-badge">VERIFIED</span>}
+              <span className="pill">{selected.category}</span>
+            </div>
+
+            <p className="post-body">{selected.body}</p>
+
+            {voteRow(votes[selected.id] ?? 0, voteThread, 'thread')}
+
+            <h4 className="subhead subhead--sm">Replies</h4>
+            {replies.length === 0 && <p className="muted">No replies yet.</p>}
+            <ul className="reply-list">
               {replies.map((r) => (
-                <div key={r.id} className="forums-reply-item">
+                <li key={r.id} className="reply-item">
                   <div className="review-meta">
                     <span>{r.author_name}</span>
                     {(r.verified || r.owner) && <span className="verified-badge">VERIFIED</span>}
-                    <span className="muted">{new Date(r.created_at).toLocaleString()}</span>
+                    <span className="muted">{new Date(r.created_at).toLocaleDateString()}</span>
                   </div>
-                  <p style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{r.body}</p>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button type="button" className="btn btn-ghost" onClick={() => voteReply(r.id, 1)}>
-                      Upvote
-                    </button>
-                    <button type="button" className="btn btn-ghost" onClick={() => voteReply(r.id, -1)}>
-                      Downvote
-                    </button>
-                  </div>
-                </div>
+                  <p className="post-body">{r.body}</p>
+                  {voteRow(0, (delta) => voteReply(r.id, delta), 'reply')}
+                </li>
               ))}
-              {!selected.locked ? (
-                <form className="form" style={{ marginTop: 16 }} onSubmit={postReply}>
-                  {!user && (
-                    <input value={replyAuthor} onChange={(e) => setReplyAuthor(e.target.value)} placeholder="Display name (guest)" />
-                  )}
-                  <textarea value={replyBody} onChange={(e) => setReplyBody(e.target.value)} placeholder="Write a reply..." required rows={3} />
-                  <button type="submit" className="btn">
-                    Reply
-                  </button>
-                </form>
-              ) : (
-                <p className="muted">Thread locked.</p>
-              )}
-            </>
-          )}
+            </ul>
+
+            {!selected.locked ? (
+              <form className="form" onSubmit={postReply}>
+                {!user && (
+                  <input
+                    value={replyAuthor}
+                    onChange={(e) => setReplyAuthor(e.target.value)}
+                    placeholder="Display name (guest)"
+                    aria-label="Display name"
+                  />
+                )}
+                <textarea
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  placeholder="Write a reply..."
+                  aria-label="Reply"
+                  required
+                  rows={3}
+                />
+                <button type="submit" className="btn btn--sm">
+                  Reply
+                </button>
+              </form>
+            ) : (
+              <p className="muted">Thread locked.</p>
+            )}
+          </div>
+        )}
+
+        <div className="card forums-list">
+          <div className="forums-list__head">
+            <h3>Threads</h3>
+            <span className="muted">{filtered.length}</span>
+          </div>
+
+          <ul className="thread-list">
+            {filtered.map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  className={`thread${selectedId === t.id ? ' is-active' : ''}`}
+                  onClick={() => setSelectedId(t.id)}
+                  aria-pressed={selectedId === t.id}
+                >
+                  <span className="thread__title">{t.title}</span>
+                  <span className="thread__meta">
+                    {t.author_name}
+                    {(t.verified || t.owner) && <span className="verified-badge">VERIFIED</span>}
+                    <span className="pill">{t.category}</span>
+                  </span>
+                  <span className="thread__excerpt">
+                    {(t.body || '').slice(0, 140)}
+                    {(t.body || '').length > 140 ? '…' : ''}
+                  </span>
+                  <span className="thread__foot">
+                    <span>{votes[t.id] ?? 0} score</span>
+                    <span>{t.reply_count ?? 0} replies</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {filtered.length === 0 && <p className="muted">No threads found.</p>}
         </div>
       </div>
-    </>
+    </div>
   );
 }

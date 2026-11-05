@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
 
 export type StaticAnnouncement = {
@@ -67,7 +67,7 @@ export function HeaderAnnouncements() {
     <div className="header-announcements" aria-live="polite">
       <div
         className={`header-ann-bar ${useCustom ? 'header-ann-bar--custom' : ''}`}
-        style={useCustom ? { background: bg } : undefined}
+        style={useCustom ? ({ '--ann-color': bg } as CSSProperties) : undefined}
       >
         <span className="header-ann-pill">{label}</span>
         <span className="header-ann-text">{item.message.trim()}</span>

@@ -1,100 +1,93 @@
-import { lazy, Suspense, useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { DEFAULT_MASONCORD_PUBLIC_URL, useSiteEffects } from '../hooks/useSiteEffects';
-import { useImmersiveMode } from '../hooks/useImmersiveMode';
-import { useImmersiveScrollVar } from '../hooks/useImmersiveScrollVar';
-import { useNavSceneTilt } from '../hooks/useNavSceneTilt';
+import { MENU_GROUPS } from '../lib/siteNav';
 import { FloatingAnnouncement } from './FloatingAnnouncement';
-import { ImmersiveSiteHeader } from './ImmersiveSiteHeader';
+import { SiteHeader } from './SiteHeader';
 import { SiteAudioBanner } from './SiteAudioBanner';
 import { WhatsNewModal } from './WhatsNewModal';
-import { CursorAura } from './immersive/CursorAura';
-
-const ImmersiveBackground = lazy(() =>
-  import('./immersive/ImmersiveBackground').then((m) => ({ default: m.ImmersiveBackground })),
-);
 
 export function Layout() {
   const { maintenance, blockModal, masoncordPublicUrl } = useSiteEffects();
   const masoncordHref =
     masoncordPublicUrl.trim() || import.meta.env.VITE_MASONCORD_URL?.trim() || DEFAULT_MASONCORD_PUBLIC_URL;
   const location = useLocation();
-  const { showWebGL, showCursorAura, isEmbed } = useImmersiveMode();
-
   const isGame = location.pathname === '/game';
-
-  useImmersiveScrollVar();
-  useNavSceneTilt(!isGame && !isEmbed);
-
-  useEffect(() => {
-    if (isGame) {
-      document.documentElement.classList.remove('imm-mode');
-      return;
-    }
-    document.documentElement.classList.add('imm-mode');
-    return () => document.documentElement.classList.remove('imm-mode');
-  }, [isGame]);
-
-  useEffect(() => {
-    const lock = Boolean(blockModal?.enabled || maintenance) || isGame;
-    document.documentElement.style.overflow = lock ? 'hidden' : '';
-    document.body.style.overflow = isGame ? 'hidden' : '';
-    return () => {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-    };
-  }, [blockModal?.enabled, maintenance, isGame]);
 
   return (
     <div className={isGame ? 'app-shell app-shell--game-fs' : 'app-shell'}>
-      {!isGame && showWebGL ? (
-        <div className="imm-webgl-wrap">
-          <Suspense fallback={null}>
-            <ImmersiveBackground />
-          </Suspense>
-        </div>
-      ) : null}
-      {!isGame && showCursorAura ? <CursorAura /> : null}
-
       {!isGame && (
         <>
-          <ImmersiveSiteHeader />
-
+          <a className="skip-link" href="#main">
+            Skip to content
+          </a>
+          <SiteHeader masoncordHref={masoncordHref} />
           <FloatingAnnouncement />
           <WhatsNewModal />
         </>
       )}
 
-      <SiteAudioBanner variant={isGame ? 'dock' : 'inline'} />
-
-      {!isGame ? (
-        <main className="main-content">
-          <Outlet />
-        </main>
-      ) : (
+      {isGame ? (
         <div className="game-route-outlet">
           <Outlet />
         </div>
+      ) : (
+        <main id="main" className="main-content">
+          <Outlet />
+        </main>
       )}
 
       {!isGame && (
-        <footer className="app-footer immersive-footer">
-          <div className="app-footer-inner immersive-footer-inner">
-            <NavLink to="/order">Order</NavLink>
-            <NavLink to="/game">Game</NavLink>
-            <NavLink to="/schedule">Schedule</NavLink>
-            <NavLink to="/discography">Discography</NavLink>
-            <Link to={{ pathname: '/', hash: 'music' }}>Music</Link>
-            <Link to={{ pathname: '/', hash: 'pricing' }}>Pricing</Link>
-            <Link to={{ pathname: '/', hash: 'contact' }}>Contact</Link>
-            <a href={masoncordHref} target="_blank" rel="noreferrer">
-              Masoncord
-            </a>
-            <NavLink to="/tickets">Tickets</NavLink>
-            <NavLink to="/reels">Reels</NavLink>
-            <NavLink to="/session">Session chat</NavLink>
-          </div>
-        </footer>
+        <>
+          <SiteAudioBanner variant="inline" />
+
+          <footer className="site-footer">
+            <div className="site-footer__inner">
+              <div className="site-footer__brand">
+                <span className="brand__name">Sex With Mason</span>
+                <p className="site-footer__tag">
+                  Private sessions, original music, and a place to talk about it.
+                </p>
+              </div>
+
+              <div className="site-footer__links">
+                {MENU_GROUPS.map((group) => (
+                  <nav key={group.title} className="site-footer__col" aria-label={group.title}>
+                    <h2 className="site-footer__col-title">{group.title}</h2>
+                    <ul>
+                      {group.items.map((item) => (
+                        <li key={item.kind === 'route' ? item.to : item.id}>
+                          {item.kind === 'route' ? (
+                            <NavLink to={item.to} end={item.end}>
+                              {item.label}
+                            </NavLink>
+                          ) : (
+                            <Link to={{ pathname: '/', hash: item.id }}>{item.label}</Link>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
+                ))}
+              </div>
+            </div>
+
+            <div className="site-footer__bottom">
+              <span>© {new Date().getFullYear()} Sex With Mason</span>
+              <div className="site-footer__bottom-links">
+                <a href={masoncordHref} target="_blank" rel="noreferrer">
+                  Masoncord ↗
+                </a>
+                <button
+                  type="button"
+                  className="site-footer__top-btn"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                >
+                  Back to top
+                </button>
+              </div>
+            </div>
+          </footer>
+        </>
       )}
 
       {maintenance && (

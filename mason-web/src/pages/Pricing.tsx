@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SectionIntro } from '../components/SectionIntro';
 import { supabase } from '../lib/supabase';
 import { placeOrder } from '../lib/order';
 
@@ -100,12 +101,10 @@ export function Pricing() {
   }
 
   return (
-    <>
-      <section className="card">
-        <h2>{title}</h2>
-        <p className="muted">{subtitle}</p>
-      </section>
-      <section className="grid section" aria-label="pricing plans">
+    <div>
+      <SectionIntro eyebrow="Pricing" title={title} lead={subtitle} />
+
+      <ul className="plan-grid" aria-label="pricing plans">
         {plans.map((plan) => {
           const features = Array.isArray(plan.features)
             ? plan.features
@@ -113,39 +112,43 @@ export function Pricing() {
                 .split('\n')
                 .filter(Boolean);
           return (
-            <article key={plan.title} className="card">
-              <h2>{plan.title}</h2>
-              <div className="price">{plan.price}</div>
-              <p className="muted">{plan.price_subtitle}</p>
-              <ul className="muted">
+            <li key={plan.title} className="plan">
+              <h3 className="plan__title">{plan.title}</h3>
+              <p className="plan__price">
+                {plan.price}
+                {plan.price_subtitle ? <span className="plan__unit">{plan.price_subtitle}</span> : null}
+              </p>
+              <ul className="plan__features">
                 {features.map((f) => (
                   <li key={f}>{f}</li>
                 ))}
               </ul>
-              <button type="button" className="btn" style={{ marginTop: 16, width: '100%' }} onClick={() => book(plan)}>
+              <button type="button" className="btn plan__cta" onClick={() => book(plan)}>
                 {plan.cta_label || 'Book'}
               </button>
-            </article>
+            </li>
           );
         })}
-      </section>
-      <section className="card section">
-        <h3>{customTitle}</h3>
-        <p className="muted">{customBody}</p>
+      </ul>
+
+      <div className="cta-band">
+        <div>
+          <h3>{customTitle}</h3>
+          <p className="muted">{customBody}</p>
+        </div>
         {customUrl.startsWith('http') ? (
-          <a href={customUrl} className="btn btn-dark" style={{ marginTop: 12, display: 'inline-flex' }}>
+          <a href={customUrl} className="btn btn-ghost">
             {customCta}
           </a>
         ) : (
           <Link
             to={customUrl === '/contact' || !customUrl ? { pathname: '/', hash: 'contact' } : customUrl}
-            className="btn btn-dark"
-            style={{ marginTop: 12 }}
+            className="btn btn-ghost"
           >
             {customCta}
           </Link>
         )}
-      </section>
-    </>
+      </div>
+    </div>
   );
 }

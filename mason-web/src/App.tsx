@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   createBrowserRouter,
   createMemoryRouter,
@@ -56,16 +56,10 @@ const router = useFileSafeRouter
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(shouldShowStartupSplash);
-  const splashDone = useRef(false);
-  const onSplashComplete = useCallback(() => {
-    if (splashDone.current) return;
-    splashDone.current = true;
-    setShowSplash(false);
-  }, []);
 
   return (
     <DesktopWindowFrame>
-      {showSplash ? <StartupAnimation onComplete={onSplashComplete} /> : null}
+      {showSplash ? <StartupAnimation onComplete={() => setShowSplash(false)} /> : null}
       <RouterProvider router={router} />
     </DesktopWindowFrame>
   );
