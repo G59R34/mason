@@ -19,35 +19,34 @@ export function SiteHeader({ masoncordHref }: { masoncordHref: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const hasOpenedRef = useRef(false);
 
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname, location.hash]);
 
   useEffect(() => {
-    if (!menuOpen) return;
-    document.body.classList.add('nav-drawer-open');
-    closeButtonRef.current?.focus();
+    if (menuOpen) {
+      hasOpenedRef.current = true;
+      document.body.classList.add('nav-drawer-open');
+      closeButtonRef.current?.focus();
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setMenuOpen(false);
-        toggleRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') setMenuOpen(false);
+      };
+      window.addEventListener('keydown', onKey);
 
-    return () => {
-      document.body.classList.remove('nav-drawer-open');
-      window.removeEventListener('keydown', onKey);
-    };
+      return () => {
+        document.body.classList.remove('nav-drawer-open');
+        window.removeEventListener('keydown', onKey);
+      };
+    }
+
+    /* Closing unmounts the focused drawer, so hand focus back to the toggle. */
+    if (hasOpenedRef.current) toggleRef.current?.focus();
   }, [menuOpen]);
 
-  const closeMenu = () => {
-    setMenuOpen(false);
-    /* Return focus after the drawer unmounts, outside of this render pass. */
-    window.requestAnimationFrame(() => toggleRef.current?.focus());
-  };
+  const closeMenu = () => setMenuOpen(false);
 
   const goToSection = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (location.pathname === '/') {
