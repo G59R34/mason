@@ -4,6 +4,7 @@ import './styles/global.css'
 import './styles/tw.css'
 import './styles/embed-handheld.css'
 import './styles/desktop-window.css'
+import './styles/mason-bot.css'
 import App from './App.tsx'
 import { GlobalPlayerProvider } from './context/GlobalPlayerContext'
 

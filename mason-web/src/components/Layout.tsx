@@ -5,6 +5,7 @@ import { FloatingAnnouncement } from './FloatingAnnouncement';
 import { SiteHeader } from './SiteHeader';
 import { SiteAudioBanner } from './SiteAudioBanner';
 import { WhatsNewModal } from './WhatsNewModal';
+import { MasonBot } from './MasonBot';
 
 export function Layout() {
   const { maintenance, blockModal, masoncordPublicUrl } = useSiteEffects();
@@ -23,6 +24,7 @@ export function Layout() {
           <SiteHeader masoncordHref={masoncordHref} />
           <FloatingAnnouncement />
           <WhatsNewModal />
+          <MasonBot />
         </>
       )}
 
