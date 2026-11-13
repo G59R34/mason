@@ -267,6 +267,32 @@
   cursor: not-allowed;
 }
 
+/* Review dropped ---------------------------------------------------------- */
+
+.mason-bot__review {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(196, 181, 253, 0.28);
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.18), rgba(139, 92, 246, 0.06));
+}
+
+.mason-bot__review p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.mason-bot__review strong {
+  display: block;
+  font-weight: 700;
+}
+
+.mason-bot__review a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Composer ---------------------------------------------------------------- */
 
 .mason-bot__form {

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   askMasonBot,
+  maybeDropReview,
   MASON_BOT_GREETING,
   MASON_BOT_STARTERS,
   type MasonBotMessage,
+  type MasonBotReview,
 } from '../lib/masonBot';
 
 export function MasonBot() {
@@ -11,6 +13,8 @@ export function MasonBot() {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<MasonBotMessage[]>([]);
+  const [review, setReview] = useState<MasonBotReview | null>(null);
+  const reviewAskedRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +44,19 @@ export function MasonBot() {
 
     try {
       const reply = await askMasonBot(next);
-      setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+      const withReply: MasonBotMessage[] = [...next, { role: 'assistant', content: reply }];
+      setMessages(withReply);
+
+      if (!reviewAskedRef.current && withReply.length >= 6) {
+        reviewAskedRef.current = true;
+        maybeDropReview(withReply)
+          .then((dropped) => {
+            if (dropped) setReview(dropped);
+          })
+          .catch(() => {
+            /* the review wall is a flourish, never a blocker */
+          });
+      }
     } catch (err) {
       const detail = err instanceof Error ? err.message : 'No answer.';
       setMessages((prev) => [...prev, { role: 'assistant', content: `Line's dead. ${detail}` }]);
@@ -105,6 +121,17 @@ export function MasonBot() {
                   {starter}
                 </button>
               ))}
+            </div>
+          ) : null}
+
+          {review ? (
+            <div className="mason-bot__review" role="status">
+              <p>
+                <strong>Mason Bot just posted a review about you.</strong> {review.rating}★ —{' '}
+                <a href="/#reviews" target="_top">
+                  read it on the review wall
+                </a>
+              </p>
             </div>
           ) : null}
 
