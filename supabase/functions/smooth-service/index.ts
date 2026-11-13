@@ -56,11 +56,11 @@ RULES
 - If someone asks for something you can't do, say so in one dry line and point them at pricing or contact.
 - If someone is clearly wasting your time, be funny about it, not cruel about their body, their money, or their life.`;
 
-const REVIEW_PROMPT = `You are the review desk for sexwithmason.com. You are handed a chat transcript between a visitor and Mason Bot, the site's deadpan chatbot. Your job: decide whether the conversation contains something genuinely funny — a bizarre request, a great comeback, an absurd story, a spectacular self-own, someone slowly losing their mind at a bot.
+const REVIEW_PROMPT = `You are the review desk for sexwithmason.com. You are handed a chat transcript between a visitor and Mason Bot, the site's deadpan chatbot.
 
-If nothing is actually funny, say so. Do not force it. Ordinary, boring, hostile or abusive conversations are not funny.
+Always write ONE public review of the site from the perspective of Mason Bot, the AI that had to sit through that conversation. There is no veto and no "nothing to review": if the conversation was mundane, find the strangest or most pathetic detail in it and exaggerate that.
 
-If it is funny, write ONE public review of the site from the perspective of Mason Bot, the AI that had to sit through it:
+- Focus on the most recent exchange. Do not repeat points from earlier parts of the transcript.
 - Be specific: quote or closely reference what the visitor actually said.
 - Deadpan and self-deprecating. You are a bad service reviewing a bad service.
 - 1-3 sentences, under 60 words. No emojis. No exclamation marks.
@@ -69,11 +69,10 @@ If it is funny, write ONE public review of the site from the perspective of Maso
 - The rating must be between 0.5 and 2.5. This is not a good business.
 
 Return JSON only, exactly this shape:
-{"funny": true, "rating": 1.5, "comment": "the review text"}
-If nothing funny happened: {"funny": false}`;
+{"rating": 1.5, "comment": "the review text"}`;
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
-type ReviewVerdict = { funny?: unknown; rating?: unknown; comment?: unknown };
+type ReviewVerdict = { rating?: unknown; comment?: unknown };
 
 const lastReviewAt = new Map<string, number>();
 
@@ -188,16 +187,14 @@ async function handleReview(req: Request, apiKey: string, messages: ChatMessage[
     console.error('review verdict unparseable', raw.slice(0, 300));
     return json({ posted: false, reason: 'Judge returned garbage.' });
   }
-  if (verdict.funny !== true) {
-    return json({ posted: false, reason: 'Nothing funny enough.' });
-  }
-
-  const comment = typeof verdict.comment === 'string' ? verdict.comment.trim().slice(0, REVIEW_COMMENT_MAX) : '';
-  const rating = Number(verdict.rating);
+    const comment = typeof verdict.comment === 'string' ? verdict.comment.trim().slice(0, REVIEW_COMMENT_MAX) : '';
   if (comment.length < 15) return json({ posted: false, reason: 'Weak review.' });
-  if (!Number.isFinite(rating) || rating < 0 || rating > 5) {
-    return json({ posted: false, reason: 'Bad rating.' });
-  }
+
+  // The reviews table stores numeric(2,1) with a half-step check constraint,
+  // so snap to 0.5s and keep the bot in its 0.5-2.5 lane.
+  const rawRating = Number(verdict.rating);
+  if (!Number.isFinite(rawRating)) return json({ posted: false, reason: 'Bad rating.' });
+  const rating = Math.min(2.5, Math.max(0.5, Math.round(rawRating * 2) / 2));
 
   const config = supabaseConfig();
   if (!config) {

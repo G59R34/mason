@@ -154,6 +154,11 @@ export function MasonBot() {
               ref={inputRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                send(draft);
+              }}
               placeholder="Ask the cheap version of Mason"
               aria-label="Message Mason Bot"
               maxLength={1500}
