@@ -8,13 +8,16 @@ import {
   type MasonBotReview,
 } from '../lib/masonBot';
 
+/** Try to drop a review after every Nth message the visitor sends. */
+const REVIEW_EVERY_USER_MESSAGES = 3;
+
 export function MasonBot() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<MasonBotMessage[]>([]);
   const [review, setReview] = useState<MasonBotReview | null>(null);
-  const reviewAskedRef = useRef(false);
+  const lastReviewedUserCountRef = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,8 +50,13 @@ export function MasonBot() {
       const withReply: MasonBotMessage[] = [...next, { role: 'assistant', content: reply }];
       setMessages(withReply);
 
-      if (!reviewAskedRef.current && withReply.length >= 6) {
-        reviewAskedRef.current = true;
+      const userCount = withReply.filter((m) => m.role === 'user').length;
+      if (
+        userCount > 0 &&
+        userCount % REVIEW_EVERY_USER_MESSAGES === 0 &&
+        userCount !== lastReviewedUserCountRef.current
+      ) {
+        lastReviewedUserCountRef.current = userCount;
         maybeDropReview(withReply)
           .then((dropped) => {
             if (dropped) setReview(dropped);

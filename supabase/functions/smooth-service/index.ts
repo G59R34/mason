@@ -15,9 +15,11 @@ const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const MAX_TURNS = 16;
 
 const REVIEW_AUTHOR = 'Mason Bot';
-const REVIEW_MIN_MESSAGES = 6;
+const REVIEW_MIN_MESSAGES = 4;
 const REVIEW_MIN_USER_MESSAGES = 2;
-const REVIEW_COOLDOWN_MS = 10 * 60 * 1000;
+// A review is requested every third visitor message, so this is only a
+// guard against a client hammering the endpoint, not a rate limit.
+const REVIEW_COOLDOWN_MS = 2000;
 const REVIEW_COMMENT_MAX = 600;
 
 const CORS_HEADERS = {
