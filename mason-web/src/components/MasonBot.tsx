@@ -62,7 +62,7 @@ export function MasonBot() {
                 <p className="mason-bot__name">
                   Mason Bot <span className="mason-bot__badge">AI</span>
                 </p>
-                <p className="mason-bot__status">Replies instantly. Not Mason.</p>
+                <p className="mason-bot__status">Ready to FUCK</p>
               </div>
             </div>
             <button
@@ -90,7 +90,7 @@ export function MasonBot() {
             ))}
 
             {busy ? (
-              <div className="mason-bot__msg is-bot mason-bot__typing" aria-label="Mason Bot is typing">
+              <div className="mason-bot__msg is-bot mason-bot__typing" aria-label="Mason is typing">
                 <span />
                 <span />
                 <span />
@@ -129,8 +129,7 @@ export function MasonBot() {
           </form>
 
           <p className="mason-bot__fine">
-            Mason Bot is an AI impersonating a man who won&apos;t text you back. It can&apos;t book, bill, or
-            finish. 18+ only.
+            Mason Bot will E-FUCK you
           </p>
         </section>
       ) : null}
