@@ -31,15 +31,18 @@ async function messageFromError(error: unknown) {
   return message || 'No answer. Try again.';
 }
 
-export type MasonBotReview = { rating: number; comment: string };
+export type MasonBotReview = { rating: number; comment: string; screenshotUrl?: string | null };
 
 /**
- * Asks the function to judge the chat and, if it lands, post a public review of it.
- * Resolves null when nothing was funny enough (or it declined).
+ * Asks the function to write and post a public review of the chat, optionally
+ * attaching a screenshot of the conversation.
  */
-export async function maybeDropReview(messages: MasonBotMessage[]): Promise<MasonBotReview | null> {
+export async function maybeDropReview(
+  messages: MasonBotMessage[],
+  screenshot?: string | null,
+): Promise<MasonBotReview | null> {
   const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, {
-    body: { action: 'review', messages },
+    body: { action: 'review', messages, screenshot: screenshot ?? null },
   });
   if (error) return null;
   const result = data as { posted?: boolean; review?: MasonBotReview } | null;

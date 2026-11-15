@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { renderConversationShot } from '../lib/chatShot';
 import {
   askMasonBot,
   maybeDropReview,
@@ -57,7 +58,9 @@ export function MasonBot() {
         userCount !== lastReviewedUserCountRef.current
       ) {
         lastReviewedUserCountRef.current = userCount;
-        maybeDropReview(withReply)
+        renderConversationShot(withReply)
+          .catch(() => null)
+          .then((shot) => maybeDropReview(withReply, shot))
           .then((dropped) => {
             if (dropped) setReview(dropped);
           })

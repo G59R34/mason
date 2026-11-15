@@ -11,6 +11,7 @@ type ReviewRow = {
   mason_reply?: string | null;
   verified?: boolean;
   owner?: string | null;
+  screenshot_url?: string | null;
 };
 
 function stars(n: number) {
@@ -103,6 +104,21 @@ export function ReviewItem({
         </span>
       </div>
       <p style={{ marginTop: 8 }}>{review.comment}</p>
+
+      {review.screenshot_url ? (
+        <a
+          className="review-shot"
+          href={review.screenshot_url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <img
+            src={review.screenshot_url}
+            alt="Screenshot of the conversation this review is about"
+            loading="lazy"
+          />
+        </a>
+      ) : null}
 
       {review.mason_reply ? (
         <div className="mason-reply">

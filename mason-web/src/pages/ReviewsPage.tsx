@@ -20,6 +20,7 @@ type Row = {
   mason_reply?: string | null;
   verified?: boolean;
   owner?: string | null;
+  screenshot_url?: string | null;
 };
 
 function stars(n: number) {

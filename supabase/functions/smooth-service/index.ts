@@ -15,6 +15,8 @@ const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const MAX_TURNS = 16;
 
 const REVIEW_AUTHOR = 'Mason Bot';
+const SHOT_BUCKET = 'review-shots';
+const SHOT_MAX_BASE64 = 900_000;
 const REVIEW_MIN_MESSAGES = 4;
 const REVIEW_MIN_USER_MESSAGES = 2;
 // A review is requested every third visitor message, so this is only a
@@ -134,7 +136,71 @@ async function alreadyPosted(base: string, key: string, comment: string) {
   return Array.isArray(rows) && rows.length > 0;
 }
 
-async function handleReview(req: Request, apiKey: string, messages: ChatMessage[]) {
+type Shot = { bytes: Uint8Array; contentType: string };
+
+function decodeScreenshot(value: unknown): Shot | null {
+  if (typeof value !== 'string') return null;
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value.trim());
+  if (!match) return null;
+  if (match[2].length > SHOT_MAX_BASE64) return null;
+  try {
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return { bytes, contentType: match[1] };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureShotBucket(base: string, key: string) {
+  await fetch(`${base}/storage/v1/bucket`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      id: SHOT_BUCKET,
+      name: SHOT_BUCKET,
+      public: true,
+      file_size_limit: 1_048_576,
+      allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'],
+    }),
+  }).catch(() => undefined);
+}
+
+async function uploadScreenshot(base: string, key: string, shot: Shot): Promise<string | null> {
+  const ext = shot.contentType === 'image/png' ? 'png' : shot.contentType === 'image/webp' ? 'webp' : 'jpg';
+  const path = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  const url = `${base}/storage/v1/object/${SHOT_BUCKET}/${path}`;
+  const put = () =>
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': shot.contentType,
+        'x-upsert': 'false',
+      },
+      body: shot.bytes,
+    });
+
+  let res = await put();
+  if (!res.ok && (res.status === 400 || res.status === 404)) {
+    await ensureShotBucket(base, key);
+    res = await put();
+  }
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    console.error('screenshot upload failed', res.status, detail.slice(0, 300));
+    return null;
+  }
+  return `${base}/storage/v1/object/public/${SHOT_BUCKET}/${path}`;
+}
+
+async function handleReview(req: Request, apiKey: string, messages: ChatMessage[], screenshot: unknown) {
   if (messages.length < REVIEW_MIN_MESSAGES) {
     return json({ posted: false, reason: 'Not enough conversation to judge.' });
   }
@@ -206,16 +272,35 @@ async function handleReview(req: Request, apiKey: string, messages: ChatMessage[
     return json({ posted: false, reason: 'Already posted that one.' });
   }
 
-  const insert = await fetch(`${config.base}/rest/v1/reviews`, {
-    method: 'POST',
-    headers: {
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
-    },
-    body: JSON.stringify({ name: REVIEW_AUTHOR, comment, rating }),
-  });
+  const shot = decodeScreenshot(screenshot);
+  const screenshotUrl = shot ? await uploadScreenshot(config.base, config.key, shot) : null;
+
+  const insertReview = async (body: Record<string, unknown>) =>
+    await fetch(`${config.base}/rest/v1/reviews`, {
+      method: 'POST',
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+
+  const payload: Record<string, unknown> = { name: REVIEW_AUTHOR, comment, rating };
+  if (screenshotUrl) payload.screenshot_url = screenshotUrl;
+
+  let insert = await insertReview(payload);
+
+  // reviews.screenshot_url is added by review_screenshots.sql; if that has not
+  // run yet, still post the review rather than losing it.
+  if (!insert.ok && screenshotUrl) {
+    const detail = await insert.clone().text().catch(() => '');
+    if (/screenshot_url|PGRST204|42703/i.test(detail)) {
+      console.warn('reviews.screenshot_url missing, posting without it');
+      insert = await insertReview({ name: REVIEW_AUTHOR, comment, rating });
+    }
+  }
 
   if (!insert.ok) {
     const detail = await insert.text().catch(() => '');
@@ -223,7 +308,7 @@ async function handleReview(req: Request, apiKey: string, messages: ChatMessage[
     return json({ posted: false, reason: 'Could not post review.' });
   }
 
-  return json({ posted: true, review: { rating, comment } });
+  return json({ posted: true, review: { rating, comment, screenshotUrl } });
 }
 
 Deno.serve({ port: Number(Deno.env.get('PORT') || 8000) }, async (req: Request) => {
@@ -235,7 +320,7 @@ Deno.serve({ port: Number(Deno.env.get('PORT') || 8000) }, async (req: Request) 
     return json({ error: 'Mason Bot has no key. Set GROQ_API_KEY in the function secrets.' }, 500);
   }
 
-  let payload: { action?: unknown; messages?: unknown };
+  let payload: { action?: unknown; messages?: unknown; screenshot?: unknown };
   try {
     payload = await req.json();
   } catch {
@@ -245,7 +330,7 @@ Deno.serve({ port: Number(Deno.env.get('PORT') || 8000) }, async (req: Request) 
   const messages = cleanMessages(payload.messages);
 
   if (payload.action === 'review') {
-    return await handleReview(req, apiKey, messages);
+    return await handleReview(req, apiKey, messages, (payload as { screenshot?: unknown }).screenshot);
   }
 
   if (!messages.length) return json({ error: 'Say something first.' }, 400);
