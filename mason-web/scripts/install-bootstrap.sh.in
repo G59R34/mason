@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# MasonOS — one-line installer bootstrap.
+#
+#   curl -fsSL https://sexwithmason.com/masonos/install.sh | bash
+#
+# Downloads the full MasonOS package (plasma style, look-and-feel, decoration,
+# wallpaper, Mason Bot widget, masonosctl and the settings app), checks it, then
+# hands over to the real installer inside it. Everything lands in ~/.local and
+# `masonosctl off` puts your Plasma setup back.
+#
+# Extra arguments are passed straight through, e.g.
+#   curl -fsSL …/install.sh | bash -s -- --no-apply
+set -euo pipefail
+
+BASE_URL="${MASONOS_BASE_URL:-__BASE_URL__}"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/masonos.XXXXXX")"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+say() { printf ' · %s\n' "$*"; }
+die() { printf 'MasonOS: %s\n' "$*" >&2; exit 1; }
+
+fetch() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$1" -o "$2"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$2" "$1"
+  else
+    die "need curl or wget to download MasonOS"
+  fi
+}
+
+printf '\n  MasonOS installer\n'
+say "source: $BASE_URL"
+
+command -v plasmashell >/dev/null 2>&1 || die "this installs a KDE Plasma 6 desktop theme — plasmashell was not found"
+case "${XDG_CURRENT_DESKTOP:-}${XDG_SESSION_TYPE:-}" in
+  *KDE*|*Plasma*|*wayland*) : ;;
+  *) say "warning: no Plasma session detected in this shell; install will still work" ;;
+esac
+
+fetch "$BASE_URL/masonos.tar.gz" "$TMP_DIR/masonos.tar.gz"
+say "downloaded $(du -h "$TMP_DIR/masonos.tar.gz" | cut -f1)"
+
+if fetch "$BASE_URL/sha256.txt" "$TMP_DIR/sha256.txt" 2>/dev/null; then
+  expected="$(cut -d' ' -f1 "$TMP_DIR/sha256.txt")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$TMP_DIR/masonos.tar.gz" | cut -d' ' -f1)"
+    [[ "$expected" == "$actual" ]] || die "checksum mismatch — download was corrupted, try again"
+    say "checksum ok"
+  fi
+fi
+
+tar -xzf "$TMP_DIR/masonos.tar.gz" -C "$TMP_DIR"
+[[ -x "$TMP_DIR/masonos/install.sh" ]] || die "the package is missing install.sh"
+
+say "running the installer"
+printf '\n'
+cd "$TMP_DIR/masonos"
+exec ./install.sh "$@"

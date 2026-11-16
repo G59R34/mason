@@ -18,6 +18,7 @@ import { UserTicketsPage } from './pages/UserTicketsPage';
 import { DiscographyPage } from './pages/DiscographyPage';
 import { ReelsPage } from './pages/ReelsPage';
 import { DesktopWindowFrame } from './components/DesktopWindowFrame';
+import { MasonOSPage } from './pages/MasonOSPage';
 
 const routeTree: RouteObject[] = [
   {
@@ -36,6 +37,7 @@ const routeTree: RouteObject[] = [
       { path: 'tickets', element: <UserTicketsPage /> },
       { path: 'order', element: <LegacyRedirect href="/order.html" /> },
       { path: 'game', element: <GamePage /> },
+      { path: 'masonos', element: <MasonOSPage /> },
       { path: 'schedule', element: <SchedulePage /> },
       { path: 'discography', element: <DiscographyPage /> },
       { path: 'reels', element: <ReelsPage /> },

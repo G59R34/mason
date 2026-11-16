@@ -3028,3 +3028,141 @@ blockquote cite {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ── MasonOS ──────────────────────────────────────────────────────────────── */
+
+.masonos-page,
+.masonos-promo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
+
+.code-block {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(196, 181, 253, 0.18);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(28, 28, 38, 0.96), rgba(14, 14, 20, 0.96));
+}
+
+.code-block pre {
+  margin: 0;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.code-block code {
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #ececf2;
+  white-space: pre;
+}
+
+.code-block--hero code {
+  font-size: 0.98rem;
+  color: #ddd6fe;
+}
+
+.code-block__copy {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.16);
+  color: #ede9fe;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.code-block__copy:hover {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+.code-block__hint {
+  flex: 0 0 auto;
+  color: #9a9aa8;
+  font-size: 0.75rem;
+}
+
+.masonos-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 2px 0 16px;
+}
+
+.masonos-changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.masonos-changes li {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) 1fr;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.masonos-changes li:first-child {
+  border-top: 0;
+}
+
+.masonos-changes strong {
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.masonos-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: #c9c9d3;
+}
+
+@media (max-width: 640px) {
+  .masonos-changes li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .code-block {
+    flex-wrap: wrap;
+  }
+
+  .code-block code {
+    font-size: 0.8rem;
+  }
+}
+
+.masonos-shot {
+  margin: 4px 0 8px;
+}
+
+.masonos-shot img {
+  display: block;
+  width: 100%;
+  max-width: 620px;
+  height: auto;
+  border: 1px solid rgba(196, 181, 253, 0.16);
+  border-radius: 18px;
+}
+
+.masonos-shot figcaption {
+  margin-top: 8px;
+  font-size: 0.8rem;
+}

@@ -36,6 +36,7 @@ export const MENU_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'More',
     items: [
+      { kind: 'route', to: '/masonos', label: 'MasonOS' },
       { kind: 'route', to: '/discography', label: 'Discography' },
       { kind: 'route', to: '/reels', label: 'Reels' },
       { kind: 'route', to: '/game', label: 'Game' },

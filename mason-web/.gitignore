@@ -26,3 +26,6 @@ release
 *.njsproj
 *.sln
 *.sw?
+
+# Generated MasonOS installer bundle (scripts/bundle-masonos.sh)
+public/masonos

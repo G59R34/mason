@@ -1,6 +1,7 @@
 import { useHashScroll } from '../hooks/useHashScroll';
 import { Reveal } from '../components/Reveal';
 import { HomeHero, GameTeaserSection } from '../sections/HomeHero';
+import { MasonOSPromo } from '../sections/MasonOSPromo';
 import { GalleryPage } from './GalleryPage';
 import { WhyPage } from './WhyPage';
 import { ReviewsPage } from './ReviewsPage';
@@ -26,6 +27,12 @@ export function SiteOnePage() {
 
       <section id="game" className="site-section">
         <GameTeaserSection />
+      </section>
+
+      <section id="masonos" className="site-section">
+        <Reveal>
+          <MasonOSPromo />
+        </Reveal>
       </section>
 
       <section id="about" className="site-section">

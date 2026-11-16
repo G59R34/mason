@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && cross-env NODE_ENV=development VITE_DEV_SERVER_PORT=5173 electron .\"",
     "electron:start": "cross-env NODE_ENV=production electron .",
-    "electron:build": "npm run build:electron && electron-builder"
+    "electron:build": "npm run build:electron && electron-builder",
+    "bundle:masonos": "bash scripts/bundle-masonos.sh",
+    "prebuild": "bash scripts/bundle-masonos.sh"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
