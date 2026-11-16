@@ -62,6 +62,52 @@ Plasma version and dependencies up front, and also migrates a pre-rename
 MasonDE install (removes the old widget, moves state and bot config, remembers
 your original settings).
 
+## Install Arch from scratch
+
+`arch-install.sh` takes a blank machine to a MasonOS desktop in one run. Boot the
+Arch Linux ISO, get the network up, and run it — it partitions the disk, installs
+Arch with Plasma 6, and installs MasonOS into your account so the first login is
+already MasonOS.
+
+```bash
+# on the Arch ISO (root@archiso)
+iwctl station wlan0 connect "My Wi-Fi"      # or: systemctl start dhcpcd
+
+# the script needs the mason repo with it: mounted USB, or a clone
+bash /run/media/$USER/MASON/mason/masonos/arch-install.sh --repo /run/media/$USER/MASON/mason
+```
+
+It asks which disk to erase, prints the plan, and only then touches anything.
+
+| | |
+|---|---|
+| **Disk** | GPT: 1 GiB EFI (UEFI) or 1 MiB BIOS boot, a swap partition sized to half your RAM capped at 8 GiB, ext4 root on the rest |
+| **Boot** | systemd-boot on UEFI, GRUB on legacy BIOS; optional LUKS2-encrypted root (`--encrypt`) |
+| **System** | `linux` + firmware + microcode for your CPU, NetworkManager, PipeWire, SDDM, Plasma 6 (Wayland), Konsole, Dolphin, Mesa (or `nvidia` with KMS, `--gpu`) |
+| **For MasonOS** | python, **PySide6**, glib2/`gio`, `xdg-utils`, `kwriteconfig6`/`kpackagetool6` (from Plasma), Noto + JetBrains Mono fonts, libnotify |
+| **Account** | a `wheel` user (default `mason`) with sudo, root locked, hostname `masonos` |
+| **Finally** | the repo is copied to `~/mason` and `masonos/install.sh --no-apply` runs, so the first login transforms the session |
+
+```bash
+bash arch-install.sh                                   # guided
+bash arch-install.sh --disk /dev/nvme0n1 --yes          # unattended
+bash arch-install.sh --disk /dev/sda --encrypt --user mason --swap 8
+bash arch-install.sh --dry-run                          # plan only, no changes
+bash arch-install.sh --no-masonos                       # Arch + Plasma, no MasonOS
+```
+
+Options: `--disk`, `--user`, `--hostname`, `--timezone`, `--password`,
+`--root-password`, `--encrypt`, `--swap GiB`/`--no-swap`,
+`--gpu auto|intel|amd|nvidia|vm`, `--repo PATH|URL`, `--no-masonos`, `--yes`,
+`--dry-run`, `--force-live`.
+
+It refuses to run anywhere but the live ISO (`--force-live` overrides), refuses
+the USB it booted from, refuses x86-incompatible machines (use Arch Linux ARM
+for AArch64 — different distro, different bootloader), and unmounts or stops on
+mounted partitions rather than formatting under them. Everything is logged to
+`/tmp/masonos-arch-install.log`. After `reboot` you log in with your user; from
+then on it is the normal `masonosctl on` / `off` story.
+
 ## One script, both directions
 
 ```bash
