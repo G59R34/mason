@@ -1,0 +1,18 @@
+{
+  "KPackageStructure": "KWin/Script",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "MasonOS"
+      }
+    ],
+    "Description": "MasonOS window behaviour shortcuts",
+    "Icon": "preferences-system-windows",
+    "Id": "masonos-shell",
+    "License": "MIT",
+    "Name": "MasonOS Shell",
+    "Version": "1.0"
+  },
+  "X-Plasma-API": "javascript",
+  "X-Plasma-MainScript": "code/main.js"
+}

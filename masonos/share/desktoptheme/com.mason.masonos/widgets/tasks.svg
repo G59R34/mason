@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MasonOS task item backgrounds for the dock: rounded 10px tiles on a 64x64
+     canvas with 10px 9-slice margins. Plasma asks for one element per piece
+     (<prefix>-center, -top, -topleft, ...), so each state is spelled out. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <g id="hover-center"><rect x="10" y="10" width="44" height="44" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="hover-top"><rect x="10" y="0" width="44" height="10" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="hover-bottom"><rect x="10" y="54" width="44" height="10" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="hover-left"><rect x="0" y="10" width="10" height="44" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="hover-right"><rect x="54" y="10" width="10" height="44" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="hover-topleft"><path d="M0 10 A10 10 0 0 1 10 0 L10 10 Z" fill="#ffffff" fill-opacity="0.1"/></g>
+  <g id="hover-topright"><path d="M54 0 A10 10 0 0 1 64 10 L54 10 Z" fill="#ffffff" fill-opacity="0.1"/></g>
+  <g id="hover-bottomleft"><path d="M0 54 A10 10 0 0 0 10 64 L10 54 Z" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="hover-bottomright"><path d="M54 64 A10 10 0 0 0 64 54 L54 54 Z" fill="#ffffff" fill-opacity="0.05"/></g>
+  <g id="focus-center"><rect x="10" y="10" width="44" height="44" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="focus-top"><rect x="10" y="0" width="44" height="10" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="focus-bottom"><rect x="10" y="54" width="44" height="10" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="focus-left"><rect x="0" y="10" width="10" height="44" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="focus-right"><rect x="54" y="10" width="10" height="44" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="focus-topleft"><path d="M0 10 A10 10 0 0 1 10 0 L10 10 Z" fill="#a78bfa" fill-opacity="0.32"/></g>
+  <g id="focus-topright"><path d="M54 0 A10 10 0 0 1 64 10 L54 10 Z" fill="#a78bfa" fill-opacity="0.32"/></g>
+  <g id="focus-bottomleft"><path d="M0 54 A10 10 0 0 0 10 64 L10 54 Z" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="focus-bottomright"><path d="M54 64 A10 10 0 0 0 64 54 L54 54 Z" fill="#7c3aed" fill-opacity="0.22"/></g>
+  <g id="attention-center"><rect x="10" y="10" width="44" height="44" fill="#f59e0b" fill-opacity="0.24"/></g>
+  <g id="attention-top"><rect x="10" y="0" width="44" height="10" fill="#f59e0b" fill-opacity="0.24"/></g>
+  <g id="attention-bottom"><rect x="10" y="54" width="44" height="10" fill="#f59e0b" fill-opacity="0.24"/></g>
+  <g id="attention-left"><rect x="0" y="10" width="10" height="44" fill="#f59e0b" fill-opacity="0.24"/></g>
+  <g id="attention-right"><rect x="54" y="10" width="10" height="44" fill="#f59e0b" fill-opacity="0.24"/></g>
+  <g id="attention-topleft"><path d="M0 10 A10 10 0 0 1 10 0 L10 10 Z" fill="#fbbf24" fill-opacity="0.34"/></g>
+  <g id="attention-topright"><path d="M54 0 A10 10 0 0 1 64 10 L54 10 Z" fill="#fbbf24" fill-opacity="0.34"/></g>
+  <g id="attention-bottomleft"><path d="M0 54 A10 10 0 0 0 10 64 L10 54 Z" fill="#f59e0b" fill-opacity="0.24"/></g>
+  <g id="attention-bottomright"><path d="M54 64 A10 10 0 0 0 64 54 L54 54 Z" fill="#f59e0b" fill-opacity="0.24"/></g>
+</svg>

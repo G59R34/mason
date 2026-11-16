@@ -1,0 +1,995 @@
+#!/usr/bin/env python3
+"""masonosctl — transform KDE Plasma into MasonOS, and undo it again.
+
+MasonOS is a shell layer plus a visual identity on top of Plasma 6: our panel
+layout, palette, desktop style, Look-and-Feel (splash), window decoration, icon
+overrides, GTK accent and the Mason Bot widget.
+
+    masonosctl on         transform into MasonOS        (alias: transform)
+    masonosctl off        restore the Plasma you had    (alias: revert)
+    masonosctl reload     off + on, after editing assets (what the desktop icon runs)
+    masonosctl toggle
+    masonosctl status     what is applied, and what would be restored
+    masonosctl transform --dry-run
+
+Every setting it changes is recorded in
+~/.local/state/masonos/manifest.json before it is touched, so `off` puts your
+previous scheme, decoration, icons, fonts, GTK css and appletsrc back exactly.
+"""
+
+from __future__ import annotations
+
+import argparse
+import gzip
+import json
+import math
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+ROOT = Path(__file__).resolve().parent.parent
+SHARE = ROOT / "share"
+BOT_SCRIPT = ROOT / "bot" / "masonos-bot.py"
+
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
+DATA_DIR = Path(os.environ.get("XDG_DATA_HOME") or HOME / ".local" / "share")
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local" / "state") / "masonos"
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache") / "masonos"
+
+APPLETSRC = CONFIG_DIR / "plasma-org.kde.plasma.desktop-appletsrc"
+MANIFEST_FILE = STATE_DIR / "manifest.json"
+APPLETSRC_BACKUP = STATE_DIR / "appletsrc.pre-masonos"
+BOT_PID_FILE = STATE_DIR / "bot.pid"
+BOT_LOG = CACHE_DIR / "bot.log"
+
+WALLPAPER = DATA_DIR / "wallpapers" / "masonos.png"
+BOT_HEALTH_URL = "http://127.0.0.1:8765/health"
+
+APP_ID = "com.mason.masonos.bot"
+SCHEME = "MasonOS"
+DESKTOP_THEME = "com.mason.masonos"
+LOOK_AND_FEEL = "com.mason.masonos"
+ICON_THEME = "MasonOS"
+DECORATION = "__aurorae__svg__MasonOS"
+DECORATION_LIBRARY = "org.kde.kwin.aurorae.v2"
+KWIN_SCRIPT = "masonos-shell"
+CURSOR_THEME = "breeze_cursors"
+BODY_FONT = "DM Sans"
+
+# Every INI key the transformation touches, snapshotted before the first write.
+TRACKED = [
+    ("kdeglobals", "General", "ColorScheme"),
+    ("kdeglobals", "General", "font"),
+    ("kdeglobals", "General", "menuFont"),
+    ("kdeglobals", "General", "toolBarFont"),
+    ("kdeglobals", "Icons", "Theme"),
+    ("kdeglobals", "KDE", "LookAndFeelPackage"),
+    ("kdeglobals", "KDE", "widgetStyle"),
+    ("plasmarc", "Theme", "name"),
+    ("kwinrc", "org.kde.kdecoration2", "library"),
+    ("kwinrc", "org.kde.kdecoration2", "theme"),
+    ("kwinrc", "Plugins", f"{KWIN_SCRIPT}Enabled"),
+    ("ksplashrc", "KSplash", "Theme"),
+    ("kcminputrc", "Mouse", "cursorTheme"),
+    ("kscreenlockerrc", "Greeter", "WallpaperPlugin"),
+]
+
+GTK_FILES = [
+    CONFIG_DIR / "gtk-3.0" / "gtk.css",
+    CONFIG_DIR / "gtk-4.0" / "gtk.css",
+]
+GTK_INCLUDE = '@import url("masonos.css");'
+
+# User-tweakable geometry, written by MasonOS Settings and read on every transform.
+SETTINGS_FILE = CONFIG_DIR / "masonos" / "masonos.json"
+PREF_DEFAULTS = {"barHeight": 45, "dockHeight": 48}
+
+
+def load_prefs() -> dict:
+    prefs = dict(PREF_DEFAULTS)
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return prefs
+    for key, default in PREF_DEFAULTS.items():
+        value = data.get(key)
+        if isinstance(value, (int, float)):
+            prefs[key] = max(32, min(96, int(value)))
+    return prefs
+
+
+def save_prefs(prefs: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(prefs, indent=2) + "\n", encoding="utf-8")
+
+PANEL_TEMPLATE = r"""
+var made = [];
+
+function addPanel(location, height, alignment, lengthMode, floating, widgets) {
+    var panel = null;
+    try {
+        panel = new Panel("org.kde.panel");
+    } catch (e) {
+        panel = new Panel();
+    }
+    panel.location = location;
+    panel.height = height;
+    panel.alignment = alignment;
+    panel.lengthMode = lengthMode;
+    try { panel.floating = floating; } catch (e) {}
+    for (var i = 0; i < widgets.length; i++) {
+        var applet = null;
+        try { applet = panel.addWidget(widgets[i]); } catch (e) {
+            print("masonos_widget_failed=" + widgets[i]);
+        }
+        if (widgets[i] === "org.kde.plasma.kickerdash" && applet) {
+            try {
+                applet.currentConfigGroup = ["Configuration", "General"];
+                applet.writeConfig("icon", "masonos");
+                applet.reloadConfig();
+            } catch (e) {}
+        }
+    }
+    return panel.id;
+}
+
+var current = panels();
+for (var i = 0; i < current.length; i++) {
+    try { current[i].remove(); } catch (e) {}
+}
+
+/* Panel heights are logical pixels in the scripting API. */
+made.push(addPanel("top", __BAR_HEIGHT__, "left", "custom", false, __TOP_WIDGETS__));
+
+/* Centred floating dock, sized from MasonOS Settings (prefs.dockHeight). */
+made.push(addPanel("bottom", __DOCK_HEIGHT__, "center", "fit", true, ["org.kde.plasma.icontasks"]));
+
+print("masonos_panels=" + made.join(","));
+"""
+
+TOP_WIDGETS_CENTRED = [
+    "org.kde.plasma.kickerdash",
+    "org.kde.plasma.panelspacer",
+    "org.kde.plasma.digitalclock",
+    "org.kde.plasma.panelspacer",
+    "com.mason.masonos.bot",
+    "org.kde.plasma.systemtray",
+    "org.kde.plasma.minimizeall",
+]
+
+# A notched MacBook physically blocks the middle of the top edge, so the clock
+# joins the right-hand cluster and the centre stays empty.
+TOP_WIDGETS_NOTCHED = [
+    "org.kde.plasma.kickerdash",
+    "org.kde.plasma.panelspacer",
+    "com.mason.masonos.bot",
+    "org.kde.plasma.systemtray",
+    "org.kde.plasma.minimizeall",
+    "org.kde.plasma.digitalclock",
+]
+
+
+def panel_script(bar_height: int, notched: bool, dock_height: int) -> str:
+    widgets = TOP_WIDGETS_NOTCHED if notched else TOP_WIDGETS_CENTRED
+    return (
+        PANEL_TEMPLATE.replace("__BAR_HEIGHT__", str(bar_height))
+        .replace("__DOCK_HEIGHT__", str(dock_height))
+        .replace("__TOP_WIDGETS__", json.dumps(widgets))
+    )
+
+# Fedora's stock two-top-panel layout, rebuilt when no usable snapshot exists.
+STOCK_PANEL_SCRIPT = r"""
+var made = [];
+
+function addPanel(alignment, widgets) {
+    var panel = null;
+    try {
+        panel = new Panel("org.kde.panel");
+    } catch (e) {
+        panel = new Panel();
+    }
+    panel.location = "top";
+    panel.height = 44;
+    panel.alignment = alignment;
+    panel.lengthMode = "custom";
+    try { panel.floating = false; } catch (e) {}
+    for (var i = 0; i < widgets.length; i++) {
+        try { panel.addWidget(widgets[i]); } catch (e) {}
+    }
+    return panel.id;
+}
+
+var current = panels();
+for (var i = 0; i < current.length; i++) {
+    try { current[i].remove(); } catch (e) {}
+}
+
+made.push(addPanel("left", [
+    "org.kde.plasma.kickoff",
+    "org.kde.plasma.pager",
+    "org.kde.plasma.icontasks",
+    "org.kde.plasma.panelspacer"
+]));
+made.push(addPanel("right", [
+    "org.kde.plasma.panelspacer",
+    "org.kde.plasma.systemtray",
+    "org.kde.plasma.digitalclock",
+    "org.kde.plasma.showdesktop"
+]));
+
+print("masonos_stock_panels=" + made.join(","));
+"""
+
+
+# ── shell helpers ────────────────────────────────────────────────────────────
+
+
+def run(cmd: list[str], timeout: float = 45) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(cmd, text=True, capture_output=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return subprocess.CompletedProcess(cmd, 127, "", str(err))
+
+
+def have(binary: str) -> bool:
+    return shutil.which(binary) is not None
+
+
+def notify(title: str, body: str) -> None:
+    if body and have("notify-send"):
+        run(["notify-send", "--app-name=MasonOS", "--icon=masonos", title, body], timeout=10)
+
+
+def kread(file: str, group: str, key: str) -> str | None:
+    if not have("kreadconfig6"):
+        return None
+    out = (run(["kreadconfig6", "--file", file, "--group", group, "--key", key]).stdout or "").strip()
+    return out or None
+
+
+def kwrite(file: str, group: str, key: str, value: str | None) -> None:
+    if value is None:
+        run(["kwriteconfig6", "--file", file, "--group", group, "--key", key, "--delete"])
+    else:
+        run(["kwriteconfig6", "--file", file, "--group", group, "--key", key, value])
+
+
+def font_family(name: str) -> str:
+    if have("fc-match"):
+        out = (run(["fc-match", "-f", "%{family}", name]).stdout or "").strip()
+        if name.lower() in out.lower():
+            return name
+    return "Noto Sans"
+
+
+def plasma_script(js: str) -> str:
+    result = run(
+        [
+            "busctl", "--user", "call", "org.kde.plasmashell", "/PlasmaShell",
+            "org.kde.PlasmaShell", "evaluateScript", "s", js,
+        ]
+    )
+    out = (result.stdout or "").strip()
+    if result.returncode != 0 or out.startswith("Call failed"):
+        raise RuntimeError(out or (result.stderr or "").strip() or "plasmashell is not answering")
+    if out.startswith('s "'):
+        out = out[3:]
+        if out.endswith('"'):
+            out = out[:-1]
+        out = out.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+    return out
+
+
+def shell_ready() -> bool:
+    for _ in range(90):
+        try:
+            plasma_script("print(1);")
+            return True
+        except RuntimeError:
+            time.sleep(0.2)
+    return False
+
+
+def restart_plasmashell() -> bool:
+    if have("systemctl"):
+        if run(["systemctl", "--user", "restart", "plasma-plasmashell.service"]).returncode == 0:
+            return shell_ready()
+    if have("kquitapp6"):
+        run(["kquitapp6", "plasmashell"])
+        time.sleep(1.0)
+    try:
+        subprocess.Popen(
+            ["plasmashell"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
+    except OSError:
+        return False
+    return shell_ready()
+
+
+def reconfigure_kwin() -> None:
+    if have("busctl"):
+        run(["busctl", "--user", "call", "org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure"])
+
+
+# ── display: scaling and the MacBook notch ───────────────────────────────────
+
+TARGET_PPI = 130.0
+NOTCH_HEIGHT_PROP = "apple,notch-height"
+SHOW_NOTCH_PARAM = Path("/sys/module/appledrm/parameters/show_notch")
+DEFAULT_BAR_HEIGHT = 40
+
+
+def kscreen_info() -> dict | None:
+    """Primary output geometry, straight from KScreen."""
+    if not have("kscreen-doctor"):
+        return None
+    result = run(["kscreen-doctor", "-j"])
+    if result.returncode != 0 or not (result.stdout or "").strip():
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except ValueError:
+        return None
+    outputs = [o for o in data.get("outputs", []) if o.get("enabled") and o.get("connected")]
+    if not outputs:
+        return None
+    out = sorted(outputs, key=lambda o: o.get("priority", 99))[0]
+    size = out.get("size") or {}
+    mm = out.get("sizeMM") or {}
+    width = int(size.get("width") or 0)
+    height = int(size.get("height") or 0)
+    scale = float(out.get("scale") or 1.0)
+    ppi = (width / (mm["width"] / 25.4)) if mm.get("width") else 0.0
+    return {
+        "name": out.get("name", "eDP-1"),
+        "width": width,
+        "height": height,
+        "scale": scale,
+        "ppi": ppi,
+        "logicalWidth": width / scale if scale else width,
+    }
+
+
+def notch_info(scale: float) -> dict | None:
+    """Asahi exposes the notch height on the DCP devicetree node."""
+    for node in sorted(Path("/sys/firmware/devicetree/base/soc").glob("dcp*")):
+        try:
+            raw = (node / NOTCH_HEIGHT_PROP).read_bytes()[:4]
+        except OSError:
+            continue
+        if len(raw) < 4:
+            continue
+        height_px = int.from_bytes(raw, "big")
+        if height_px <= 0:
+            continue
+        visible = True
+        try:
+            visible = SHOW_NOTCH_PARAM.read_text().strip().upper() not in ("N", "0")
+        except OSError:
+            pass
+        return {
+            "heightPx": height_px,
+            "heightLogical": height_px / scale if scale else float(height_px),
+            "visible": visible,
+        }
+    return None
+
+
+def recommended_scale(ppi: float) -> float:
+    """Aim for ~130 effective PPI — the density macOS defaults to on these panels."""
+    if ppi <= 0:
+        return 1.0
+    snapped = math.floor((ppi / TARGET_PPI) * 4 + 0.5) / 4
+    return max(1.0, min(3.0, snapped))
+
+
+def format_scale(value: float) -> str:
+    return f"{value:.2f}".rstrip("0").rstrip(".") or "1"
+
+
+def prepare_display(manifest: dict, quiet: bool = False, dry_run: bool = False) -> dict:
+    """Fix the scale if the panel is too dense, then size the bar around the notch."""
+    info = kscreen_info() or {}
+    current = float(info.get("scale") or 1.0)
+    target = recommended_scale(float(info.get("ppi") or 0))
+
+    # Only ever grow the UI: a density the user picked deliberately is left alone.
+    if info and current < target - 0.05:
+        if not dry_run:
+            if not manifest.get("display"):
+                manifest["display"] = {"output": info["name"], "scale": current}
+            run(["kscreen-doctor", f"output.{info['name']}.scale.{format_scale(target)}"])
+            time.sleep(1.5)
+            info = kscreen_info() or info
+        if not quiet or dry_run:
+            print(
+                f"masonosctl: display scale {format_scale(current)} -> {format_scale(target)} "
+                f"({float(info.get('ppi') or 0):.0f} ppi on {info.get('name', 'output')})"
+            )
+
+    scale = float(info.get("scale") or current or 1.0)
+    notch = notch_info(scale)
+    notched = bool(notch and notch["visible"])
+    bar_height = int(load_prefs()["barHeight"])
+    if notched:
+        bar_height = max(bar_height, int(math.ceil(notch["heightLogical"])) + 8)
+
+    return {"info": info, "notch": notch, "barHeight": bar_height, "notched": notched}
+
+
+# ── manifest ─────────────────────────────────────────────────────────────────
+
+
+def read_manifest() -> dict:
+    try:
+        data = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_manifest(manifest: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    MANIFEST_FILE.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def snapshot(manifest: dict) -> None:
+    """Record the pre-MasonOS value of everything we are about to change."""
+    manifest.setdefault("settings", {})
+    for file, group, key in TRACKED:
+        manifest["settings"].setdefault(file, {}).setdefault(group, {}).setdefault(key, kread(file, group, key))
+    manifest.setdefault("gtk", {})
+    for path in GTK_FILES:
+        entry = manifest["gtk"].setdefault(str(path), {})
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = None
+        entry.setdefault("existed", text is not None)
+        entry.setdefault("hadInclude", bool(text and GTK_INCLUDE in text))
+    write_manifest(manifest)
+
+
+def restore_settings(manifest: dict) -> None:
+    for file, groups in (manifest.get("settings") or {}).items():
+        for group, keys in groups.items():
+            for key, value in keys.items():
+                kwrite(file, group, key, value)
+
+
+# ── bot bridge ───────────────────────────────────────────────────────────────
+
+
+def bot_health() -> dict | None:
+    try:
+        with urllib.request.urlopen(BOT_HEALTH_URL, timeout=1.5) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+            return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def pid_is_bot(pid: int) -> bool:
+    try:
+        return "masonos-bot.py" in Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return False
+
+
+def start_bot() -> bool:
+    if bot_health():
+        return True
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    log = open(BOT_LOG, "ab", buffering=0)
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(BOT_SCRIPT)], stdout=log, stderr=log, start_new_session=True
+        )
+    except OSError:
+        return False
+    BOT_PID_FILE.write_text(str(proc.pid), encoding="utf-8")
+    for _ in range(50):
+        time.sleep(0.1)
+        if bot_health():
+            return True
+        if proc.poll() is not None:
+            return False
+    return False
+
+
+def stop_bot() -> None:
+    try:
+        pid = int(BOT_PID_FILE.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        pid = 0
+    if pid and pid_is_bot(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    BOT_PID_FILE.unlink(missing_ok=True)
+
+
+# ── assets ───────────────────────────────────────────────────────────────────
+
+
+def install_plasmoid(package: Path) -> bool:
+    if not package.exists() or not have("kpackagetool6"):
+        return False
+    if run(["kpackagetool6", "--type", "Plasma/Applet", "--upgrade", str(package)]).returncode == 0:
+        return True
+    return run(["kpackagetool6", "--type", "Plasma/Applet", "--install", str(package)]).returncode == 0
+
+
+def install_kwin_script(package: Path) -> bool:
+    if not package.exists() or not have("kpackagetool6"):
+        return False
+    if run(["kpackagetool6", "--type", "KWin/Script", "--upgrade", str(package)]).returncode == 0:
+        return True
+    return run(["kpackagetool6", "--type", "KWin/Script", "--install", str(package)]).returncode == 0
+
+
+def copy_tree(src: Path, dest: Path, *, gzip_svg: bool = False) -> None:
+    if not src.exists():
+        return
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest)
+    if gzip_svg:
+        # Plasma 6 ships desktop-theme frames as .svgz; match it exactly.
+        for svg in list(dest.rglob("*.svg")):
+            with open(svg, "rb") as src_file, gzip.open(svg.with_suffix(".svgz"), "wb") as out:
+                shutil.copyfileobj(src_file, out)
+            svg.unlink()
+
+
+def install_assets() -> list[str]:
+    done: list[str] = []
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    if install_plasmoid(SHARE / "plasmoids" / APP_ID):
+        done.append("bot widget")
+    if install_kwin_script(SHARE / "kwin" / KWIN_SCRIPT):
+        done.append("kwin script")
+
+    scheme = SHARE / "color-schemes" / f"{SCHEME}.colors"
+    if scheme.exists():
+        target = DATA_DIR / "color-schemes" / f"{SCHEME}.colors"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(scheme, target)
+        done.append("palette")
+
+    copy_tree(SHARE / "desktoptheme" / DESKTOP_THEME, DATA_DIR / "plasma" / "desktoptheme" / DESKTOP_THEME, gzip_svg=True)
+    done.append("plasma style")
+    copy_tree(SHARE / "look-and-feel" / LOOK_AND_FEEL, DATA_DIR / "plasma" / "look-and-feel" / LOOK_AND_FEEL)
+    done.append("look and feel")
+    copy_tree(SHARE / "aurorae" / "themes" / "MasonOS", DATA_DIR / "aurorae" / "themes" / "MasonOS")
+    done.append("window decoration")
+    copy_tree(SHARE / "icons" / ICON_THEME, DATA_DIR / "icons" / ICON_THEME)
+    done.append("icon overrides")
+
+    for name, src, dest in [
+        ("wallpaper", SHARE / "wallpapers" / "masonos.png", WALLPAPER),
+        ("icon", SHARE / "icons" / "masonos.svg", DATA_DIR / "icons" / "hicolor" / "scalable" / "apps" / "masonos.svg"),
+        ("gtk css", SHARE / "gtk" / "masonos.css", CONFIG_DIR / "gtk-3.0" / "masonos.css"),
+    ]:
+        if src.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            done.append(name)
+    gtk4 = CONFIG_DIR / "gtk-4.0" / "masonos.css"
+    if (SHARE / "gtk" / "masonos.css").exists():
+        gtk4.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SHARE / "gtk" / "masonos.css", gtk4)
+    return done
+
+
+# ── applying the identity ────────────────────────────────────────────────────
+
+
+def apply_look_and_feel() -> None:
+    # --apply is required; a bare package name just prints the usage text.
+    if have("plasma-apply-lookandfeel"):
+        run(["plasma-apply-lookandfeel", "--apply", LOOK_AND_FEEL])
+
+
+def apply_scheme_and_wallpaper() -> None:
+    if have("plasma-apply-colorscheme"):
+        run(["plasma-apply-colorscheme", SCHEME])
+    if WALLPAPER.exists() and have("plasma-apply-wallpaperimage"):
+        run(["plasma-apply-wallpaperimage", str(WALLPAPER)])
+
+
+def apply_fonts() -> None:
+    family = font_family(BODY_FONT)
+    for key in ("font", "menuFont", "toolBarFont"):
+        kwrite("kdeglobals", "General", key, f"{family},10")
+
+
+def apply_desktop_theme() -> None:
+    if have("plasma-apply-desktoptheme"):
+        run(["plasma-apply-desktoptheme", DESKTOP_THEME])
+    else:
+        kwrite("plasmarc", "Theme", "name", DESKTOP_THEME)
+
+
+def apply_icons() -> None:
+    kwrite("kdeglobals", "Icons", "Theme", ICON_THEME)
+
+
+def apply_cursor() -> None:
+    if have("plasma-apply-cursortheme"):
+        run(["plasma-apply-cursortheme", CURSOR_THEME])
+    else:
+        kwrite("kcminputrc", "Mouse", "cursorTheme", CURSOR_THEME)
+
+
+def apply_decoration() -> None:
+    kwrite("kwinrc", "org.kde.kdecoration2", "library", DECORATION_LIBRARY)
+    kwrite("kwinrc", "org.kde.kdecoration2", "theme", DECORATION)
+    reconfigure_kwin()
+
+
+def apply_kwin_script() -> None:
+    kwrite("kwinrc", "Plugins", f"{KWIN_SCRIPT}Enabled", "true")
+    reconfigure_kwin()
+
+
+def apply_gtk() -> None:
+    include = GTK_INCLUDE
+    for path in GTK_FILES:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        if include not in text:
+            path.write_text(text.rstrip() + ("\n\n" if text.strip() else "") + include + "\n", encoding="utf-8")
+
+
+def remove_gtk_include() -> None:
+    for path in GTK_FILES:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines = [line for line in text.splitlines() if GTK_INCLUDE not in line]
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def build_panels(bar_height: int = DEFAULT_BAR_HEIGHT, notched: bool = False,
+                 dock_height: int | None = None) -> list[int]:
+    if dock_height is None:
+        dock_height = load_prefs()["dockHeight"]
+    output = plasma_script(panel_script(bar_height, notched, dock_height))
+    for line in output.splitlines():
+        if line.startswith("masonos_panels="):
+            return [int(part) for part in line.split("=", 1)[1].split(",") if part.strip().isdigit()]
+    raise RuntimeError(f"plasmashell did not confirm the panel layout: {output or 'no output'}")
+
+
+def appletsrc_has_masonos(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return APP_ID in text or "org.kde.plasma.kickerdash" in text
+
+
+def restore_stock_panels() -> bool:
+    try:
+        plasma_script(STOCK_PANEL_SCRIPT)
+        return True
+    except RuntimeError as err:
+        print(f"masonosctl: could not rebuild the stock panels: {err}", file=sys.stderr)
+        return False
+
+
+def ensure_installed() -> bool:
+    return (DATA_DIR / "plasma" / "plasmoids" / APP_ID / "metadata.json").exists()
+
+
+# ── commands ─────────────────────────────────────────────────────────────────
+
+
+def transform(dry_run: bool = False, quiet: bool = False) -> int:
+    if not have("plasmashell"):
+        print("masonosctl: no KDE Plasma session found.", file=sys.stderr)
+        return 1
+    if dry_run:
+        print("masonosctl dry run — would apply:")
+        print(f"  palette        {SCHEME}")
+        print(f"  plasma style   {DESKTOP_THEME}")
+        print(f"  look and feel  {LOOK_AND_FEEL}")
+        print(f"  decoration     {DECORATION}")
+        print(f"  icons          {ICON_THEME}")
+        print(f"  kwin script    {KWIN_SCRIPT}")
+        print(f"  panels         top bar + dock, bot widget {APP_ID}")
+        print(f"  wallpaper      {WALLPAPER}")
+        info = kscreen_info() or {}
+        if info:
+            notch = notch_info(float(info.get("scale") or 1.0))
+            print(f"  display        {info['name']} {info['width']}x{info['height']} "
+                  f"@{format_scale(info['scale'])} -> {format_scale(recommended_scale(info['ppi']))} "
+                  f"({info['ppi']:.0f} ppi)")
+            print(f"  notch          {'yes — edge layout, bar clears it' if notch and notch['visible'] else 'none'}")
+        return 0
+    if not ensure_installed():
+        print("masonosctl: MasonOS is not installed yet — run masonos/install.sh first.", file=sys.stderr)
+        return 1
+
+    manifest = read_manifest()
+    if not manifest.get("active"):
+        # Keep anything install.sh already remembered (it migrates a pre-MasonDE
+        # install and seeds the original values); snapshot() only fills gaps.
+        manifest.setdefault("settings", {})
+        manifest.setdefault("gtk", {})
+        manifest["active"] = False
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if APPLETSRC.exists() and not APPLETSRC_BACKUP.exists():
+            shutil.copy2(APPLETSRC, APPLETSRC_BACKUP)
+        if APPLETSRC_BACKUP.exists():
+            manifest["appletsrc"] = str(APPLETSRC_BACKUP)
+        snapshot(manifest)
+        write_manifest(manifest)
+
+    if not shell_ready():
+        print("masonosctl: plasmashell never answered — is the Plasma session up?", file=sys.stderr)
+        return 1
+
+    install_assets()
+    apply_look_and_feel()          # may re-layout panels; we rebuild them below
+    apply_scheme_and_wallpaper()
+    apply_fonts()
+    apply_desktop_theme()
+    apply_icons()
+    apply_cursor()
+    apply_decoration()
+    apply_kwin_script()
+    apply_gtk()
+
+    # This panel is 224 ppi and the notch eats the top 64px, so the scale and the
+    # bar geometry have to be settled before the panel is built.
+    prefs = load_prefs()
+    display = prepare_display(manifest, quiet=quiet)
+    write_manifest(manifest)
+
+    bot_up = start_bot()
+
+    try:
+        panels = build_panels(display["barHeight"], display["notched"], prefs["dockHeight"])
+    except RuntimeError as err:
+        print(f"masonosctl: {err}", file=sys.stderr)
+        return 1
+
+    manifest.update({"active": True, "panels": panels, "updated": int(time.time())})
+    write_manifest(manifest)
+
+    if not quiet:
+        note = "" if bot_up else " Mason Bot bridge did not start; see ~/.cache/masonos/bot.log."
+        notify("MasonOS", f"Transformed: bar, dock, palette, decoration, splash.{note}")
+        print(f"masonosctl: MasonOS applied (panels {panels}).")
+    return 0
+
+
+def revert(quiet: bool = False) -> int:
+    manifest = read_manifest()
+    was_active = bool(manifest.get("active"))
+
+    stop_bot()
+
+    backup = manifest.get("appletsrc")
+    backup_path = Path(backup) if backup else None
+    usable = bool(backup_path and backup_path.exists() and not appletsrc_has_masonos(backup_path))
+    if usable:
+        shutil.copy2(backup_path, APPLETSRC)
+        if not restart_plasmashell():
+            print("masonosctl: plasmashell restart failed; log out to finish restoring panels.", file=sys.stderr)
+    elif was_active or appletsrc_has_masonos(APPLETSRC):
+        # No trustworthy snapshot (or it captured a MasonOS layout): rebuild Plasma's
+        # stock panels, then adopt that as the baseline for future transforms.
+        if restore_stock_panels():
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            time.sleep(1.5)
+            shutil.copy2(APPLETSRC, APPLETSRC_BACKUP)
+            manifest["appletsrc"] = str(APPLETSRC_BACKUP)
+
+    restore_settings(manifest)
+    saved_display = manifest.get("display") or {}
+    if saved_display.get("output") and saved_display.get("scale") and have("kscreen-doctor"):
+        run(["kscreen-doctor",
+             f"output.{saved_display['output']}.scale.{format_scale(float(saved_display['scale']))}"])
+        manifest["display"] = {}
+    remove_gtk_include()
+    reconfigure_kwin()
+
+    manifest["active"] = False
+    manifest["settings"] = {}
+    manifest["gtk"] = {}
+    write_manifest(manifest)
+
+    if not quiet:
+        notify("MasonOS", "Reverted to your Plasma setup." if was_active else "Nothing was applied.")
+        print("masonosctl: reverted.")
+    return 0
+
+
+def status() -> int:
+    manifest = read_manifest()
+    health = bot_health()
+    print(f"active          : {'yes' if manifest.get('active') else 'no'}")
+    print(f"installed       : {'yes' if ensure_installed() else 'no'}")
+    print(f"colour scheme   : {kread('kdeglobals', 'General', 'ColorScheme') or '—'}")
+    print(f"plasma style    : {kread('plasmarc', 'Theme', 'name') or '—'}")
+    print(f"look and feel   : {kread('kdeglobals', 'KDE', 'LookAndFeelPackage') or '—'}")
+    print(f"decoration      : {kread('kwinrc', 'org.kde.kdecoration2', 'theme') or '—'}")
+    print(f"icons           : {kread('kdeglobals', 'Icons', 'Theme') or '—'}")
+    print(f"kwin script     : {kread('kwinrc', 'Plugins', f'{KWIN_SCRIPT}Enabled') or '—'}")
+    print(f"panels          : {manifest.get('panels') or '—'}")
+    info = kscreen_info() or {}
+    if info:
+        notch = notch_info(float(info.get("scale") or 1.0))
+        shape = "notched, edge layout" if notch and notch["visible"] else "centred clock"
+        print(f"display         : {info['name']} {info['width']}x{info['height']} "
+              f"@{format_scale(info['scale'])} ({info['ppi']:.0f} ppi, {shape})")
+        if notch:
+            print(f"notch           : {notch['heightPx']}px physical, "
+                  f"{notch['heightLogical']:.0f}px logical, "
+                  f"{'visible' if notch['visible'] else 'hidden by the kernel'}")
+    print(f"bot bridge      : {'running' if health else 'stopped'}"
+          + (f" (configured: {'yes' if health.get('configured') else 'no'})" if health else ""))
+    saved = manifest.get("settings") or {}
+    if saved:
+        previous = saved.get("kdeglobals", {}).get("General", {}).get("ColorScheme")
+        print(f"would restore   : scheme {previous or '—'}, "
+              f"decoration {saved.get('kwinrc', {}).get('org.kde.kdecoration2', {}).get('theme') or '—'}")
+    print(f"manifest        : {MANIFEST_FILE}")
+    return 0
+
+
+def apply_lockscreen() -> int:
+    """Brand the lock screen: MasonOS artwork instead of the desktop wallpaper."""
+    source = SHARE / "wallpapers" / "masonos-lock.png"
+    target = DATA_DIR / "wallpapers" / "masonos-lock.png"
+    if source.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    image = target if target.exists() else source
+    if not image.exists():
+        print("masonosctl: no lock screen artwork installed.", file=sys.stderr)
+        return 1
+    if not have("kwriteconfig6"):
+        print("masonosctl: kwriteconfig6 is missing; cannot set the lock screen.", file=sys.stderr)
+        return 1
+    run(["kwriteconfig6", "--file", "kscreenlockerrc", "--group", "Greeter",
+         "--key", "WallpaperPlugin", "org.kde.image"])
+    for key, value in (("Image", str(image)), ("PreviewImage", str(image))):
+        run(["kwriteconfig6", "--file", "kscreenlockerrc", "--group", "Greeter",
+             "--group", "Wallpaper", "--group", "org.kde.image", "--group", "General",
+             "--key", key, value])
+    print(f"masonosctl: lock screen artwork set to {image}")
+    return 0
+
+
+def bot_command(action: str) -> int:
+    if action in ("restart", "start"):
+        stop_bot()
+        if start_bot():
+            print("masonosctl: bot bridge running")
+            return 0
+        print("masonosctl: bot bridge did not start; see ~/.cache/masonos/bot.log", file=sys.stderr)
+        return 1
+    if action == "stop":
+        stop_bot()
+        print("masonosctl: bot bridge stopped")
+        return 0
+    health = bot_health()
+    if health:
+        print(f"bot bridge      : running (configured: {'yes' if health.get('configured') else 'no'})")
+    else:
+        print("bot bridge      : stopped")
+    return 0
+
+
+def display_report(fix: bool) -> int:
+    info = kscreen_info()
+    if not info:
+        print("masonosctl: kscreen-doctor could not report an output.", file=sys.stderr)
+        return 1
+    scale = float(info["scale"] or 1.0)
+    notch = notch_info(scale)
+    target = recommended_scale(info["ppi"])
+    notched = bool(notch and notch["visible"])
+    bar = DEFAULT_BAR_HEIGHT
+    if notched:
+        bar = max(bar, int(math.ceil(notch["heightLogical"])) + 8)
+
+    print(f"output      : {info['name']} {info['width']}x{info['height']} "
+          f"(logical {info['logicalWidth']:.0f}px wide)")
+    print(f"scale       : {format_scale(scale)}  recommended {format_scale(target)} "
+          f"({info['ppi']:.0f} ppi -> {info['ppi'] / target:.0f} ppi effective)")
+    if notch:
+        print(f"notch       : {notch['heightPx']}px physical, {notch['heightLogical']:.0f}px logical, "
+              f"{'visible' if notch['visible'] else 'hidden by the kernel'}")
+    else:
+        print("notch       : none detected")
+    print(f"top bar     : {bar}px, "
+          + ("edge clusters with the centre clear" if notched else "centred clock"))
+
+    if not fix:
+        if scale < target - 0.05:
+            print("masonosctl: run `masonosctl display --fix` to apply this.")
+        return 0
+
+    manifest = read_manifest()
+    state = prepare_display(manifest)
+    write_manifest(manifest)
+    try:
+        panels = build_panels(state["barHeight"], state["notched"])
+    except RuntimeError as err:
+        print(f"masonosctl: {err}", file=sys.stderr)
+        return 1
+    manifest.update({"panels": panels, "updated": int(time.time())})
+    write_manifest(manifest)
+    after = kscreen_info() or info
+    notify("MasonOS", f"Display at {format_scale(after['scale'])}, bar {state['barHeight']}px.")
+    if scale >= target - 0.05:
+        print(f"masonosctl: scale {format_scale(scale)} is already at or above the "
+              f"recommendation; layout rebuilt, panels {panels}.")
+    else:
+        print(f"masonosctl: display at {format_scale(after['scale'])}, panels {panels}.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="masonosctl", description="Transform Plasma into MasonOS.")
+    parser.add_argument("command", nargs="?", default="toggle",
+                        choices=["on", "off", "reload", "toggle", "status", "display",
+                                 "lockscreen", "bot", "settings", "transform", "revert"])
+    parser.add_argument("action", nargs="?", default="status",
+                        help="with bot: status | start | stop | restart")
+    parser.add_argument("--quiet", action="store_true", help="no notifications")
+    parser.add_argument("--dry-run", action="store_true", help="show what transform would do")
+    parser.add_argument("--fix", action="store_true", help="with display: apply the recommended scaling")
+    args = parser.parse_args(argv)
+
+    command = {"transform": "on", "revert": "off"}.get(args.command, args.command)
+
+    if command == "status":
+        return status()
+    if command == "display":
+        return display_report(args.fix)
+    if command == "lockscreen":
+        return apply_lockscreen()
+    if command == "bot":
+        return bot_command(args.action)
+    if command == "settings":
+        fallback = Path.home() / ".local" / "bin" / "masonos-settings"
+        binary = shutil.which("masonos-settings") or str(fallback)
+        if not Path(binary).exists():
+            print("masonosctl: masonos-settings is not installed — run masonos/install.sh.",
+                  file=sys.stderr)
+            return 1
+        os.execvp(binary, [binary])
+    if command == "on":
+        return transform(args.dry_run, args.quiet)
+    if command == "off":
+        return revert(args.quiet)
+    if command == "toggle":
+        return revert(args.quiet) if read_manifest().get("active") else transform(False, args.quiet)
+
+    code = revert(args.quiet)
+    if code != 0:
+        return code
+    time.sleep(1.5)
+    return transform(False, args.quiet)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

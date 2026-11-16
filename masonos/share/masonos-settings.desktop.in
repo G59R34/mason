@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=MasonOS Settings
+GenericName=Desktop Settings
+Comment=Apply MasonOS, resize the bar and dock, configure Mason Bot
+Exec=@MASONOSCTL@ settings
+Icon=@ICON@
+Terminal=false
+Categories=Settings;DesktopSettings;Qt;
+Keywords=MasonOS;settings;dock;panel;theme;bot;notch;scale;
+StartupWMClass=masonos-settings

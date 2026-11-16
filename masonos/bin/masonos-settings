@@ -1,0 +1,600 @@
+#!/usr/bin/env python3
+"""MasonOS Settings — the control panel for the MasonOS shell.
+
+A small PySide6 (Qt Widgets) app: it reads state through `masonosctl`, edits the
+preferences file `~/.config/masonos/masonos.json`, and never touches Plasma
+directly itself. Everything it changes is reversible with `masonosctl off`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+HOME = Path.home()
+CONFIG_DIR = HOME / ".config" / "masonos"
+STATE_DIR = HOME / ".local" / "state" / "masonos"
+PREF_FILE = CONFIG_DIR / "masonos.json"
+BOT_FILE = CONFIG_DIR / "bot.json"
+SHARE = Path(__file__).resolve().parent.parent / "share"
+VERSION = "1.0"
+
+PALETTE = {
+    "bg": "#08080a",
+    "surface": "#12121a",
+    "surface_alt": "#17171f",
+    "border": "#26262f",
+    "text": "#f4f4f5",
+    "muted": "#9a9aa8",
+    "accent": "#8b5cf6",
+    "accent_soft": "#c4b5fd",
+    "ok": "#4ade80",
+    "warn": "#fbbf24",
+}
+
+QSS = f"""
+QWidget {{ background: {PALETTE['bg']}; color: {PALETTE['text']};
+           font-family: "DM Sans"; font-size: 14px; }}
+QLabel {{ background: transparent; }}
+#Sidebar {{ background: {PALETTE['surface']}; border-right: 1px solid {PALETTE['border']}; }}
+#Wordmark {{ font-family: "Syne"; font-size: 21px; font-weight: 700; letter-spacing: 1px; }}
+#Tagline {{ color: {PALETTE['muted']}; font-size: 11px; letter-spacing: 2px; }}
+#PageTitle {{ font-family: "Syne"; font-size: 24px; font-weight: 700; }}
+#PageHint {{ color: {PALETTE['muted']}; }}
+#Card {{ background: {PALETTE['surface']}; border: 1px solid {PALETTE['border']}; border-radius: 14px; }}
+#CardTitle {{ font-family: "Syne"; font-size: 15px; font-weight: 700; }}
+#Metric {{ color: {PALETTE['muted']}; }}
+#Value {{ color: {PALETTE['text']}; }}
+#Badge {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+          border-radius: 10px; padding: 3px 10px; color: {PALETTE['accent_soft']}; font-size: 12px; }}
+QPushButton {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+               border-radius: 10px; padding: 9px 16px; color: {PALETTE['text']}; }}
+QPushButton:hover {{ border-color: {PALETTE['accent']}; }}
+QPushButton:disabled {{ color: {PALETTE['muted']}; border-color: {PALETTE['border']}; }}
+QPushButton#Primary {{ background: {PALETTE['accent']}; border: none; color: #0b0b10; font-weight: 700; }}
+QPushButton#Primary:hover {{ background: {PALETTE['accent_soft']}; }}
+QPushButton#Danger {{ border-color: #7f1d1d; color: #fca5a5; }}
+QPushButton#Nav {{ background: transparent; border: none; text-align: left; padding: 10px 14px;
+                   border-radius: 10px; color: {PALETTE['muted']}; }}
+QPushButton#Nav:checked {{ background: {PALETTE['surface_alt']}; color: {PALETTE['text']};
+                           font-weight: 600; }}
+QPushButton#Nav:hover {{ color: {PALETTE['text']}; }}
+QLineEdit {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+             border-radius: 8px; padding: 8px 10px; }}
+QLineEdit:focus {{ border-color: {PALETTE['accent']}; }}
+QSlider::groove:horizontal {{ height: 4px; background: {PALETTE['border']}; border-radius: 2px; }}
+QSlider::handle:horizontal {{ background: {PALETTE['accent']}; width: 16px; margin: -6px 0;
+                              border-radius: 8px; }}
+QCheckBox {{ color: {PALETTE['muted']}; }}
+QScrollArea {{ border: none; }}
+"""
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def ctl_path() -> str:
+    found = shutil.which("masonosctl")
+    if found:
+        return found
+    return str(HOME / ".local" / "bin" / "masonosctl")
+
+
+def run_ctl(*args: str, timeout: int = 60) -> tuple[int, str]:
+    try:
+        proc = subprocess.run([ctl_path(), *args], capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return 1, str(err)
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def parse_status(text: str) -> dict:
+    out = {}
+    for line in text.splitlines():
+        if ":" in line:
+            key, _, value = line.partition(":")
+            out[key.strip()] = value.strip()
+    return out
+
+
+def load_prefs() -> dict:
+    defaults = {"barHeight": 45, "dockHeight": 48}
+    try:
+        data = json.loads(PREF_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return defaults
+    for key, default in defaults.items():
+        value = data.get(key)
+        if isinstance(value, (int, float)):
+            defaults[key] = max(32, min(96, int(value)))
+    return defaults
+
+
+def save_prefs(prefs: dict) -> None:
+    PREF_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PREF_FILE.write_text(json.dumps(prefs, indent=2) + "\n", encoding="utf-8")
+
+
+def load_bot() -> dict:
+    try:
+        return json.loads(BOT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_bot(data: dict) -> None:
+    BOT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BOT_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.chmod(BOT_FILE, 0o600)
+
+
+def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
+    frame = QFrame()
+    frame.setObjectName("Card")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(18, 16, 18, 16)
+    layout.setSpacing(10)
+    if title:
+        label = QLabel(title)
+        label.setObjectName("CardTitle")
+        layout.addWidget(label)
+    return frame, layout
+
+
+def section(parent_layout: QVBoxLayout, title: str, hint: str | None = None) -> QVBoxLayout:
+    frame, inner = card(title)
+    if hint:
+        caption = QLabel(hint)
+        caption.setObjectName("PageHint")
+        caption.setWordWrap(True)
+        inner.addWidget(caption)
+    parent_layout.addWidget(frame)
+    return inner
+
+
+def mark_pixmap(size: int = 26) -> QPixmap:
+    for candidate in (SHARE / "icons" / "masonos.svg", Path("/usr/share/icons/hicolor/scalable/apps/masonos.svg")):
+        if candidate.exists():
+            pix = QPixmap(str(candidate))
+            if not pix.isNull():
+                return pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    return QPixmap()
+
+
+# ── pages ─────────────────────────────────────────────────────────────────────
+
+class Page(QWidget):
+    def __init__(self, app: "MasonSettings"):
+        super().__init__()
+        self.app = app
+        self.body = QVBoxLayout(self)
+        self.body.setContentsMargins(26, 22, 26, 22)
+        self.body.setSpacing(14)
+
+    def title(self, text: str, hint: str | None = None) -> None:
+        label = QLabel(text)
+        label.setObjectName("PageTitle")
+        self.body.addWidget(label)
+        if hint:
+            sub = QLabel(hint)
+            sub.setObjectName("PageHint")
+            sub.setWordWrap(True)
+            self.body.addWidget(sub)
+
+    def refresh(self) -> None:
+        pass
+
+
+class OverviewPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Overview", "What MasonOS has applied right now.")
+        self.grid_frame, card_layout = card()
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(18)
+        self.grid.setVerticalSpacing(8)
+        card_layout.addLayout(self.grid)
+        self.body.addWidget(self.grid_frame)
+        self.rows: dict[str, QLabel] = {}
+
+        actions = QHBoxLayout()
+        self.apply_btn = QPushButton("Apply MasonOS")
+        self.apply_btn.setObjectName("Primary")
+        self.apply_btn.clicked.connect(lambda: self.app.ctl("Applying MasonOS…", "on"))
+        self.revert_btn = QPushButton("Revert to Plasma")
+        self.revert_btn.setObjectName("Danger")
+        self.revert_btn.clicked.connect(self.confirm_revert)
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.app.refresh_all)
+        actions.addWidget(self.apply_btn)
+        actions.addWidget(self.revert_btn)
+        actions.addStretch(1)
+        actions.addWidget(refresh_btn)
+        self.body.addLayout(actions)
+        self.body.addStretch(1)
+
+    def confirm_revert(self) -> None:
+        answer = QMessageBox.question(
+            self, "Revert to Plasma",
+            "Put your previous colour scheme, decoration, panels and settings back?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer == QMessageBox.Yes:
+            self.app.ctl("Reverting to Plasma…", "off")
+
+    def update_state(self, status: dict) -> None:
+        fields = [
+            ("Active", status.get("active", "—")),
+            ("Colour scheme", status.get("colour scheme", "—")),
+            ("Plasma style", status.get("plasma style", "—")),
+            ("Decoration", status.get("decoration", "—")),
+            ("Icons", status.get("icons", "—")),
+            ("Panels", status.get("panels", "—")),
+            ("Display", status.get("display", "—")),
+            ("Notch", status.get("notch", "none")),
+            ("Bot bridge", status.get("bot bridge", "—")),
+        ]
+        for index, (key, value) in enumerate(fields):
+            if key not in self.rows:
+                name = QLabel(key)
+                name.setObjectName("Metric")
+                val = QLabel(value)
+                val.setObjectName("Value")
+                val.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                self.grid.addWidget(name, index, 0)
+                self.grid.addWidget(val, index, 1)
+                self.rows[key] = val
+            else:
+                self.rows[key].setText(value)
+        active = status.get("active", "no") == "yes"
+        self.apply_btn.setEnabled(not active)
+        self.revert_btn.setEnabled(active)
+
+
+class PanelsPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Bar & dock", "Geometry is stored in ~/.config/masonos/masonos.json "
+                                "and rebuilt by masonosctl.")
+        prefs = load_prefs()
+
+        inner = section(self.body, "Top bar", "Taller bars read better under a notch; "
+                                             "on notched panels the bar never goes below the notch.")
+        self.bar_slider, self.bar_value = self._slider(inner, 40, 72, int(prefs["barHeight"]))
+        inner = section(self.body, "Dock", "The dock is a floating rounded capsule. "
+                                           "Smaller means more desktop, larger means bigger icons.")
+        self.dock_slider, self.dock_value = self._slider(inner, 36, 80, int(prefs["dockHeight"]))
+
+        actions = QHBoxLayout()
+        apply_btn = QPushButton("Rebuild panels")
+        apply_btn.setObjectName("Primary")
+        apply_btn.clicked.connect(self.apply)
+        reset_btn = QPushButton("Defaults (45 / 48)")
+        reset_btn.clicked.connect(self.reset)
+        actions.addWidget(apply_btn)
+        actions.addWidget(reset_btn)
+        actions.addStretch(1)
+        self.body.addLayout(actions)
+        note = QLabel("Rebuilding reloads plasmashell once; open windows stay open.")
+        note.setObjectName("PageHint")
+        self.body.addWidget(note)
+        self.body.addStretch(1)
+
+    def _slider(self, layout: QVBoxLayout, low: int, high: int, value: int):
+        row = QHBoxLayout()
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(low, high)
+        slider.setValue(value)
+        readout = QLabel(f"{value} px")
+        readout.setObjectName("Badge")
+        readout.setFixedWidth(64)
+        readout.setAlignment(Qt.AlignCenter)
+        slider.valueChanged.connect(lambda v: readout.setText(f"{v} px"))
+        row.addWidget(slider, 1)
+        row.addWidget(readout)
+        layout.addLayout(row)
+        return slider, readout
+
+    def reset(self) -> None:
+        self.bar_slider.setValue(45)
+        self.dock_slider.setValue(48)
+        self.apply()
+
+    def apply(self) -> None:
+        # Check the busy flag *before* saving, otherwise a click during a rebuild
+        # writes geometry that never gets built.
+        if self.app.busy.text():
+            return
+        prefs = {"barHeight": self.bar_slider.value(), "dockHeight": self.dock_slider.value()}
+        save_prefs(prefs)
+        self.app.ctl("Rebuilding panels…", "reload", reload_after=False)
+
+
+class BotPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Mason Bot", "The pill in the top bar asks a local bridge on "
+                                "127.0.0.1:8765, which holds the Supabase key.")
+        inner = section(self.body, "Bridge credentials")
+        self.url = self._field(inner, "Project URL", "https://…supabase.co")
+        self.func = self._field(inner, "Edge function", "smooth-service")
+        self.key = self._field(inner, "Anon key", "eyJ…", secret=True)
+        hint = QLabel("Stored in ~/.config/masonos/bot.json (mode 600). "
+                      "The key never leaves this machine except to your own Supabase project.")
+        hint.setObjectName("PageHint")
+        hint.setWordWrap(True)
+        inner.addWidget(hint)
+
+        actions = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        save_btn.setObjectName("Primary")
+        save_btn.clicked.connect(self.save)
+        restart_btn = QPushButton("Restart bridge")
+        restart_btn.clicked.connect(self.restart)
+        test_btn = QPushButton("Test")
+        test_btn.clicked.connect(self.test)
+        actions.addWidget(save_btn)
+        actions.addWidget(restart_btn)
+        actions.addWidget(test_btn)
+        actions.addStretch(1)
+        self.body.addLayout(actions)
+        self.result = QLabel("")
+        self.result.setObjectName("PageHint")
+        self.body.addWidget(self.result)
+        self.body.addStretch(1)
+        self.reload()
+
+    def _field(self, layout: QVBoxLayout, label: str, placeholder: str, secret: bool = False) -> QLineEdit:
+        caption = QLabel(label)
+        caption.setObjectName("Metric")
+        edit = QLineEdit()
+        edit.setPlaceholderText(placeholder)
+        if secret:
+            edit.setEchoMode(QLineEdit.Password)
+        layout.addWidget(caption)
+        layout.addWidget(edit)
+        return edit
+
+    def reload(self) -> None:
+        data = load_bot()
+        self.url.setText(str(data.get("projectUrl", "")))
+        self.func.setText(str(data.get("function", "smooth-service")))
+        self.key.setText(str(data.get("anonKey", "")))
+
+    def save(self, restart: bool = True) -> None:
+        data = load_bot()
+        data.update({
+            "projectUrl": self.url.text().strip(),
+            "function": self.func.text().strip() or "smooth-service",
+            "anonKey": self.key.text().strip(),
+        })
+        save_bot(data)
+        self.result.setText("Saved. Restarting the bridge…" if restart else "Saved.")
+        if restart:
+            self.restart()
+
+    def restart(self) -> None:
+        code, out = run_ctl("bot", "restart")
+        self.result.setText("Bridge restarted." if code == 0 else f"Bridge failed: {out.strip()[:160]}")
+
+    def test(self) -> None:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:8765/health", timeout=4) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            configured = payload.get("configured")
+            self.result.setText(f"Bridge is up (configured: {'yes' if configured else 'no'}).")
+        except Exception as err:  # noqa: BLE001 - report any transport problem in the UI
+            self.result.setText(f"No answer from the bridge: {err}")
+
+
+class DisplayPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Display", "MasonOS keeps the panel near 130 effective PPI and clears the notch.")
+        inner = section(self.body, "Current report")
+        self.report = QLabel("Reading…")
+        self.report.setObjectName("Value")
+        self.report.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.report.setWordWrap(True)
+        inner.addWidget(self.report)
+
+        actions = QHBoxLayout()
+        fix_btn = QPushButton("Apply recommended scaling")
+        fix_btn.setObjectName("Primary")
+        fix_btn.clicked.connect(lambda: self.app.ctl("Adjusting the display…", "display", "--fix",
+                                                    reload_after=False))
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh)
+        actions.addWidget(fix_btn)
+        actions.addWidget(refresh_btn)
+        actions.addStretch(1)
+        self.body.addLayout(actions)
+        self.body.addStretch(1)
+
+    def refresh(self) -> None:
+        code, out = run_ctl("display")
+        self.report.setText(out.strip() or "kscreen-doctor did not answer.")
+
+
+class AboutPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("About MasonOS", "A shell and identity for KDE Plasma on Fedora Asahi.")
+        inner = section(self.body, f"MasonOS {VERSION}")
+        for label, value in (
+            ("Shell", "Plasma panels, KWin decoration, Look-and-Feel, Mason Bot"),
+            ("Preferences", str(PREF_FILE)),
+            ("State & manifest", str(STATE_DIR / "manifest.json")),
+            ("Bot log", str(HOME / ".cache" / "masonos" / "bot.log")),
+        ):
+            row = QHBoxLayout()
+            name = QLabel(label)
+            name.setObjectName("Metric")
+            val = QLabel(value)
+            val.setObjectName("Value")
+            val.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            row.addWidget(name)
+            row.addStretch(1)
+            row.addWidget(val)
+            inner.addLayout(row)
+        note = QLabel("Every change here can be undone with `masonosctl off`.")
+        note.setObjectName("PageHint")
+        inner.addWidget(note)
+        self.body.addStretch(1)
+
+
+# ── window ────────────────────────────────────────────────────────────────────
+
+class MasonSettings(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("MasonOS Settings")
+        self.setMinimumSize(880, 600)
+        self.resize(980, 660)
+        icon = mark_pixmap(64)
+        if not icon.isNull():
+            self.setWindowIcon(QIcon(icon))
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        sidebar = QWidget()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(228)
+        side = QVBoxLayout(sidebar)
+        side.setContentsMargins(18, 20, 18, 18)
+        side.setSpacing(6)
+
+        head = QHBoxLayout()
+        logo = QLabel()
+        logo.setPixmap(mark_pixmap(28))
+        word = QLabel("MasonOS")
+        word.setObjectName("Wordmark")
+        head.addWidget(logo)
+        head.addWidget(word)
+        head.addStretch(1)
+        side.addLayout(head)
+        tag = QLabel("SETTINGS")
+        tag.setObjectName("Tagline")
+        side.addWidget(tag)
+        side.addSpacing(14)
+
+        self.pages = QStackedWidget()
+        self.overview = OverviewPage(self)
+        self.panels = PanelsPage(self)
+        self.bot = BotPage(self)
+        self.display = DisplayPage(self)
+        self.about = AboutPage(self)
+        nav_specs = [("Overview", self.overview), ("Bar && dock", self.panels),
+                     ("Mason Bot", self.bot), ("Display", self.display), ("About", self.about)]
+        self.nav_buttons = []
+        for index, (label, page) in enumerate(nav_specs):
+            button = QPushButton(label)
+            button.setObjectName("Nav")
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            button.clicked.connect(lambda _=False, i=index: self.show_page(i))
+            side.addWidget(button)
+            self.nav_buttons.append(button)
+            self.pages.addWidget(page)
+
+        side.addStretch(1)
+        self.status_badge = QLabel("reading state…")
+        self.status_badge.setObjectName("Badge")
+        self.status_badge.setWordWrap(True)
+        side.addWidget(self.status_badge)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.pages)
+
+        root.addWidget(sidebar)
+        root.addWidget(scroll, 1)
+
+        self.busy = QLabel("")
+        self.busy.setObjectName("PageHint")
+        side.addWidget(self.busy)
+
+        self.refresh_all()
+
+    def show_page(self, index: int) -> None:
+        self.pages.setCurrentIndex(index)
+        for i, button in enumerate(self.nav_buttons):
+            button.setChecked(i == index)
+        page = self.pages.currentWidget()
+        if hasattr(page, "refresh"):
+            page.refresh()
+
+    def refresh_all(self) -> None:
+        code, out = run_ctl("status")
+        status = parse_status(out)
+        self.overview.update_state(status)
+        active = status.get("active") == "yes"
+        self.status_badge.setText(
+            f"{'MasonOS active' if active else 'Plasma'}"
+            + (f"\n{status.get('display', '')}" if status.get("display") else "")
+        )
+        self.display.refresh()
+        self.bot.reload()
+
+    def ctl(self, label: str, *args: str, reload_after: bool = True) -> None:
+        if self.busy.text():
+            return
+        self.busy.setText(label)
+        self.setEnabled(False)
+        self._process = QProcess(self)
+        self._process.finished.connect(lambda code, _status: self._ctl_done(code, reload_after))
+        self._process.start(ctl_path(), list(args))
+
+    def _ctl_done(self, code: int, reload_after: bool) -> None:
+        self.setEnabled(True)
+        if code == 0:
+            self.busy.setText("")
+        else:
+            self.busy.setText("That step failed — see the journal for details.")
+        if reload_after:
+            QTimer.singleShot(400, self.refresh_all)
+
+
+def main(argv: list[str]) -> int:
+    app = QApplication(argv)
+    app.setApplicationName("MasonOS Settings")
+    app.setStyleSheet(QSS)
+    window = MasonSettings()
+    if "--screenshot" in argv:
+        target = argv[argv.index("--screenshot") + 1]
+        window.show()
+        app.processEvents()
+        window.grab().save(target)
+        print(f"wrote {target}")
+        return 0
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

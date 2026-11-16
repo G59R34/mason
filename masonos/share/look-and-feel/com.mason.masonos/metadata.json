@@ -1,0 +1,19 @@
+{
+  "KPackageStructure": "Plasma/LookAndFeel",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "MasonOS"
+      }
+    ],
+    "Category": "",
+    "Description": "MasonOS — gnome-shaped, plasma-powered",
+    "Id": "com.mason.masonos",
+    "License": "MIT",
+    "Name": "MasonOS",
+    "Version": "1.0",
+    "Website": ""
+  },
+  "Keywords": "Desktop;Workspace;Appearance;Look and Feel;MasonOS;",
+  "X-Plasma-APIVersion": "2"
+}

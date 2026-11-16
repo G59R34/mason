@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MasonOS Aurorae frame.
+
+     The canvas is exactly the titlebar (TitleHeight=24 in MasonOSrc) and there
+     are no side or bottom borders. A taller canvas with a transparent body made
+     KWin reserve frame space it never painted, which left a see-through seam
+     between the bar and the window contents.
+
+     Shapes use plain presentation attributes, not <style> classes: Qt's SVG
+     renderer does not apply stylesheet rules reliably, which is what turned the
+     window buttons into grey blocks. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 48 24">
+  <defs>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1a22"/>
+      <stop offset="1" stop-color="#121218"/>
+    </linearGradient>
+    <linearGradient id="barInactive" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15151b"/>
+      <stop offset="1" stop-color="#0f0f14"/>
+    </linearGradient>
+  </defs>
+
+  <!-- active titlebar -->
+  <g id="decoration-topleft">
+    <path d="M0 10 A10 10 0 0 1 10 0 L10 24 L0 24 Z" fill="url(#bar)"/>
+    <path d="M0.5 10 A9.5 9.5 0 0 1 10 0.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.26" stroke-width="1"/>
+  </g>
+  <g id="decoration-top">
+    <rect x="10" y="0" width="28" height="24" fill="url(#bar)"/>
+    <rect x="10" y="0" width="28" height="1" fill="#c4b5fd" fill-opacity="0.13"/>
+  </g>
+  <g id="decoration-topright">
+    <path d="M38 0 A10 10 0 0 1 48 10 L48 24 L38 24 Z" fill="url(#bar)"/>
+    <path d="M47.5 10 A9.5 9.5 0 0 0 38 0.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.26" stroke-width="1"/>
+  </g>
+
+  <!-- inactive titlebar -->
+  <g id="decoration-inactive-topleft">
+    <path d="M0 10 A10 10 0 0 1 10 0 L10 24 L0 24 Z" fill="url(#barInactive)"/>
+  </g>
+  <g id="decoration-inactive-top">
+    <rect x="10" y="0" width="28" height="24" fill="url(#barInactive)"/>
+  </g>
+  <g id="decoration-inactive-topright">
+    <path d="M38 0 A10 10 0 0 1 48 10 L48 24 L38 24 Z" fill="url(#barInactive)"/>
+  </g>
+
+  <!-- zero-height reminders of the body pieces: KWin asks for them even though
+       nothing is painted outside the titlebar -->
+  <g id="decoration-center"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-left"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-right"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-bottom"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-bottomleft"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-bottomright"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+
+  <g id="decoration-inactive-center"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-left"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-right"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-bottom"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-bottomleft"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-bottomright"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+</svg>

@@ -1,0 +1,21 @@
+[Icon Theme]
+Name=MasonOS
+Comment=MasonOS icon overrides on top of Breeze Dark
+Inherits=breeze-dark,breeze,hicolor
+Directories=scalable/apps,scalable/places
+
+[scalable/apps]
+Size=48
+Scale=1
+Context=Applications
+Type=Scalable
+MinSize=16
+MaxSize=512
+
+[scalable/places]
+Size=48
+Scale=1
+Context=Places
+Type=Scalable
+MinSize=16
+MaxSize=512

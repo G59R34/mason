@@ -1,0 +1,19 @@
+{
+  "KPlugin": {
+    "Id": "com.mason.masonos.bot",
+    "Name": "Mason Bot",
+    "Description": "Mason Bot, one click from the MasonOS panel",
+    "Icon": "dialog-messages",
+    "Authors": [
+      {
+        "Name": "MasonOS"
+      }
+    ],
+    "License": "MIT",
+    "Version": "1.0.0",
+    "Category": "Online Services"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-MainScript": "ui/main.qml",
+  "KPackageStructure": "Plasma/Applet"
+}

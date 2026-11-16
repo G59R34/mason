@@ -1,0 +1,33 @@
+/* MasonOS GTK accent — included from ~/.config/gtk-{3,4}.0/gtk.css */
+
+@define-color theme_selected_bg_color #8b5cf6;
+@define-color theme_selected_fg_color #ffffff;
+@define-color theme_fg_color #f4f4f5;
+@define-color theme_text_color #f4f4f5;
+@define-color theme_bg_color #0f0f13;
+@define-color theme_base_color #08080a;
+@define-color insensitive_fg_color #71717a;
+
+@define-color accent_color #c4b5fd;
+@define-color accent_bg_color #8b5cf6;
+@define-color accent_fg_color #ffffff;
+
+@define-color window_bg_color #0f0f13;
+@define-color window_fg_color #f4f4f5;
+@define-color view_bg_color #08080a;
+@define-color view_fg_color #f4f4f5;
+@define-color headerbar_bg_color #14141a;
+@define-color headerbar_fg_color #f4f4f5;
+@define-color card_bg_color #15151b;
+@define-color popover_bg_color #15151b;
+@define-color success_color #34d399;
+@define-color warning_color #fbbf24;
+@define-color error_color #f87171;
+
+selection,
+*:selected,
+row:selected,
+.view:selected {
+  background-color: #8b5cf6;
+  color: #ffffff;
+}

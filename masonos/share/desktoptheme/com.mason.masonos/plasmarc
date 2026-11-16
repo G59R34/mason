@@ -1,0 +1,8 @@
+[Wallpaper]
+defaultWallpaperTheme=MasonOS
+defaultFileSuffix=.png
+defaultWidth=2560
+defaultHeight=1664
+
+[AdaptiveTransparency]
+enabled=true

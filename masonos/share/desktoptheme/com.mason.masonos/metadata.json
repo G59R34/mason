@@ -1,0 +1,16 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "MasonOS"
+      }
+    ],
+    "Category": "",
+    "Description": "MasonOS plasma style: violet-black surfaces with a hairline edge",
+    "Id": "com.mason.masonos",
+    "License": "MIT",
+    "Name": "MasonOS",
+    "Version": "1.0"
+  },
+  "X-Plasma-API": "5.0"
+}

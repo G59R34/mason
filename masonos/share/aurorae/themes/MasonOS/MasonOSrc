@@ -1,0 +1,43 @@
+[General]
+ActiveTextColor=244,244,245,255
+InactiveTextColor=140,140,152,215
+TitleAlignment=Center
+TitleVerticalAlignment=Center
+UseTextShadow=false
+ActiveTextShadowColor=0,0,0,255
+InactiveTextShadowColor=0,0,0,255
+TextShadowOffsetX=0
+TextShadowOffsetY=1
+LeftButtons=
+RightButtons=IAX
+Shadow=false
+Animation=1
+
+# The frame is a titlebar and nothing else: no side or bottom borders and no
+# padding, so the client area starts exactly below the bar (a taller canvas used
+# to leave an unpainted, see-through seam).
+[Layout]
+BorderLeft=0
+BorderRight=0
+BorderBottom=0
+TitleHeight=24
+TitleEdgeTop=0
+TitleEdgeBottom=0
+TitleEdgeLeft=14
+TitleEdgeRight=14
+TitleBorderLeft=0
+TitleBorderRight=0
+ButtonWidth=20
+ButtonHeight=20
+ButtonSpacing=8
+ButtonMarginTop=0
+ButtonMarginLeft=6
+ExplicitButtonSpacer=0
+PaddingTop=0
+PaddingBottom=0
+PaddingRight=0
+PaddingLeft=0
+TitleEdgeTopMaximized=0
+TitleEdgeBottomMaximized=0
+TitleEdgeLeftMaximized=14
+TitleEdgeRightMaximized=14

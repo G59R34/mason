@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MasonOS close button: glyph only, no plate behind it at any state, so the
+     controls can never read as grey boxes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+  <g id="active-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#e9e9f2" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  <g id="hover-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round"/>
+  </g>
+  <g id="pressed-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#c4b5fd" stroke-width="1.9" stroke-linecap="round"/>
+  </g>
+  <g id="inactive-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#8a8a96" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  <g id="hover-inactive-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#c2c2ce" stroke-width="1.7" stroke-linecap="round"/>
+  </g>
+  <g id="deactivated-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#71717c" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  <g id="deactivated-inactive-center">
+    <rect x="0" y="0" width="20" height="20" fill="#000000" fill-opacity="0"/>
+    <path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" fill="none" stroke="#71717c" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+</svg>

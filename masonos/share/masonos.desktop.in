@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Transform MasonOS
+GenericName=Desktop shell
+Comment=Apply, reload or remove the MasonOS shell
+Exec=@MASONOSCTL@ reload
+Icon=@ICON@
+Terminal=false
+StartupNotify=false
+Categories=System;Settings;
+Keywords=masonos;shell;desktop;transform;reload;

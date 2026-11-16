@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MasonOS panel frame. 64x64 canvas, 12px 9-slice margins: Plasma takes the
+     panel's content inset from these margins, so they stay modest while the
+     corner arcs give the floating dock its capsule shape. Corners are drawn as
+     real filled pie slices — the previous degenerate paths left every panel
+     square. The body is light enough to read as glass against a dark wallpaper,
+     with a violet rim all the way round. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#23232f" stop-opacity="0.84"/>
+      <stop offset="0.5" stop-color="#171720" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#101017" stop-opacity="0.96"/>
+    </linearGradient>
+  </defs>
+
+  <rect id="center" x="12" y="12" width="40" height="40" fill="url(#body)"/>
+
+  <rect id="top" x="12" y="0" width="40" height="12" fill="url(#body)"/>
+  <rect id="bottom" x="12" y="52" width="40" height="12" fill="url(#body)"/>
+  <rect id="left" x="0" y="12" width="12" height="40" fill="url(#body)"/>
+  <rect id="right" x="52" y="12" width="12" height="40" fill="url(#body)"/>
+
+  <!-- rounded corners: the panel area inside each 12x12 tile -->
+  <path id="topleft" d="M0 12 A12 12 0 0 1 12 0 L12 12 Z" fill="url(#body)"/>
+  <path id="topright" d="M52 0 A12 12 0 0 1 64 12 L52 12 Z" fill="url(#body)"/>
+  <path id="bottomleft" d="M0 52 A12 12 0 0 0 12 64 L12 52 Z" fill="url(#body)"/>
+  <path id="bottomright" d="M52 64 A12 12 0 0 0 64 52 L52 52 Z" fill="url(#body)"/>
+
+  <!-- violet rim, one piece per tile so the 9-slice keeps it 1px everywhere -->
+  <path id="topleft-hair" d="M0.5 12 A11.5 11.5 0 0 1 12 0.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.34" stroke-width="1"/>
+  <rect id="shadow-top" x="12" y="0" width="40" height="1" fill="#c4b5fd" fill-opacity="0.26"/>
+  <path id="topright-hair" d="M52 0.5 A11.5 11.5 0 0 1 63.5 12" fill="none" stroke="#c4b5fd" stroke-opacity="0.34" stroke-width="1"/>
+  <rect id="left-hair" x="0" y="12" width="1" height="40" fill="#ffffff" fill-opacity="0.10"/>
+  <rect id="right-hair" x="63" y="12" width="1" height="40" fill="#ffffff" fill-opacity="0.10"/>
+  <path id="bottomleft-hair" d="M0.5 52 A11.5 11.5 0 0 0 12 63.5" fill="none" stroke="#000000" stroke-opacity="0.50" stroke-width="1"/>
+  <rect id="shadow-bottom" x="12" y="63" width="40" height="1" fill="#000000" fill-opacity="0.50"/>
+  <path id="bottomright-hair" d="M52 63.5 A11.5 11.5 0 0 0 63.5 52" fill="none" stroke="#000000" stroke-opacity="0.50" stroke-width="1"/>
+</svg>

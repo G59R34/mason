@@ -1,0 +1,24 @@
+[kdeglobals][KDE]
+widgetStyle=Breeze
+
+[kdeglobals][General]
+ColorScheme=MasonOS
+font=DM Sans,10
+menuFont=DM Sans,10
+toolBarFont=DM Sans,10
+
+[kdeglobals][Icons]
+Theme=MasonOS
+
+[plasmarc][Theme]
+name=com.mason.masonos
+
+[kcminputrc][Mouse]
+cursorTheme=breeze_cursors
+
+[kwinrc][org.kde.kdecoration2]
+library=org.kde.kwin.aurorae.v2
+theme=__aurorae__svg__MasonOS
+
+[ksplashrc][KSplash]
+Theme=com.mason.masonos
