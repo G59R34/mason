@@ -48,7 +48,26 @@ pick_dialog() {
 
 readonly UI_ERR="/tmp/masonos-gui-error.txt"
 
-ui() { "$DIALOG" --backtitle "$BACKTITLE" --stdout "$@"; }
+# The two back ends split the job differently: dialog draws on stdout and writes
+# the answer to stderr, whiptail draws on stderr and writes the answer to stdout.
+# Both are driven by pushing the drawing to /dev/tty and letting the command
+# substitution keep the answer in UI_OUT. --stdout is dialog's way of asking for
+# that; whiptail rejects it, --form and --yes-label too, and the plain Arch ISO
+# ships whiptail and not dialog — asking for dialog-only flags is what made this
+# window fall back to the text installer on a real ISO.
+ui() {
+  if [[ "$DIALOG" == "dialog" ]]; then
+    UI_OUT="$("$DIALOG" --backtitle "$BACKTITLE" --stdout "$@" 2>/dev/tty)"
+  else
+    UI_OUT="$("$DIALOG" --backtitle "$BACKTITLE" "$@" 2>/dev/tty)"
+  fi
+}
+
+# Buttons: dialog says --yes-label, whiptail --yes-button.
+yes_no_labels() {
+  if [[ "$DIALOG" == "dialog" ]]; then printf '%s\n' --yes-label "$1" --no-label "$2"
+  else printf '%s\n' --yes-button "$1" --no-button "$2"; fi
+}
 
 # The menus need a terminal, and a sane TERM. Both are forced here so that a
 # dialog error is reported instead of just returning to a black screen.
@@ -68,15 +87,15 @@ gui_broken() {
 # caller would carry on with an empty value. Read UI_OUT after the call instead.
 UI_OUT=""
 ui_or_quit() {
-  local out rc=0
-  out="$(ui "$@" 2>"$UI_ERR")" || rc=$?
+  local rc=0
+  ui "$@" || rc=$?
   if (( rc == 1 )); then
     cls
     printf 'MasonOS: cancelled — nothing was changed.\n'
     exit 1
   fi
   (( rc != 0 )) && gui_broken "$rc"
-  UI_OUT="$out"
+  return 0
 }
 
 # ── screens ──────────────────────────────────────────────────────────────────
@@ -90,7 +109,7 @@ screen_welcome() {
     ·  erase one disk completely (no undo, no backup)\n\
     ·  install Arch Linux, Plasma 6, SDDM, PipeWire and the drivers\n\
     ·  set up Maz's user account and install MasonOS into it\n\n\
-  Next: pick the disk.\n" 20 74 2>"$UI_ERR" || {
+  Next: pick the disk.\n" 20 74 || {
     rc=$?
     # 1 means the No/Quit button; anything else is the interface failing.
     if (( rc == 1 )); then cls; printf 'Nothing was changed.\n'; exit 0; fi
@@ -147,12 +166,22 @@ screen_disk() {
 }
 
 screen_identity() {
-  ui_or_quit --title "Account" --form \
-    "\n  The account MasonOS uses. It gets sudo (wheel group).\n" \
-    14 66 2 \
-    "Hostname:" 1 2  "$HOSTNAME_VALUE" 1 16 30 32 \
-    "Username:" 2 2  "$USERNAME_VALUE" 2 16 30 32
-  { read -r HOSTNAME_VALUE; read -r USERNAME_VALUE; } <<< "$UI_OUT"
+  if [[ "$DIALOG" == "dialog" ]]; then
+    ui_or_quit --title "Account" --form \
+      "\n  The account MasonOS uses. It gets sudo (wheel group).\n" \
+      14 66 2 \
+      "Hostname:" 1 2  "$HOSTNAME_VALUE" 1 16 30 32 \
+      "Username:" 2 2  "$USERNAME_VALUE" 2 16 30 32
+    { read -r HOSTNAME_VALUE; read -r USERNAME_VALUE; } <<< "$UI_OUT"
+  else
+    # whiptail has no form widget: two questions instead of one.
+    ui_or_quit --title "Account" --inputbox \
+      "\n  Hostname for this machine:\n" 10 66 "$HOSTNAME_VALUE"
+    HOSTNAME_VALUE="$UI_OUT"
+    ui_or_quit --title "Account" --inputbox \
+      "\n  Username (it gets sudo via the wheel group):\n" 10 66 "$USERNAME_VALUE"
+    USERNAME_VALUE="$UI_OUT"
+  fi
   [[ "$USERNAME_VALUE" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
     || die "invalid username: $USERNAME_VALUE (lowercase letters, digits, _ and -)"
   [[ "$HOSTNAME_VALUE" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] \
@@ -165,11 +194,11 @@ screen_identity() {
     ui_or_quit --title "Password" --passwordbox "\n  Same password again:\n" 10 60
     second="$UI_OUT"
     if [[ -z "$first" ]]; then
-      ui --title "Password" --msgbox "\n  The password cannot be empty.\n" 8 60
+      ui --title "Password" --msgbox "\n  The password cannot be empty.\n" 8 60 || true
       continue
     fi
     if [[ "$first" != "$second" ]]; then
-      ui --title "Password" --msgbox "\n  Those did not match — try again.\n" 8 60
+      ui --title "Password" --msgbox "\n  Those did not match — try again.\n" 8 60 || true
       continue
     fi
     PASSWORD_VALUE="$first"
@@ -250,11 +279,11 @@ screen_options() {
         "\n  Same passphrase again:\n" 10 66
       second="$UI_OUT"
       if [[ -z "$first" ]]; then
-        ui --title "Disk encryption" --msgbox "\n  The passphrase cannot be empty.\n" 8 64
+        ui --title "Disk encryption" --msgbox "\n  The passphrase cannot be empty.\n" 8 64 || true
         continue
       fi
       [[ "$first" == "$second" ]] && { LUKS_PASSWORD="$first"; break; }
-      ui --title "Disk encryption" --msgbox "\n  Those did not match — try again.\n" 8 64
+      ui --title "Disk encryption" --msgbox "\n  Those did not match — try again.\n" 8 64 || true
     done
   fi
 }
@@ -291,7 +320,9 @@ EOF
 }
 
 screen_confirm() {
-  ui --title "Confirm" --yes-label "Install" --no-label "Back to start" \
+  local -a labels
+  mapfile -t labels < <(yes_no_labels "Install" "Back to start")
+  ui --title "Confirm" "${labels[@]}" \
     --yesno "$(summary_text)" 20 76 || main
 }
 
