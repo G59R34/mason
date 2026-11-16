@@ -1,0 +1,1066 @@
+#!/usr/bin/env python3
+"""Mason's Terminal — the terminal for MasonOS.
+
+A real terminal, not a text box: a PTY, a VT100/xterm emulator with colours,
+scrollback, alternate screen and cursor addressing, so full-screen programs
+(vim, htop, less) behave the way they should, and the MasonOS palette everywhere
+else.
+
+    masons-terminal                your shell, in your home directory
+    masons-terminal --dir ~/Code   start somewhere specific
+    masons-terminal -- htop        run one command instead of a shell
+    masons-terminal --trace FILE   replay a byte stream and print the screen
+                                   (no window; used for checks)
+    masons-terminal --screenshot out.png
+
+Qt ships no terminal widget and this distro has no qtermwidget/VTE bindings, so
+the emulation below is the small, honest subset of xterm that programs use.
+"""
+
+from __future__ import annotations
+
+import codecs
+import fcntl
+import os
+import pty
+import select
+import shlex
+import signal
+import struct
+import sys
+import termios
+from dataclasses import dataclass
+
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, QSocketNotifier, Signal
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QGuiApplication,
+    QKeySequence,
+    QPainter,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QScrollBar,
+    QVBoxLayout,
+    QWidget,
+)
+
+VERSION = "1.0"
+
+# MasonOS colours: violet-black surfaces, the accent for selections and the
+# standard sixteen tuned so reds/greens stay readable on #08080a.
+BG = "#08080a"
+FG = "#e6e6ea"
+CURSOR = "#8b5cf6"
+SELECTION = "#3b2f6b"
+BORDER = "#26262f"
+MUTED = "#9a9aa8"
+ACCENT = "#c4b5fd"
+
+ANSI_16 = [
+    "#0b0b10", "#f0a3a3", "#a8d48b", "#f5d493",
+    "#a9b8f5", "#d3a8f5", "#93d7d7", "#d7d7de",
+    "#3d3d4d", "#ffb4b4", "#c4f0a8", "#ffe6ae",
+    "#c7d2ff", "#e6c7ff", "#b0f0f0", "#f5f5fa",
+]
+
+DEFAULT_FG = "fg"
+DEFAULT_BG = "bg"
+
+BOLD, DIM, ITALIC, UNDERLINE, REVERSE = 1, 2, 4, 8, 16
+
+PLACEHOLDER = " "
+
+
+# ── emulator ─────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Cell:
+    char: str = PLACEHOLDER
+    fg: str = DEFAULT_FG
+    bg: str = DEFAULT_BG
+    attrs: int = 0
+
+    def styled(self, fg: str, bg: str, attrs: int) -> "Cell":
+        return Cell(self.char, fg, bg, attrs)
+
+
+BLANK = Cell()
+
+
+class Terminal:
+    """A VT100/xterm screen: grid, scrollback, attributes, and a byte parser."""
+
+    def __init__(self, cols: int = 80, rows: int = 24, scrollback: int = 4000):
+        self.cols, self.rows = max(2, cols), max(2, rows)
+        self.scrollback_limit = scrollback
+        self.history: list[list[Cell]] = []
+        self.grid: list[list[Cell]] = [self._blank_line() for _ in range(self.rows)]
+        self.x = self.y = 0
+        self.top, self.bottom = 0, self.rows - 1
+        self.fg, self.bg, self.attrs = DEFAULT_FG, DEFAULT_BG, 0
+        self.wrap_pending = False
+        self.wrap = True
+        self.app_cursor = False
+        self.origin = False
+        self.cursor_visible = True
+        self.insert_mode = False
+        self.saved_cursor = (0, 0, DEFAULT_FG, DEFAULT_BG, 0)
+        self.title = ""
+        self.responses: list[bytes] = []
+        self.altscreen_saved: tuple | None = None
+        self._state = "normal"
+        self._buf = ""
+        self._params = ""
+        self._charset = ""
+        self.bell = False
+
+    # ── grid helpers ────────────────────────────────────────────────────────
+    def _blank_line(self) -> list[Cell]:
+        return [Cell() for _ in range(self.cols)]
+
+    def _cell_values(self) -> tuple[str, str, int]:
+        fg, bg = self.fg, self.bg
+        if self.attrs & REVERSE:
+            fg, bg = (DEFAULT_BG if bg == DEFAULT_BG else bg), (DEFAULT_FG if fg == DEFAULT_FG else fg)
+        return fg, bg, self.attrs
+
+    def _put(self, char: str) -> None:
+        if self.wrap_pending:
+            self.wrap_pending = False
+            if self.wrap:
+                self.x = 0
+                self._linefeed()
+        if self.insert_mode:
+            line = self.grid[self.y]
+            line.insert(self.x, Cell())
+            del line[self.cols:]
+            line[self.x] = Cell(char, *self._cell_values())
+        else:
+            self.grid[self.y][self.x] = Cell(char, *self._cell_values())
+        if self.x + 1 >= self.cols:
+            self.wrap_pending = True
+        else:
+            self.x += 1
+
+    def _linefeed(self) -> None:
+        if self.y == self.bottom:
+            self.scroll_up(1)
+        elif self.y < self.rows - 1:
+            self.y += 1
+        self.wrap_pending = False
+
+    def scroll_up(self, count: int = 1) -> None:
+        for _ in range(max(1, count)):
+            if self.top == 0 and self.altscreen_saved is None:
+                self.history.append(self.grid[0])
+                if len(self.history) > self.scrollback_limit:
+                    del self.history[0]
+            if self.top <= self.bottom:
+                del self.grid[self.top]
+                self.grid.insert(self.bottom, self._blank_line())
+
+    def scroll_down(self, count: int = 1) -> None:
+        for _ in range(max(1, count)):
+            if self.top <= self.bottom:
+                del self.grid[self.bottom]
+                self.grid.insert(self.top, self._blank_line())
+
+    def erase_line(self, row: int, start: int, end: int) -> None:
+        line = self.grid[row]
+        fg, bg, attrs = self._cell_values()
+        for col in range(max(0, start), min(self.cols, end)):
+            line[col] = Cell(PLACEHOLDER, fg, bg, attrs)
+
+    def erase_screen(self, mode: int) -> None:
+        self.wrap_pending = False
+        if mode == 0:
+            self.erase_line(self.y, self.x, self.cols)
+            for row in range(self.y + 1, self.rows):
+                self.erase_line(row, 0, self.cols)
+        elif mode == 1:
+            for row in range(0, self.y):
+                self.erase_line(row, 0, self.cols)
+            self.erase_line(self.y, 0, self.x + 1)
+        else:
+            for row in range(self.rows):
+                self.erase_line(row, 0, self.cols)
+            if mode == 3:
+                self.history.clear()
+
+    # ── parsing ─────────────────────────────────────────────────────────────
+    def feed(self, text: str) -> None:
+        for char in text:
+            self._feed(char)
+
+    def _feed(self, char: str) -> None:
+        if self._state == "normal":
+            if char == "\x1b":
+                self._state = "esc"
+            elif char == "\r":
+                self.x = 0
+                self.wrap_pending = False
+            elif char == "\n":
+                self._linefeed()
+            elif char == "\b":
+                if self.x > 0:
+                    self.x -= 1
+                self.wrap_pending = False
+            elif char == "\t":
+                stop = (self.x // 8 + 1) * 8
+                while self.x < min(stop, self.cols - 1):
+                    self._put(" ")
+                self.wrap_pending = False
+            elif char == "\a":
+                self.bell = True
+            elif char == "\x0e" or char == "\x0f":
+                pass
+            elif ord(char) < 32:
+                pass
+            else:
+                self._put(char)
+            return
+
+        if self._state == "esc":
+            self._state = "normal"
+            if char == "[":
+                self._state = "csi"
+                self._params = ""
+            elif char == "]":
+                self._state = "osc"
+                self._buf = ""
+            elif char in "()":
+                self._state = "charset"
+            elif char == "7":
+                self.saved_cursor = (self.x, self.y, self.fg, self.bg, self.attrs)
+            elif char == "8":
+                self.x, self.y, self.fg, self.bg, self.attrs = self.saved_cursor
+            elif char == "D":
+                self._linefeed()
+            elif char == "E":
+                self.x = 0
+                self._linefeed()
+            elif char == "M":
+                if self.y == self.top:
+                    self.scroll_down(1)
+                elif self.y > 0:
+                    self.y -= 1
+            elif char == "c":
+                self.reset()
+            return
+
+        if self._state == "charset":
+            self._charset = char
+            self._state = "normal"
+            return
+
+        if self._state == "osc":
+            if char == "\a":
+                self._finish_osc()
+            elif char == "\x1b":
+                self._state = "osc_esc"
+            else:
+                self._buf += char
+            return
+
+        if self._state == "osc_esc":
+            self._finish_osc()
+            return
+
+        if self._state == "csi":
+            if "0" <= char <= "9" or char in ";?<=>!":
+                self._params += char
+            elif "@" <= char <= "~":
+                self._state = "normal"
+                self._apply_csi(char, self._params)
+            else:
+                self._state = "normal"
+            return
+
+    def _finish_osc(self) -> None:
+        payload = self._buf
+        self._buf = ""
+        self._state = "normal"
+        if payload.startswith(("0;", "2;")):
+            self.title = payload.split(";", 1)[1]
+        elif payload.startswith(("1;",)):
+            pass
+
+    @staticmethod
+    def _params_of(raw: str) -> list[int]:
+        cleaned = raw.lstrip("?<=>!")
+        if not cleaned:
+            return []
+        out: list[int] = []
+        for part in cleaned.split(";"):
+            if part == "":
+                out.append(0)
+            elif part.isdigit():
+                out.append(int(part))
+            else:
+                out.append(0)
+        return out
+
+    def _apply_csi(self, final: str, raw: str) -> None:
+        private = raw.startswith("?")
+        params = self._params_of(raw)
+        first = params[0] if params else 0
+
+        if final == "m":
+            self._apply_sgr(params or [0])
+            return
+        if final == "H" or final == "f":
+            row = (params[0] if len(params) > 0 and params[0] else 1) - 1
+            col = (params[1] if len(params) > 1 and params[1] else 1) - 1
+            if self.origin:
+                row = min(self.bottom, self.top + max(0, row))
+            self.y = max(0, min(self.rows - 1, row))
+            self.x = max(0, min(self.cols - 1, col))
+            self.wrap_pending = False
+            return
+        if final == "A":
+            self.y = max(self.top if self.y > self.top else 0, self.y - max(1, first))
+            self.wrap_pending = False
+            return
+        if final == "B":
+            self.y = min(self.bottom if self.y < self.bottom else self.rows - 1,
+                         self.y + max(1, first))
+            self.wrap_pending = False
+            return
+        if final == "C":
+            self.x = min(self.cols - 1, self.x + max(1, first))
+            self.wrap_pending = False
+            return
+        if final == "D":
+            self.x = max(0, self.x - max(1, first))
+            self.wrap_pending = False
+            return
+        if final == "E":
+            self.x = 0
+            self.y = min(self.rows - 1, self.y + max(1, first))
+            return
+        if final == "F":
+            self.x = 0
+            self.y = max(0, self.y - max(1, first))
+            return
+        if final == "G" or final == "`":
+            self.x = max(0, min(self.cols - 1, max(1, first) - 1))
+            self.wrap_pending = False
+            return
+        if final == "d":
+            self.y = max(0, min(self.rows - 1, max(1, first) - 1))
+            return
+        if final == "J":
+            self.erase_screen(first)
+            return
+        if final == "K":
+            if first == 0:
+                self.erase_line(self.y, self.x, self.cols)
+            elif first == 1:
+                self.erase_line(self.y, 0, self.x + 1)
+            else:
+                self.erase_line(self.y, 0, self.cols)
+            return
+        if final == "L":
+            for _ in range(max(1, first)):
+                if self.top <= self.y <= self.bottom:
+                    del self.grid[self.bottom]
+                    self.grid.insert(self.y, self._blank_line())
+            return
+        if final == "M":
+            for _ in range(max(1, first)):
+                if self.top <= self.y <= self.bottom:
+                    del self.grid[self.y]
+                    self.grid.insert(self.bottom, self._blank_line())
+            return
+        if final == "P":
+            line = self.grid[self.y]
+            count = max(1, first)
+            del line[self.x:self.x + count]
+            line.extend(Cell() for _ in range(count))
+            del line[self.cols:]
+            return
+        if final == "@":
+            line = self.grid[self.y]
+            count = max(1, first)
+            for _ in range(count):
+                line.insert(self.x, Cell())
+            del line[self.cols:]
+            return
+        if final == "X":
+            self.erase_line(self.y, self.x, self.x + max(1, first))
+            return
+        if final == "S":
+            self.scroll_up(max(1, first))
+            return
+        if final == "T":
+            self.scroll_down(max(1, first))
+            return
+        if final == "r":
+            top = (params[0] if params and params[0] else 1) - 1
+            bottom = (params[1] if len(params) > 1 and params[1] else self.rows) - 1
+            if 0 <= top < bottom <= self.rows - 1:
+                self.top, self.bottom = top, bottom
+                self.x, self.y = 0, top
+            return
+        if final == "s":
+            self.saved_cursor = (self.x, self.y, self.fg, self.bg, self.attrs)
+            return
+        if final == "u":
+            self.x, self.y, self.fg, self.bg, self.attrs = self.saved_cursor
+            return
+        if final == "h" or final == "l":
+            enabled = final == "h"
+            if private:
+                for mode in params or [0]:
+                    if mode == 1:
+                        self.app_cursor = enabled
+                    elif mode == 7:
+                        self.wrap = enabled
+                    elif mode == 6:
+                        self.origin = enabled
+                        if enabled:
+                            self.x, self.y = 0, 0
+                    elif mode == 25:
+                        self.cursor_visible = enabled
+                    elif mode == 1049 or mode == 47 or mode == 1047:
+                        self._set_altscreen(enabled)
+                    # 2004 (bracketed paste) needs no reply: answering it would
+                    # feed the sequence back to the shell as typed input.
+            else:
+                for mode in params or [0]:
+                    if mode == 4:
+                        self.insert_mode = enabled
+            return
+        if final == "n":
+            if first == 5:
+                self.responses.append(b"\x1b[0n")
+            elif first == 6:
+                row = (self.y - (self.top if self.origin else 0)) + 1
+                self.responses.append(f"\x1b[{max(1, row)};{self.x + 1}R".encode())
+            return
+        if final == "c":
+            self.responses.append(b"\x1b[?62;22c")
+            return
+        # everything else (t, g, q, etc.) is safely ignorable
+
+    def _set_altscreen(self, enabled: bool) -> None:
+        if enabled and self.altscreen_saved is None:
+            self.altscreen_saved = (self.grid, self.x, self.y, self.top, self.bottom)
+            self.grid = [self._blank_line() for _ in range(self.rows)]
+            self.x = self.y = 0
+            self.top, self.bottom = 0, self.rows - 1
+        elif not enabled and self.altscreen_saved is not None:
+            self.grid, self.x, self.y, self.top, self.bottom = self.altscreen_saved
+            self.altscreen_saved = None
+
+    def _apply_sgr(self, params: list[int]) -> None:
+        index = 0
+        while index < len(params):
+            code = params[index]
+            if code == 0:
+                self.fg, self.bg, self.attrs = DEFAULT_FG, DEFAULT_BG, 0
+            elif code == 1:
+                self.attrs |= BOLD
+            elif code == 2:
+                self.attrs |= DIM
+            elif code == 3:
+                self.attrs |= ITALIC
+            elif code == 4:
+                self.attrs |= UNDERLINE
+            elif code == 7:
+                self.attrs |= REVERSE
+            elif code in (21, 22):
+                self.attrs &= ~(BOLD | DIM)
+            elif code == 23:
+                self.attrs &= ~ITALIC
+            elif code == 24:
+                self.attrs &= ~UNDERLINE
+            elif code == 27:
+                self.attrs &= ~REVERSE
+            elif 30 <= code <= 37:
+                self.fg = ANSI_16[code - 30]
+            elif code == 39:
+                self.fg = DEFAULT_FG
+            elif 40 <= code <= 47:
+                self.bg = ANSI_16[code - 40]
+            elif code == 49:
+                self.bg = DEFAULT_BG
+            elif 90 <= code <= 97:
+                self.fg = ANSI_16[8 + code - 90]
+            elif 100 <= code <= 107:
+                self.bg = ANSI_16[8 + code - 100]
+            elif code in (38, 48):
+                colour, consumed = self._extended_colour(params, index)
+                if colour is not None:
+                    if code == 38:
+                        self.fg = colour
+                    else:
+                        self.bg = colour
+                index += consumed
+            index += 1
+
+    @staticmethod
+    def _extended_colour(params: list[int], index: int) -> tuple[str | None, int]:
+        if index + 1 >= len(params):
+            return None, 0
+        mode = params[index + 1]
+        if mode == 5 and index + 2 < len(params):
+            number = params[index + 2]
+            if number < 16:
+                return ANSI_16[number], 2
+            if number < 232:
+                number -= 16
+                r = number // 36
+                g = (number % 36) // 6
+                b = number % 6
+                step = (0, 95, 135, 175, 215, 255)
+                return f"#{step[r]:02x}{step[g]:02x}{step[b]:02x}", 2
+            level = 8 + (number - 232) * 10
+            return f"#{level:02x}{level:02x}{level:02x}", 2
+        if mode == 2 and index + 4 < len(params):
+            r, g, b = params[index + 2], params[index + 3], params[index + 4]
+            return f"#{r & 255:02x}{g & 255:02x}{b & 255:02x}", 4
+        return None, 0
+
+    # ── geometry ────────────────────────────────────────────────────────────
+    def resize(self, cols: int, rows: int) -> None:
+        cols, rows = max(2, cols), max(2, rows)
+        if cols == self.cols and rows == self.rows:
+            return
+        for line in self.grid:
+            if cols > len(line):
+                line.extend(Cell() for _ in range(cols - len(line)))
+            elif cols < len(line):
+                del line[cols:]
+        while len(self.grid) < rows:
+            self.grid.append(self._blank_line())
+        while len(self.grid) > rows:
+            self.grid.pop()
+        self.cols, self.rows = cols, rows
+        self.top, self.bottom = 0, rows - 1
+        self.x = min(self.x, cols - 1)
+        self.y = min(self.y, rows - 1)
+        self.wrap_pending = False
+
+    def reset(self) -> None:
+        self.grid = [self._blank_line() for _ in range(self.rows)]
+        self.x = self.y = 0
+        self.top, self.bottom = 0, self.rows - 1
+        self.fg, self.bg, self.attrs = DEFAULT_FG, DEFAULT_BG, 0
+        self.altscreen_saved = None
+        self.wrap_pending = False
+
+    def flip(self) -> None:
+        """`printf '\\033c'` and friends: undo reverse already applied per cell."""
+        return
+
+
+# ── input encoding ───────────────────────────────────────────────────────────
+
+KEYS = {
+    Qt.Key_Up: "A", Qt.Key_Down: "B", Qt.Key_Right: "C", Qt.Key_Left: "D",
+    Qt.Key_Home: "H", Qt.Key_End: "F",
+}
+
+
+def encode_key(event, app_cursor: bool) -> bytes | None:
+    key, mods, text = event.key(), event.modifiers(), event.text()
+    ctrl = bool(mods & Qt.ControlModifier)
+    alt = bool(mods & Qt.AltModifier)
+    shift = bool(mods & Qt.ShiftModifier)
+
+    if key in KEYS:
+        letter = KEYS[key]
+        if app_cursor:
+            return f"\x1bO{letter}".encode()
+        return f"\x1b[{letter}".encode()
+    if key in (Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Insert, Qt.Key_Delete):
+        code = {Qt.Key_PageUp: "5", Qt.Key_PageDown: "6", Qt.Key_Insert: "2", Qt.Key_Delete: "3"}[key]
+        return f"\x1b[{code}~".encode()
+    if Qt.Key_F1 <= key <= Qt.Key_F12:
+        number = key - Qt.Key_F1 + 1
+        if number <= 4:
+            return f"\x1bO{chr(ord('P') + number - 1)}".encode()
+        special = {5: "15", 6: "17", 7: "18", 8: "19", 9: "20", 10: "21", 11: "23", 12: "24"}[number]
+        return f"\x1b[{special}~".encode()
+    if key == Qt.Key_Return or key == Qt.Key_Enter:
+        return b"\r"
+    if key == Qt.Key_Backspace:
+        return b"\x7f"
+    if key == Qt.Key_Tab:
+        return b"\t" if not shift else b"\x1b[Z"
+    if key == Qt.Key_Escape:
+        return b"\x1b"
+    if key == Qt.Key_Space and ctrl:
+        return b"\x00"
+    if ctrl and text and text.isalpha():
+        return bytes([ord(text.lower()) & 0x1F])
+    if text:
+        data = text.encode("utf-8")
+        return b"\x1b" + data if alt else data
+    return None
+
+
+# ── view ─────────────────────────────────────────────────────────────────────
+
+class TerminalView(QWidget):
+    size_changed = Signal(int, int)
+    title_changed = Signal(str)
+
+    def __init__(self, terminal: Terminal, parent=None):
+        super().__init__(parent)
+        self.terminal = terminal
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self.setCursor(Qt.IBeamCursor)
+        self.font_ = QFont("JetBrains Mono")
+        if not self.font_.exactMatch():
+            for family in ("Source Code Pro", "DejaVu Sans Mono", "Noto Sans Mono", "monospace"):
+                probe = QFont(family)
+                probe.setStyleHint(QFont.Monospace)
+                if probe.exactMatch():
+                    self.font_ = probe
+                    break
+        self.font_.setStyleHint(QFont.Monospace)
+        self.font_.setFixedPitch(True)
+        self.font_.setPointSizeF(11.0)
+        self.metrics = QFontMetricsF(self.font_)
+        self.cell_w = max(6.0, self.metrics.horizontalAdvance("M"))
+        self.cell_h = max(12.0, self.metrics.height() + 2)
+        self.pad = 10
+        self.scroll_offset = 0
+        self.selection: tuple[int, int, int, int] | None = None
+        self._selecting = False
+        self.on_data = None                  # callable(bytes) -> write to the pty
+        self.setMinimumSize(self._char_size(20, 5))
+
+    # metrics ---------------------------------------------------------------
+    def _char_size(self, cols: int, rows: int) -> QSize:
+        return QSize(int(self.cell_w * cols + self.pad * 2),
+                     int(self.cell_h * rows + self.pad * 2))
+
+    def grid_size(self) -> tuple[int, int]:
+        cols = max(2, int((self.width() - self.pad * 2) / self.cell_w))
+        rows = max(2, int((self.height() - self.pad * 2) / self.cell_h))
+        return cols, rows
+
+    def _sync_size(self) -> None:
+        cols, rows = self.grid_size()
+        if (cols, rows) != (self.terminal.cols, self.terminal.rows):
+            self.terminal.resize(cols, rows)
+            self.size_changed.emit(cols, rows)
+            self.update()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_size()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._sync_size()
+
+    # painting --------------------------------------------------------------
+    def _visible_lines(self) -> list[list[Cell]]:
+        total = self.terminal.rows
+        offset = min(self.scroll_offset, len(self.terminal.history))
+        lines = self.terminal.history[len(self.terminal.history) - offset:] if offset else []
+        lines = lines + self.terminal.grid
+        return lines[len(lines) - total:]
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(BG))
+        painter.setFont(self.font_)
+        lines = self._visible_lines()
+        self._paint_lines = lines
+        cursor_row_from_bottom = (self.terminal.rows - 1) - self.terminal.y
+
+        for row, line in enumerate(lines):
+            y = self.pad + row * self.cell_h
+            run_start = 0
+            run: Cell | None = None
+            for col in range(self.terminal.cols + 1):
+                cell = line[col] if col < len(line) else BLANK
+                if run is None:
+                    run, run_start = cell, col
+                    continue
+                if col < self.terminal.cols and (cell.fg, cell.bg, cell.attrs) == (run.fg, run.bg, run.attrs):
+                    continue
+                self._paint_run(painter, run, run_start, col, row, y)
+                run, run_start = cell, col
+
+        # selection overlay
+        if self.selection:
+            start_row, start_col, end_row, end_col = self.selection
+            painter.setBrush(QColor(SELECTION))
+            painter.setPen(Qt.NoPen)
+            for row in range(max(0, start_row), min(self.terminal.rows, end_row + 1)):
+                first = start_col if row == start_row else 0
+                last = end_col if row == end_row else self.terminal.cols - 1
+                painter.drawRect(QRect(int(self.pad + first * self.cell_w),
+                                       int(self.pad + row * self.cell_h),
+                                       int((last - first + 1) * self.cell_w),
+                                       int(self.cell_h)))
+
+        # cursor
+        if (self.terminal.cursor_visible and self.hasFocus() and self.scroll_offset == 0
+                and cursor_row_from_bottom >= 0):
+            cx = self.pad + self.terminal.x * self.cell_w
+            cy = self.pad + (self.terminal.rows - 1 - cursor_row_from_bottom) * self.cell_h
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(CURSOR))
+            painter.drawRect(QRect(int(cx), int(cy), int(self.cell_w), int(self.cell_h)))
+            cell = self.terminal.grid[self.terminal.y][self.terminal.x]
+            if cell.char.strip():
+                painter.setPen(QColor(BG))
+                painter.drawText(QRect(int(cx), int(cy), int(self.cell_w), int(self.cell_h)),
+                                 Qt.AlignLeft | Qt.AlignVCenter, cell.char)
+        painter.end()
+
+    def _paint_run(self, painter: QPainter, cell: Cell, start: int, end: int,
+                   row: int, y: float) -> None:
+        if start >= end:
+            return
+        x = self.pad + start * self.cell_w
+        width = (end - start) * self.cell_w
+        bg = BG if cell.bg == DEFAULT_BG else cell.bg
+        if cell.attrs & REVERSE and cell.bg == DEFAULT_BG:
+            bg = cell.fg if cell.fg != DEFAULT_FG else FG
+        if bg != BG:
+            painter.fillRect(QRect(int(x), int(y), int(width + 1), int(self.cell_h)), QColor(bg))
+        line = self._current_line(row)
+        chunk = "".join(c.char for c in line[start:end]).rstrip()
+        if not chunk:
+            return
+        colour = QColor(FG if cell.fg == DEFAULT_FG else cell.fg)
+        if cell.attrs & REVERSE and cell.fg == DEFAULT_FG:
+            colour = QColor(BG)
+        if cell.attrs & DIM:
+            colour = colour.lighter(140)
+        font = QFont(self.font_)
+        font.setBold(bool(cell.attrs & BOLD))
+        font.setItalic(bool(cell.attrs & ITALIC))
+        font.setUnderline(bool(cell.attrs & UNDERLINE))
+        painter.setFont(font)
+        painter.setPen(colour)
+        painter.drawText(QPoint(int(x), int(y + self.metrics.ascent() + 2)), chunk)
+        painter.setFont(self.font_)
+
+    def _current_line(self, row: int) -> list[Cell]:
+        if not hasattr(self, "_paint_lines"):
+            self._paint_lines = self._visible_lines()
+        return self._paint_lines[row]
+
+    # interaction -----------------------------------------------------------
+    def wheelEvent(self, event) -> None:
+        steps = event.angleDelta().y() / 120
+        self.scroll_offset = max(0, min(len(self.terminal.history),
+                                        self.scroll_offset + int(steps * 3)))
+        self.update()
+
+    def _cell_at(self, position) -> tuple[int, int]:
+        row = int((position.y() - self.pad) // self.cell_h)
+        col = int((position.x() - self.pad) // self.cell_w)
+        return (max(0, min(self.terminal.rows - 1, row)),
+                max(0, min(self.terminal.cols - 1, col)))
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._selecting = True
+            self.selection = None
+            self._anchor = self._cell_at(event.position())
+            self.update()
+        elif event.button() == Qt.MiddleButton:
+            clipboard = QGuiApplication.clipboard()
+            self._send(clipboard.text())
+
+    def mouseMoveEvent(self, event) -> None:
+        if not self._selecting:
+            return
+        row, col = self._cell_at(event.position())
+        start = getattr(self, "_anchor", (row, col))
+        if (row, col) < start:
+            self.selection = (row, col, start[0], start[1])
+        else:
+            self.selection = (start[0], start[1], row, col)
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._selecting = False
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self._selecting = False
+        self._anchor = None
+        self.selection = None
+        self.update()
+
+    def keyPressEvent(self, event) -> None:
+        clipboard = QGuiApplication.clipboard()
+        # Ctrl+C must reach the shell (interrupt); copy is Ctrl+Shift+C.
+        if (event.modifiers() & Qt.ControlModifier and event.modifiers() & Qt.ShiftModifier
+                and event.key() == Qt.Key_C):
+            text = self.selected_text()
+            if text:
+                clipboard.setText(text)
+            return
+        if event.modifiers() & Qt.ControlModifier and event.modifiers() & Qt.ShiftModifier \
+                and event.key() == Qt.Key_V:
+            self._send(clipboard.text())
+            return
+        data = encode_key(event, self.terminal.app_cursor)
+        if data:
+            self._send_bytes(data)
+            self.scroll_offset = 0
+
+    def _send(self, text: str) -> None:
+        if text:
+            self._send_bytes(text.encode("utf-8"))
+
+    def _send_bytes(self, data: bytes) -> None:
+        if self.on_data:
+            self.on_data(data)
+
+    def selected_text(self) -> str:
+        if not self.selection:
+            return ""
+        lines = self._visible_lines()
+        start_row, start_col, end_row, end_col = self.selection
+        out = []
+        for row in range(start_row, end_row + 1):
+            first = start_col if row == start_row else 0
+            last = end_col if row == end_row else self.terminal.cols - 1
+            line = lines[row] if row < len(lines) else []
+            out.append("".join(c.char for c in line[first:last + 1]).rstrip())
+        return "\n".join(out)
+
+
+# ── window ───────────────────────────────────────────────────────────────────
+
+class TerminalWindow(QMainWindow):
+    def __init__(self, shell: list[str] | None = None, directory: str | None = None,
+                 screenshot: str | None = None):
+        super().__init__()
+        self.setWindowTitle("Mason's Terminal")
+        self.resize(1000, 620)
+        self.screenshot_path = screenshot
+        self.exited = False
+
+        self.terminal = Terminal()
+        self.view = TerminalView(self.terminal)
+        self.view.on_data = self._write
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.view)
+        self.setCentralWidget(container)
+        self.setStyleSheet("QMainWindow { background: #08080a; }")
+
+        self.view.size_changed.connect(self._resize_pty)
+        self.view.title_changed.connect(lambda title: self.setWindowTitle(f"{title} — Mason's Terminal")
+                                        if title else self.setWindowTitle("Mason's Terminal"))
+
+        self._spawn(shell, directory)
+
+    # process ---------------------------------------------------------------
+    def _spawn(self, shell: list[str] | None, directory: str | None) -> None:
+        if shell is None:
+            shell = [os.environ.get("SHELL") or "/bin/bash", "-l"]
+        env = dict(os.environ)
+        env.setdefault("TERM", "xterm-256color")
+        env.setdefault("COLORTERM", "truecolor")
+        env["TERM"] = "xterm-256color"
+        cols, rows = self.terminal.cols, self.terminal.rows
+        pid, fd = pty.fork()
+        if pid == 0:                                  # child
+            try:
+                if directory:
+                    os.chdir(os.path.expanduser(directory))
+                os.execvpe(shell[0], shell, env)
+            except OSError:
+                os._exit(1)
+        self.pid = pid
+        self.fd = fd
+        # The master has to be non-blocking: the read loop below drains it until
+        # EAGAIN, and a blocking read would freeze the window until the shell
+        # printed something.
+        os.set_blocking(fd, False)
+        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._resize_pty(cols, rows)
+        self._notifier = QSocketNotifier(fd, QSocketNotifier.Read, self)
+        self._notifier.activated.connect(self._drain)
+
+    def _resize_pty(self, cols: int, rows: int) -> None:
+        if not hasattr(self, "fd"):
+            return
+        try:
+            fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError:
+            return
+        try:
+            os.kill(self.pid, signal.SIGWINCH)
+        except OSError:
+            pass
+
+    def _drain(self) -> None:
+        if not hasattr(self, "fd"):
+            return
+        while True:
+            try:
+                chunk = os.read(self.fd, 65536)
+            except (BlockingIOError, InterruptedError):
+                break
+            except OSError:
+                self._finish()
+                return
+            if not chunk:
+                self._finish()
+                return
+            self.terminal.feed(self._decoder.decode(chunk))
+            self._respond()
+            if self.terminal.title:
+                self.setWindowTitle(f"{self.terminal.title} — Mason's Terminal")
+            self.view.update()
+        self._reap()
+
+    def _respond(self) -> None:
+        if not self.terminal.responses:
+            return
+        for reply in self.terminal.responses:
+            self._write(reply)
+        self.terminal.responses.clear()
+
+    def _write(self, data: bytes) -> None:
+        if not hasattr(self, "fd"):
+            return
+        try:
+            os.write(self.fd, data)
+        except OSError:
+            pass
+
+    def _reap(self) -> None:
+        if self.exited:
+            return
+        try:
+            done, _ = os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
+            done = self.pid
+        if done == self.pid:
+            self.exited = True
+
+    def _finish(self) -> None:
+        self._reap()
+        if self.screenshot_path:
+            return
+        self.close()
+
+    def closeEvent(self, event) -> None:
+        if hasattr(self, "fd") and not self.exited:
+            try:
+                os.kill(self.pid, signal.SIGHUP)
+            except OSError:
+                pass
+        super().closeEvent(event)
+
+
+# ── headless helpers (used for checks) ───────────────────────────────────────
+
+def trace(path: str, cols: int = 80, rows: int = 24) -> int:
+    data = sys.stdin.buffer.read() if path == "-" else open(path, "rb").read()
+    term = Terminal(cols, rows)
+    term.feed(codecs.getincrementaldecoder("utf-8")("replace").decode(data))
+    for line in term.grid:
+        print("".join(cell.char for cell in line).rstrip())
+    return 0
+
+
+def demo_screen(cols: int = 96, rows: int = 24) -> int:
+    """A colour/detail sampler for screenshots."""
+    script = (
+        "\x1b[1;35m mason\x1b[0m \x1b[90m~\x1b[0m \x1b[36mCode/masonos\x1b[0m \x1b[90m(main)\x1b[0m\r\n"
+        "\x1b[90m$\x1b[0m ls\r\n"
+        "\x1b[34mbin\x1b[0m   \x1b[34mshare\x1b[0m   \x1b[32minstall.sh\x1b[0m   "
+        "\x1b[32muninstall.sh\x1b[0m   README.md\r\n"
+        "\x1b[90m$\x1b[0m \x1b[1mbold\x1b[0m \x1b[2mdim\x1b[0m \x1b[3mitalic\x1b[0m "
+        "\x1b[4munderline\x1b[0m \x1b[31mred\x1b[0m \x1b[32mgreen\x1b[0m \x1b[33myellow\x1b[0m "
+        "\x1b[35mviolet\x1b[0m \x1b[96mcyan\x1b[0m\r\n"
+        "\x1b[90m$\x1b[0m \x1b[38;5;141mmasonos\x1b[0m \x1b[48;5;54m selected \x1b[0m "
+        "\x1b[38;2;139;92;246mtruecolor\x1b[0m\r\n"
+        "\x1b[90m$\x1b[0m "
+    )
+    term = Terminal(cols, rows)
+    term.feed(script)
+    for line in term.grid:
+        print("".join(cell.char for cell in line).rstrip())
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    shell: list[str] | None = None
+    directory: str | None = None
+    screenshot: str | None = None
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg in ("-h", "--help"):
+            print(__doc__)
+            return 0
+        if arg == "--version":
+            print(f"Mason's Terminal {VERSION}")
+            return 0
+        if arg == "--trace":
+            return trace(argv[index + 1] if index + 1 < len(argv) else "-")
+        if arg == "--demo":
+            return demo_screen()
+        if arg == "--dir" and index + 1 < len(argv):
+            directory = argv[index + 1]
+            index += 2
+            continue
+        if arg == "--screenshot" and index + 1 < len(argv):
+            screenshot = argv[index + 1]
+            index += 2
+            continue
+        if arg == "--":
+            shell = argv[index + 1:]
+            break
+        if arg.startswith("-"):
+            print(f"masons-terminal: unknown option {arg}", file=sys.stderr)
+            return 2
+        shell = [arg] + argv[index + 1:]
+        break
+
+    app = QApplication(["masons-terminal"])
+    app.setApplicationName("Mason's Terminal")
+    window = TerminalWindow(shell=shell, directory=directory, screenshot=screenshot)
+    window.show()
+
+    if screenshot:
+        def grab() -> None:
+            window.terminal.feed(
+                "\x1b[1;35m mason\x1b[0m \x1b[90m~\x1b[0m \x1b[36mCode/masonos\x1b[0m\r\n"
+                "\x1b[90m$\x1b[0m \x1b[1mbold\x1b[0m \x1b[2mdim\x1b[0m \x1b[4munderline\x1b[0m "
+                "\x1b[31mred\x1b[0m \x1b[32mgreen\x1b[0m \x1b[33myellow\x1b[0m \x1b[35mviolet\x1b[0m "
+                "\x1b[96mcyan\x1b[0m \x1b[38;5;141m256\x1b[0m \x1b[38;2;139;92;246mtruecolor\x1b[0m\r\n"
+                "\x1b[90m$\x1b[0m "
+            )
+            window.view.update()
+            window.grab().save(screenshot)
+            print(f"wrote {screenshot}")
+            app.quit()
+        QTimer.singleShot(1200, grab)
+
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

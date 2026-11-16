@@ -221,6 +221,12 @@ if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
   sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
     "$here/share/masons-files.desktop.in" > "$data/applications/masons-files.desktop"
   chmod +x "$data/applications/masons-files.desktop"
+  if [[ -f /usr/share/applications/org.kde.dolphin.desktop ]]; then
+    sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
+      "$here/share/dolphin-shadow.desktop.in" > "$data/applications/org.kde.dolphin.desktop"
+    install -m 755 "$here/share/dolphin-shim.sh" "$bin/dolphin"
+    say "Dolphin hidden; dolphin -> Mason's Files"
+  fi
   say "Mason's Files -> $bin/masons-files (app grid)"
 else
   say "Mason's Files skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
@@ -237,6 +243,18 @@ if have python3 && python3 -c "import PySide6.QtDBus" >/dev/null 2>&1; then
   say "Mason's Launcher -> Super key (D-Bus service installed)"
 else
   say "Mason's Launcher skipped: PySide6 (with QtDBus) is missing"
+fi
+
+# 5f. Mason's Terminal -------------------------------------------------------
+if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
+  chmod +x "$here/bin/masons-terminal"
+  ln -sf "$here/bin/masons-terminal" "$bin/masons-terminal"
+  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
+    "$here/share/masons-terminal.desktop.in" > "$data/applications/masons-terminal.desktop"
+  chmod +x "$data/applications/masons-terminal.desktop"
+  say "Mason's Terminal -> $bin/masons-terminal (app grid)"
+else
+  say "Mason's Terminal skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
 fi
 
 # 6. Desktop icon + app grid -------------------------------------------------

@@ -251,9 +251,44 @@ status bar, so the window stays responsive while a large folder copies.
 
 `masonosctl files` understands the desktop entry's `%U` form, so
 `masons-files file:///home/carter` and opening a folder with *Open With → Mason's
-Files* both land on the right place. Unlike Settings and Software it replaces
-nothing — Dolphin stays installed, because a file manager should not be a single
-point of failure.
+Files* both land on the right place.
+
+### It replaces KDE Dolphin
+
+Dolphin is installed to stay — a file manager should not be a single point of
+failure — but nothing on the desktop reaches it any more while MasonOS is on:
+
+| Piece | What it does |
+|---|---|
+| **Dolphin entry** | `~/.local/share/applications/org.kde.dolphin.desktop` keeps Dolphin's name, icon and pins but runs `masonosctl files`, and is `NoDisplay` so it does not add a second file manager to the grid |
+| **`dolphin` shim** | `~/.local/bin/dolphin`, ahead of `/usr/bin`, so anything that runs `dolphin ~/x` opens Mason's Files at `~/x`; with no usable Mason's Files, the real Dolphin gets the call instead |
+| **Folder defaults** | `inode/directory` and `x-scheme-handler/file` point at Mason's Files, so double-clicking a folder, dropping one on the desktop, or a file:// link all land there. The previous defaults are remembered and `masonosctl off` restores them |
+
+Dolphin's own switches (`--split`, `--select`, …) have no equivalent here; the
+shim takes the path that follows them, which is what those launches mean.
+
+## Mason's Terminal
+
+`masonosctl terminal`, **Mason's Terminal** in the app grid, or `masons-terminal`
+opens a terminal in the MasonOS palette. It is a real terminal — a PTY plus its
+own VT100/xterm emulator, because Qt has no terminal widget and this distro has
+no qtermwidget or VTE bindings — so full-screen programs behave:
+
+| Part | What it does |
+|---|---|
+| **Emulation** | 16, 256 and truecolour SGR, bold/dim/italic/underline/reverse, cursor addressing, erase/insert/delete characters and lines, scroll regions, the alternate screen used by `vim`, `htop` and `less`, and the window title set by the shell |
+| **Scrollback** | 4000 lines, wheel scrolling, mouse selection, `Ctrl+Shift+C` to copy and `Ctrl+Shift+V` or middle-click to paste |
+| **Keys** | arrows, `Home`/`End`, `PgUp`/`PgDn`, `Insert`/`Delete`, `F1`–`F12`, `Ctrl+letter`, `Alt+letter`, and application-cursor mode for programs that ask for it |
+| **Palette** | `#08080a` background, violet cursor and selection, a sixteen-colour set tuned to stay readable on it |
+
+```bash
+masons-terminal                 # your $SHELL, in your home directory
+masons-terminal --dir ~/Code    # start somewhere else
+masons-terminal -- htop         # run one command instead of a shell
+```
+
+Sequences the emulator does not implement are ignored rather than printed as
+garbage, so an unknown escape never lands in your output.
 
 ## Mason's Launcher (the Super key)
 
@@ -354,6 +389,7 @@ top bar     : 45px, edge clusters with the centre clear
 | **Icons** | `share/icons/MasonOS` inherits `breeze-dark` and overrides only the launcher/brand marks |
 | **GTK apps** | `share/gtk/masonos.css` included from `gtk-3.0/gtk.css` and `gtk-4.0/gtk.css` |
 | **Behaviour** | `share/kwin/masonos-shell` KWin script: guarded tile/maximize/show-desktop shortcuts, and `Meta` opens Mason's Launcher (Plasma's own launcher gives the key up while MasonOS is on) |
+| **Apps** | MasonOS Settings (in place of System Settings), Mason's Software (in place of Discover), Mason's Files (in place of Dolphin), Mason's Terminal, and Mason's Launcher on `Meta` |
 | **Mason Bot** | `share/plasmoids/com.mason.masonos.bot` + `bot/masonos-bot.py` loopback bridge to `smooth-service` |
 
 ## Mason Bot

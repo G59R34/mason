@@ -1,0 +1,14 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Mason's Terminal
+GenericName=Terminal
+Comment=Run commands, in the MasonOS palette
+Exec=@MASONOSCTL@ terminal
+Icon=utilities-terminal
+Terminal=false
+Categories=Qt;KDE;System;TerminalEmulator;
+Keywords=terminal;shell;console;command;prompt;masonos;
+X-KDE-StartupNotify=true
+StartupWMClass=masons-terminal
+NoDisplay=false

@@ -37,13 +37,17 @@ rm -f "$data/color-schemes/MasonOS.colors" \
       "$data/applications/systemsettings.desktop" \
       "$data/applications/masons-software.desktop" \
       "$data/applications/masons-files.desktop" \
+      "$data/applications/masons-terminal.desktop" \
       "$data/applications/org.kde.discover.desktop" \
+      "$data/applications/org.kde.dolphin.desktop" \
       "$bin/systemsettings" \
       "$bin/plasma-discover" \
+      "$bin/dolphin" \
       "$data/dbus-1/services/org.masonos.Launcher.service" \
       "$HOME/.local/bin/mason-software" \
       "$HOME/.local/bin/masons-files" \
       "$HOME/.local/bin/masons-launcher" \
+      "$HOME/.local/bin/masons-terminal" \
       "$desktop_dir/MasonOS.desktop" \
       "$config/autostart/masonos.desktop" \
       "$config/gtk-3.0/masonos.css" \

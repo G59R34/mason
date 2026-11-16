@@ -873,6 +873,101 @@ def remove_software_replacement() -> None:
         DISCOVER_SHIM.unlink(missing_ok=True)
 
 
+FILES_ENTRY = DATA_DIR / "applications" / "masons-files.desktop"
+FILES_BINARY = HOME / ".local" / "bin" / "masons-files"
+DOLPHIN_SHADOW = DATA_DIR / "applications" / "org.kde.dolphin.desktop"
+DOLPHIN_SHIM = HOME / ".local" / "bin" / "dolphin"
+TERMINAL_ENTRY = DATA_DIR / "applications" / "masons-terminal.desktop"
+TERMINAL_BINARY = HOME / ".local" / "bin" / "masons-terminal"
+FOLDER_MIMES = ("inode/directory", "x-scheme-handler/file")
+
+
+def entry_text(template: Path) -> str | None:
+    """A share/*.desktop.in with the masonosctl path substituted in."""
+    if not template.exists():
+        return None
+    return template.read_text(encoding="utf-8").replace(
+        "@MASONOSCTL@", str(HOME / ".local" / "bin" / "masonosctl"))
+
+
+def write_entry(path: Path, template: Path) -> bool:
+    text = entry_text(template)
+    if text is None:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+    return True
+
+
+def mime_default(mimetype: str) -> str:
+    if not have("xdg-mime"):
+        return ""
+    return (run(["xdg-mime", "query", "default", mimetype]).stdout or "").strip()
+
+
+def apply_terminal_entry() -> bool:
+    if not TERMINAL_BINARY.exists():
+        return False
+    return write_entry(TERMINAL_ENTRY, SHARE / "masons-terminal.desktop.in")
+
+
+def remove_terminal_entry() -> None:
+    TERMINAL_ENTRY.unlink(missing_ok=True)
+
+
+def apply_files_replacement(manifest: dict) -> list[str]:
+    """Put Mason's Files in Dolphin's place. ``off`` hands Dolphin back.
+
+    Three pieces, all reversible: a Dolphin entry that keeps the name and the
+    pins but opens Mason's Files, a ``dolphin`` command shim ahead of /usr/bin,
+    and the folder MIME defaults (inode/directory, file:// links) which are
+    remembered so ``off`` can restore whatever they were before.
+    """
+    done: list[str] = []
+    if not FILES_BINARY.exists():
+        return done
+
+    if write_entry(FILES_ENTRY, SHARE / "masons-files.desktop.in"):
+        done.append("files entry")
+
+    shadow = entry_text(SHARE / "dolphin-shadow.desktop.in")
+    if shadow is not None:
+        DOLPHIN_SHADOW.parent.mkdir(parents=True, exist_ok=True)
+        DOLPHIN_SHADOW.write_text(shadow, encoding="utf-8")
+        done.append("dolphin entry")
+
+    shim = SHARE / "dolphin-shim.sh"
+    if shim.exists():
+        DOLPHIN_SHIM.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(shim, DOLPHIN_SHIM)
+        DOLPHIN_SHIM.chmod(0o755)
+        done.append("dolphin shim")
+
+    if have("xdg-mime"):
+        saved = manifest.setdefault("mime", {})
+        for mimetype in FOLDER_MIMES:
+            saved.setdefault(mimetype, mime_default(mimetype))
+            run(["xdg-mime", "default", "masons-files.desktop", mimetype])
+        done.append("folder defaults")
+    return done
+
+
+def remove_files_replacement(manifest: dict) -> None:
+    DOLPHIN_SHADOW.unlink(missing_ok=True)
+    try:
+        shim_text = DOLPHIN_SHIM.read_text(encoding="utf-8", errors="replace")[:200]
+    except OSError:
+        shim_text = ""
+    if "MasonOS replaces KDE Dolphin" in shim_text:
+        DOLPHIN_SHIM.unlink(missing_ok=True)
+    saved = manifest.pop("mime", {}) or {}
+    if have("xdg-mime"):
+        for mimetype, desktop in saved.items():
+            if desktop:
+                run(["xdg-mime", "default", desktop, mimetype])
+
+
 LAUNCHER_BINARY = HOME / ".local" / "bin" / "masons-launcher"
 LAUNCHER_SERVICE = (Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share"))
                     / "dbus-1" / "services" / "org.masonos.Launcher.service")
@@ -1040,6 +1135,8 @@ def transform(dry_run: bool = False, quiet: bool = False) -> int:
     take_launcher_shortcut()
     reload_kwin_script()
     apply_software_replacement()
+    apply_terminal_entry()
+    apply_files_replacement(manifest)
     apply_look_and_feel()          # may re-layout panels; we rebuild them below
     apply_scheme_and_wallpaper()
     apply_fonts()
@@ -1111,6 +1208,8 @@ def revert(quiet: bool = False) -> int:
     remove_gtk_include()
     remove_settings_replacement()
     remove_software_replacement()
+    remove_terminal_entry()
+    remove_files_replacement(manifest)
     restore_launcher_shortcut(str(manifest.pop("launcherShortcut", "") or ""))
     reconfigure_kwin()
 
@@ -1265,7 +1364,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("command", nargs="?", default="toggle",
                         choices=["on", "off", "reload", "toggle", "status", "display",
                                  "lockscreen", "bot", "settings", "software", "files",
-                                 "launcher", "transform", "revert"])
+                                 "terminal", "launcher", "transform", "revert"])
     parser.add_argument("action", nargs="?", default="status",
                         help="with bot: status | start | stop | restart")
     parser.add_argument("--quiet", action="store_true", help="no notifications")
@@ -1342,8 +1441,28 @@ def main(argv: list[str]) -> int:
             if shown.returncode == 0:
                 return 0
         os.execvp(str(binary), [str(binary)])
+    if command == "terminal":
+        binary = TERMINAL_BINARY
+        if not binary.exists():
+            found = shutil.which("masons-terminal")
+            if not found:
+                print("masonosctl: Mason's Terminal is not installed — run masonos/install.sh.",
+                      file=sys.stderr)
+                return 1
+            binary = Path(found)
+        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+            print(
+                "masonosctl: Mason's Terminal needs PySide6 — install it "
+                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                file=sys.stderr,
+            )
+            return 1
+        argv = [str(binary)]
+        if args.action and args.action != "status":
+            argv.append(args.action)
+        os.execvp(str(binary), argv)
     if command == "files":
-        binary = HOME / ".local" / "bin" / "masons-files"
+        binary = FILES_BINARY
         if not binary.exists():
             found = shutil.which("masons-files")
             if not found:

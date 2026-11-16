@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Mason's Files
+GenericName=File Manager
+Comment=Dolphin's place is taken by Mason's Files
+Exec=@MASONOSCTL@ files %U
+Icon=system-file-manager
+Terminal=false
+Categories=Qt;KDE;System;FileManager;
+MimeType=inode/directory;x-scheme-handler/file;
+NoDisplay=true
+X-KDE-StartupNotify=true
+StartupWMClass=masons-files

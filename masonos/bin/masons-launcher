@@ -71,6 +71,7 @@ APP_DIRS = [
 DEFAULT_FAVORITES = [
     "masons-files.desktop",
     "masons-software.desktop",
+    "masons-terminal.desktop",
     "systemsettings.desktop",
     "org.mozilla.firefox.desktop",
     "firefox.desktop",
