@@ -19,6 +19,8 @@ for arg in "$@"; do
       cat <<'EOF'
 usage: install.sh [--no-autostart] [--no-apply]
 
+Works on any KDE Plasma 6 desktop (Fedora, Arch, Debian/Ubuntu, openSUSE, …),
+Wayland or X11, Intel/AMD/NVIDIA/Apple Silicon, notched or not.
 Installs MasonOS into ~/.local (no root) and transforms the running session:
   · Mason Bot panel widget (Plasma 6 applet)
   · MasonOS plasma style, Look-and-Feel + splash, window decoration,
@@ -36,14 +38,30 @@ done
 
 say() { printf ' · %s\n' "$*"; }
 die() { printf 'MasonOS: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
 
-command -v plasmashell >/dev/null || die "KDE Plasma 6 is required (plasmashell not found)."
-command -v kpackagetool6 >/dev/null || die "KDE Plasma 6 is required (kpackagetool6 not found)."
+# ── Preflight: any distro, any desktop hardware, Plasma 6 ────────────────────
+have plasmashell || die "KDE Plasma is required (plasmashell not found)."
+plasma_version="$(plasmashell --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)*' | head -1 || true)"
+case "${plasma_version%%.*}" in
+  6) say "KDE Plasma ${plasma_version:-6} on $(uname -m)" ;;
+  *) die "MasonOS needs KDE Plasma 6 — this session reports Plasma ${plasma_version:-unknown}." ;;
+esac
+if ! have kpackagetool6; then
+  die "kpackagetool6 is missing (KDE Frameworks 6). Install kf6-kpackage on Fedora,
+  kpackage6 on Arch, libkf6package-bin on Debian/Ubuntu, kpackage6 on openSUSE,
+  then run this again."
+fi
+have busctl || have gdbus || say "warning: no busctl or gdbus — plasmashell cannot be scripted until one is installed"
+
+# Respect a localised ~/Desktop, wherever this distro puts it.
+desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+[[ -n "$desktop_dir" && "$desktop_dir" != "$HOME" ]] || desktop_dir="$HOME/Desktop"
 
 mkdir -p "$data/plasma/plasmoids" "$data/plasma/desktoptheme" "$data/plasma/look-and-feel" \
          "$data/aurorae/themes" "$data/color-schemes" "$data/wallpapers" \
          "$data/icons/hicolor/scalable/apps" "$data/applications" \
-         "$config/masonos" "$bin" "$state/masonos" "$HOME/Desktop"
+         "$config/masonos" "$bin" "$state/masonos" "$desktop_dir"
 
 # 0. One-way upgrade from the old MasonDE layout ------------------------------
 if [[ -f "$state/masonde/bot.pid" ]]; then
@@ -59,7 +77,7 @@ fi
 rm -f "$data/color-schemes/MasonDE.colors" "$data/wallpapers/masonde.png" \
       "$data/icons/hicolor/scalable/apps/masonde.svg" \
       "$data/applications/masonde-reload.desktop" \
-      "$HOME/Desktop/MasonDE.desktop" \
+      "$HOME/Desktop/MasonDE.desktop" "$HOME/Desktop/MasonOS.desktop" \
       "$bin/masondectl"
 if [[ -d "$state/masonde" ]]; then
   [[ -f "$state/masonde/appletsrc.premasonde" && ! -f "$state/masonos/appletsrc.pre-masonos" ]] && \
@@ -155,25 +173,30 @@ ln -sf "$here/bin/masonosctl" "$bin/masonosctl"
 ln -sf "$here/bin/masonosctl" "$bin/masondectl"   # compatibility alias
 say "masonosctl -> $bin/masonosctl"
 
-# 5b. MasonOS Settings -------------------------------------------------------
-chmod +x "$here/bin/masonos-settings"
-ln -sf "$here/bin/masonos-settings" "$bin/masonos-settings"
-sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" -e "s|@ICON@|masonos|g" \
-  "$here/share/masonos-settings.desktop.in" > "$data/applications/masonos-settings.desktop"
-chmod +x "$data/applications/masonos-settings.desktop"
-say "MasonOS Settings -> $bin/masonos-settings (app grid)"
+# 5b. MasonOS Settings (needs PySide6; skipped cleanly when it is absent) ------
+if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
+  chmod +x "$here/bin/masonos-settings"
+  ln -sf "$here/bin/masonos-settings" "$bin/masonos-settings"
+  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" -e "s|@ICON@|masonos|g" \
+    "$here/share/masonos-settings.desktop.in" > "$data/applications/masonos-settings.desktop"
+  chmod +x "$data/applications/masonos-settings.desktop"
+  say "MasonOS Settings -> $bin/masonos-settings (app grid)"
+else
+  say "MasonOS Settings skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
+fi
 
 # 6. Desktop icon + app grid -------------------------------------------------
 desktop_entry() {
   sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" -e "s|@ICON@|masonos|g" "$here/share/masonos.desktop.in"
 }
-desktop_entry > "$HOME/Desktop/MasonOS.desktop"
-chmod +x "$HOME/Desktop/MasonOS.desktop"
+desktop_entry > "$desktop_dir/MasonOS.desktop"
+chmod +x "$desktop_dir/MasonOS.desktop"
 desktop_entry > "$data/applications/masonos-transform.desktop"
 chmod +x "$data/applications/masonos-transform.desktop"
-say "Desktop icon ~/Desktop/MasonOS.desktop"
+say "Desktop icon $desktop_dir/MasonOS.desktop"
 
-# 7. Bot credentials ---------------------------------------------------------
+# 7. Bot credentials (stdlib python3 only; skipped when there is none) ------
+if have python3; then
 python3 - "$here" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -211,8 +234,12 @@ if len(found) == 2:
 else:
     print(" · no Supabase credentials found — Mason Bot will say so until you fill ~/.config/masonos/bot.json")
 PY
+else
+  say "python3 not found — Mason Bot config left unset"
+fi
 
 # 8. Carry the pre-MasonDE settings into the manifest ------------------------
+if have python3; then
 python3 - "$state" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -239,8 +266,9 @@ backup = state_dir / "appletsrc.pre-masonos"
 if backup.exists():
     manifest["appletsrc"] = str(backup)
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-print(" · remembered the pre-MasonDE settings for a clean revert")
+    print(" · remembered the pre-MasonDE settings for a clean revert")
 PY
+fi
 
 # 9. Autostart ---------------------------------------------------------------
 if [[ "$autostart" == 1 ]]; then

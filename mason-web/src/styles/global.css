@@ -3166,3 +3166,51 @@ blockquote cite {
   margin-top: 8px;
   font-size: 0.8rem;
 }
+
+.masonos-compat-section .muted {
+  max-width: 62ch;
+}
+
+.masonos-compat {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin: 4px 0 0;
+}
+
+.masonos-compat > div {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.masonos-compat dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9a9aa8;
+}
+
+.masonos-compat dd {
+  margin: 8px 0 0;
+}
+
+.masonos-compat ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.masonos-compat li {
+  padding: 3px 9px;
+  border: 1px solid rgba(196, 181, 253, 0.2);
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.14);
+  color: #ddd6fe;
+  font-size: 0.78rem;
+}

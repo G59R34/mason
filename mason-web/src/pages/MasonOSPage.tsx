@@ -12,8 +12,12 @@ const FEATURES = [
     body: 'Panels, clock, tray and dock are built live with Plasma scripting — no compositor swap, so KWin keeps the M2 GPU path Asahi tuned.',
   },
   {
-    title: 'Notch-aware by default',
-    body: 'Reads apple,notch-height from the kernel devicetree and sizes the bar around the notch, keeping the centre band empty and the clock on the right.',
+    title: 'Notch-aware, not notch-bound',
+    body: 'On an Asahi MacBook it reads apple,notch-height from the devicetree and sizes the bar around the notch; anywhere else it falls back to the centred-clock layout.',
+  },
+  {
+    title: 'Portable by design',
+    body: 'Nothing distro-specific: busctl with a gdbus fallback for scripting, kscreen-doctor only if present, PySide6 only for the settings app, no notch required.',
   },
   {
     title: 'Mason Bot in the bar',
@@ -39,13 +43,33 @@ const CHANGES = [
   ['Window decoration', '24px rounded titlebar, glyph-only controls, no seam under the bar'],
   ['Look-and-Feel', 'Bundles palette, style, icons, decoration and the login splash'],
   ['Lock screen', 'MasonOS artwork behind Plasma’s own unlock UI'],
-  ['Display', 'Snaps the session to ~130 effective PPI (1.75× on the 2560×1664 Air panel)'],
+  ['Display', 'On Wayland, snaps the session to ~130 effective PPI (1.75× on the 2560×1664 Air panel); on X11 your scale is left alone'],
 ];
 
 const REQUIREMENTS = [
-  'Fedora Asahi Remix (works on any Fedora KDE spin with Plasma 6.8)',
-  'Wayland session — fractional scaling and the notch handling need it',
+  'Any distro running KDE Plasma 6.0 or newer — Fedora, Arch, Debian, Ubuntu, openSUSE, Bazzite, Nobara, NixOS…',
+  'Wayland or X11 — the PPI correction is applied on Wayland, and your integer scale is left alone on X11',
+  'Intel, AMD, NVIDIA or Apple Silicon; the notch is detected, and without one the bar uses the centred clock',
   'No root for the desktop shell; only the optional login-screen step needs sudo',
+];
+
+const COMPAT = [
+  {
+    label: 'Distros',
+    items: ['Fedora', 'Arch', 'Debian', 'Ubuntu', 'openSUSE', 'Bazzite', 'Nobara', 'NixOS'],
+  },
+  {
+    label: 'Desktop',
+    items: ['KDE Plasma 6.0+', 'KWin / Aurorae', 'Wayland', 'X11'],
+  },
+  {
+    label: 'GPUs',
+    items: ['Intel', 'AMD', 'NVIDIA', 'Apple Silicon'],
+  },
+  {
+    label: 'Displays',
+    items: ['Notched laptops', 'HiDPI', 'Multi-monitor', 'Standard panels'],
+  },
 ];
 
 export function MasonOSPage() {
@@ -72,7 +96,7 @@ export function MasonOSPage() {
       <SectionIntro
         eyebrow="MasonOS"
         title="A desktop environment, built from scratch"
-        lead="MasonOS turns a stock Plasma 6 install into a GNOME-shaped, notch-aware desktop with Mason Bot living in the top bar. Everything is reversible, and it all installs into your home directory."
+        lead="MasonOS turns any KDE Plasma 6 desktop into a GNOME-shaped, notch-aware shell with Mason Bot living in the top bar. Any distro, any GPU, Wayland or X11 — and everything is reversible."
       />
 
       <div className="code-block code-block--hero">
@@ -89,7 +113,7 @@ export function MasonOSPage() {
       </div>
 
       <p className="tag-line">
-        Plasma 6.8 · Wayland · Fedora Asahi · no root · reversible
+        KDE Plasma 6 · any distro · any GPU · Wayland or X11 · no root · reversible
       </p>
 
       <figure className="masonos-shot">
@@ -114,10 +138,34 @@ export function MasonOSPage() {
           <dd>one command</dd>
         </div>
         <div>
-          <dt>Dependencies</dt>
-          <dd>none to fetch</dd>
+          <dt>Requires</dt>
+          <dd>KDE Plasma 6</dd>
         </div>
       </dl>
+
+      <section className="section masonos-compat-section">
+        <h3 className="subhead">Runs on anything Plasma 6 runs on</h3>
+        <p className="muted">
+          MasonOS checks your session at install time and again on every apply —
+          distro, session type, GPU and panel — then only touches what it finds.
+          Built and tested on Fedora Asahi Remix 45 on an M2 MacBook Air; nothing
+          in it is Fedora- or Apple-specific.
+        </p>
+        <dl className="masonos-compat">
+          {COMPAT.map((group) => (
+            <div key={group.label}>
+              <dt>{group.label}</dt>
+              <dd>
+                <ul>
+                  {group.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
       <section className="section">
         <h3 className="subhead">What it does</h3>

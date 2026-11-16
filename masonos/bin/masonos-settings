@@ -442,7 +442,7 @@ class DisplayPage(Page):
 class AboutPage(Page):
     def __init__(self, app):
         super().__init__(app)
-        self.title("About MasonOS", "A shell and identity for KDE Plasma on Fedora Asahi.")
+        self.title("About MasonOS", "A shell and identity for KDE Plasma 6 — any distro, any GPU.")
         inner = section(self.body, f"MasonOS {VERSION}")
         for label, value in (
             ("Shell", "Plasma panels, KWin decoration, Look-and-Feel, Mason Bot"),

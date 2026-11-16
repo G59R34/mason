@@ -10,7 +10,7 @@ export function MasonOSPromo() {
       <SectionIntro
         eyebrow="Side project"
         title="MasonOS"
-        lead="A desktop environment built from scratch on top of KDE Plasma 6 — Mason-shaped panels, notch-aware top bar, Mason Bot in the bar, and one command to undo it all."
+        lead="A desktop environment built from scratch on top of KDE Plasma 6 — Mason-shaped panels, notch-aware top bar, Mason Bot in the bar, and one command to undo it all. Works on any distro, any GPU, Wayland or X11."
       >
         <Link to="/masonos" className="btn">
           Meet MasonOS
@@ -21,7 +21,7 @@ export function MasonOSPromo() {
         <pre>
           <code>{INSTALL_ONE_LINER}</code>
         </pre>
-        <span className="code-block__hint">Fedora Asahi Remix · Plasma 6.8 · Wayland</span>
+        <span className="code-block__hint">KDE Plasma 6 · any distro</span>
       </div>
     </div>
   );

@@ -1,8 +1,19 @@
 # MasonOS
 
-A desktop identity for Fedora Asahi Remix: KDE Plasma 6 transformed into a
-GNOME-shaped shell called **MasonOS**, styled from `mason-web`, with Mason Bot in
-the top bar.
+A desktop identity for **KDE Plasma 6** — any distro, any GPU, any panel. Plasma
+becomes a GNOME-shaped shell called **MasonOS**, styled from `mason-web`, with
+Mason Bot in the top bar.
+
+It is built and tested on Fedora Asahi Remix 45 (M2 MacBook Air), but nothing in
+it is Asahi-specific: the distro, the GPU, the session type and the notch are all
+detected at runtime, and each feature steps aside cleanly when its hardware or
+tool is missing (see [Runs on](#runs-on)).
+
+```
+Fedora · Arch · Debian/Ubuntu · openSUSE · Bazzite · Nobara · anything with Plasma 6
+Intel · AMD · NVIDIA · Apple Silicon
+Wayland or X11 · notched or not
+```
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -14,6 +25,24 @@ the top bar.
 On a notched panel the bar leaves its centre empty, because that is where the
 notch sits: launcher on the left, bot + tray + clock on the right.
 
+## Runs on
+
+| | Requirement |
+|---|---|
+| **Desktop** | KDE Plasma 6 (6.0+; built on 6.8). Plasma 5 is refused with a clear message. |
+| **Distro** | Any that ships Plasma 6 — Fedora/Kinoite, Arch, Debian/Ubuntu, openSUSE, Bazzite, Nobara, NixOS… Nothing distro-specific is used. |
+| **Session** | Wayland or X11. Fractional scaling is applied on Wayland only; on X11 the scale is left as you set it. |
+| **Hardware** | Intel, AMD, NVIDIA and Apple Silicon. The notch is read from Asahi's devicetree; without one the bar uses the centred-clock layout. |
+| **Tools** | `plasmashell` + `kpackagetool6` (Frameworks 6) are required. `busctl` **or** `gdbus` for scripting, `kscreen-doctor` for display checks, `kwriteconfig6`/`kreadconfig6` for settings, `python3` for the bot bridge. Each one only disables its own feature when missing. |
+| **Optional** | PySide6 for MasonOS Settings, `magick` to re-render artwork, `curl` to fetch fonts, `notify-send` for toasts. |
+
+Missing pieces are reported, never fatal: no `kscreen-doctor` means no display
+check, no PySide6 means no settings app, no notch means the centred clock.
+
+```bash
+masonosctl status      # shows session, Plasma version and what is applied
+```
+
 ## Install it
 
 ```bash
@@ -22,9 +51,16 @@ cd masonos
 ./install.sh --no-apply      # install the files, transform later
 ```
 
-Everything lands in `~/.local`; nothing needs root. `install.sh` also migrates a
-pre-rename MasonDE install (removes the old widget, moves state and bot config,
-remembers your original settings).
+Or straight from the site:
+
+```bash
+curl -fsSL https://sexwithmason.com/masonos/install.sh | bash
+```
+
+Everything lands in `~/.local`; nothing needs root. `install.sh` checks the
+Plasma version and dependencies up front, and also migrates a pre-rename
+MasonDE install (removes the old widget, moves state and bot config, remembers
+your original settings).
 
 ## One script, both directions
 
@@ -156,7 +192,11 @@ wallpaper, desktop icon, autostart entry and GTK include.
 
 ## Limits
 
-* Plasma 6 on Wayland (tested on 6.8.2, Fedora Asahi Remix 45, M2 Air).
+* Plasma 6 only (6.0+; tested on 6.8.2, Fedora Asahi Remix 45, M2 Air). Plasma 5's
+  packaging and QML differ too much, so the installer and `masonosctl` refuse it
+  with an explicit message instead of applying a half-broken theme.
+* X11 works, but KDE's fractional scaling is Wayland-only, so the PPI correction
+  is skipped there and MasonOS keeps your integer scale.
 * `on`/`off` rewrite your panel layout — that is what a shell does. Anything you
   hand-tune while MasonOS is applied belongs to MasonOS.
 * Boot-time branding (Plymouth) is **not** touched: boot assets need root. The

@@ -9,6 +9,9 @@ state="${XDG_STATE_HOME:-$HOME/.local/state}"
 
 say() { printf ' · %s\n' "$*"; }
 
+desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+[[ -n "$desktop_dir" && "$desktop_dir" != "$HOME" ]] || desktop_dir="$HOME/Desktop"
+
 if [[ -x "$here/bin/masonosctl" ]]; then
   "$here/bin/masonosctl" off --quiet || true
   say "reverted the session"
@@ -29,11 +32,13 @@ rm -f "$data/color-schemes/MasonOS.colors" \
       "$data/wallpapers/masonos.png" \
       "$data/icons/hicolor/scalable/apps/masonos.svg" \
       "$data/applications/masonos-transform.desktop" \
-      "$HOME/Desktop/MasonOS.desktop" \
+      "$data/applications/masonos-settings.desktop" \
+      "$desktop_dir/MasonOS.desktop" \
       "$config/autostart/masonos.desktop" \
       "$config/gtk-3.0/masonos.css" \
       "$config/gtk-4.0/masonos.css" \
       "$HOME/.local/bin/masonosctl" \
+      "$HOME/.local/bin/masonos-settings" \
       "$HOME/.local/bin/masondectl"
 say "files removed"
 
