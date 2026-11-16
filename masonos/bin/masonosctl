@@ -32,6 +32,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 HOME = Path.home()
 ROOT = Path(__file__).resolve().parent.parent
@@ -769,6 +770,205 @@ def restore_stock_panels() -> bool:
         return False
 
 
+SETTINGS_ENTRY = DATA_DIR / "applications" / "systemsettings.desktop"
+SETTINGS_SHIM = HOME / ".local" / "bin" / "systemsettings"
+
+SOFTWARE_ENTRY = DATA_DIR / "applications" / "masons-software.desktop"
+DISCOVER_SHADOW = DATA_DIR / "applications" / "org.kde.discover.desktop"
+DISCOVER_SHIM = HOME / ".local" / "bin" / "plasma-discover"
+
+
+def apply_settings_replacement() -> list[str]:
+    """Make MasonOS Settings stand in for KDE System Settings.
+
+    Two pieces: a desktop entry shadowing the stock ``systemsettings.desktop`` in
+    the app grid, and a shim earlier on PATH than /usr/bin/systemsettings so the
+    tray's Configure items land in the same place. Both are removed by ``off``.
+    """
+    done: list[str] = []
+    template = SHARE / "systemsettings.desktop.in"
+    settings_app = HOME / ".local" / "bin" / "masonos-settings"
+    if template.exists() and (have("masonos-settings") or settings_app.exists()):
+        text = template.read_text(encoding="utf-8").replace(
+            "@MASONOSCTL@", str(HOME / ".local" / "bin" / "masonosctl")
+        )
+        SETTINGS_ENTRY.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_ENTRY.write_text(text, encoding="utf-8")
+        done.append("system settings entry")
+
+    shim = SHARE / "systemsettings-shim.sh"
+    if shim.exists():
+        SETTINGS_SHIM.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(shim, SETTINGS_SHIM)
+        SETTINGS_SHIM.chmod(0o755)
+        done.append("systemsettings shim")
+    return done
+
+
+def remove_settings_replacement() -> None:
+    SETTINGS_ENTRY.unlink(missing_ok=True)
+    try:
+        first_line = SETTINGS_SHIM.read_text(encoding="utf-8", errors="replace")[:200]
+    except OSError:
+        first_line = ""
+    if "MasonOS replaces KDE System Settings" in first_line:
+        SETTINGS_SHIM.unlink(missing_ok=True)
+
+
+def software_binary() -> Path:
+    return HOME / ".local" / "bin" / "mason-software"
+
+
+def apply_software_replacement() -> list[str]:
+    """Put Mason's Software in Discover's place.
+
+    The app gets its own launcher entry, Discover's entry is hidden with a
+    NoDisplay shadow, and a ``plasma-discover`` shim ahead of /usr/bin catches
+    everything else that opens Discover programmatically. ``off`` removes all
+    three, so Discover comes back untouched.
+    """
+    done: list[str] = []
+    if not software_binary().exists():
+        return done
+
+    entry = SHARE / "masons-software.desktop.in"
+    if entry.exists():
+        text = entry.read_text(encoding="utf-8").replace(
+            "@MASONOSCTL@", str(HOME / ".local" / "bin" / "masonosctl")
+        )
+        SOFTWARE_ENTRY.parent.mkdir(parents=True, exist_ok=True)
+        SOFTWARE_ENTRY.write_text(text, encoding="utf-8")
+        SOFTWARE_ENTRY.chmod(0o755)
+        done.append("software entry")
+
+    stock = Path("/usr/share/applications/org.kde.discover.desktop")
+    shadow = SHARE / "discover-shadow.desktop.in"
+    if stock.exists() and shadow.exists():
+        DISCOVER_SHADOW.parent.mkdir(parents=True, exist_ok=True)
+        DISCOVER_SHADOW.write_text(shadow.read_text(encoding="utf-8"), encoding="utf-8")
+        done.append("discover hidden")
+
+    shim = SHARE / "plasma-discover-shim.sh"
+    if shim.exists():
+        DISCOVER_SHIM.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(shim, DISCOVER_SHIM)
+        DISCOVER_SHIM.chmod(0o755)
+        done.append("plasma-discover shim")
+    return done
+
+
+def remove_software_replacement() -> None:
+    SOFTWARE_ENTRY.unlink(missing_ok=True)
+    try:
+        shadow_text = DISCOVER_SHADOW.read_text(encoding="utf-8", errors="replace")[:400]
+    except OSError:
+        shadow_text = ""
+    if "Mason's Software replaces Discover" in shadow_text:
+        DISCOVER_SHADOW.unlink(missing_ok=True)
+    try:
+        shim_text = DISCOVER_SHIM.read_text(encoding="utf-8", errors="replace")[:200]
+    except OSError:
+        shim_text = ""
+    if "MasonOS replaces KDE Discover" in shim_text:
+        DISCOVER_SHIM.unlink(missing_ok=True)
+
+
+LAUNCHER_BINARY = HOME / ".local" / "bin" / "masons-launcher"
+LAUNCHER_SERVICE = (Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share"))
+                    / "dbus-1" / "services" / "org.masonos.Launcher.service")
+PLASMA_LAUNCHER_ACTION = ("[\"plasmashell\", \"activate application launcher\", "
+                          "\"plasmashell\", \"Activate Application Launcher\"]")
+
+
+def _kglobalaccel(method: str, *arguments: str) -> tuple[int, str]:
+    """Talk to kglobalaccel (the service KWin exports) through gdbus."""
+    if not have("gdbus"):
+        return 1, ""
+    result = run(["gdbus", "call", "--session", "--dest", "org.kde.kglobalaccel",
+                  "--object-path", "/kglobalaccel",
+                  "--method", f"org.kde.KGlobalAccel.{method}", *arguments])
+    return result.returncode, result.stdout or ""
+
+
+def reload_kwin_script() -> bool:
+    """Load the installed MasonOS KWin script into the running session.
+
+    ``kpackagetool6 --upgrade`` replaces the files but KWin keeps executing the
+    copy it loaded at login, so the Super-key binding added since then would not
+    exist yet. Loading the file through org.kde.KWin.Scripting starts the current
+    code straight away; the launcher's toggle ignores a duplicate burst, so a
+    second copy of the same binding is harmless.
+    """
+    script = DATA_DIR / "kwin" / "scripts" / "masonos-shell" / "contents" / "code" / "main.js"
+    if not (script.exists() and have("gdbus")):
+        return False
+    loaded = run(["gdbus", "call", "--session", "--dest", "org.kde.KWin",
+                  "--object-path", "/Scripting", "--method",
+                  "org.kde.kwin.Scripting.loadScript", str(script)])
+    match = re.search(r"\((\d+),?\)", loaded.stdout or "")
+    if loaded.returncode != 0 or not match:
+        return False
+    started = run(["gdbus", "call", "--session", "--dest", "org.kde.KWin",
+                   "--object-path", f"/Scripting/Script{match.group(1)}",
+                   "--method", "org.kde.kwin.Script.run"])
+    return started.returncode == 0
+
+
+def apply_launcher_service() -> bool:
+    """Install the D-Bus service file the Super key uses to wake the launcher."""
+    template = SHARE / "org.masonos.Launcher.service.in"
+    if not (LAUNCHER_BINARY.exists() and template.exists()):
+        return False
+    LAUNCHER_SERVICE.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCHER_SERVICE.write_text(
+        template.read_text(encoding="utf-8").replace("@LAUNCHER@", str(LAUNCHER_BINARY)),
+        encoding="utf-8",
+    )
+    return True
+
+
+def plasma_launcher_shortcut() -> str:
+    """What Plasma's launcher key is right now, straight from the config."""
+    if not have("kreadconfig6"):
+        return ""
+    result = run(["kreadconfig6", "--file", "kglobalshortcutsrc", "--group", "plasmashell",
+                  "--key", "activate application launcher"])
+    return (result.stdout or "").strip()
+
+
+def take_launcher_shortcut() -> bool:
+    """Hand the bare Meta key to Mason's Launcher instead of Plasma's launcher.
+
+    Plasma's launcher action holds Meta in kglobalaccel; leaving it bound would
+    open both launchers on one key press. ``revert`` writes the old value back.
+    """
+    if not LAUNCHER_BINARY.exists():
+        return False
+    code, _ = _kglobalaccel("setForeignShortcutKeys", PLASMA_LAUNCHER_ACTION, "@a(ai) []")
+    return code == 0
+
+
+def restore_launcher_shortcut(saved: str = "") -> bool:
+    """Give Meta back to Plasma's own launcher.
+
+    kglobalaccel cannot always hand a foreign action its defaults back, so the
+    value saved during the transform is written to the config as well; the
+    plasmashell restart that comes with ``off`` picks it up.
+    """
+    restored = False
+    code, out = _kglobalaccel("defaultShortcut", PLASMA_LAUNCHER_ACTION)
+    match = re.search(r"\[([0-9,\s]*)\]", out)
+    if code == 0 and match and match.group(1).strip():
+        code, _ = _kglobalaccel("setForeignShortcut", PLASMA_LAUNCHER_ACTION,
+                                "[" + match.group(1) + "]")
+        restored = code == 0
+    if saved and have("kwriteconfig6"):
+        run(["kwriteconfig6", "--file", "kglobalshortcutsrc", "--group", "plasmashell",
+             "--key", "activate application launcher", saved])
+        restored = True
+    return restored
+
+
 def ensure_installed() -> bool:
     return (DATA_DIR / "plasma" / "plasmoids" / APP_ID / "metadata.json").exists()
 
@@ -835,6 +1035,11 @@ def transform(dry_run: bool = False, quiet: bool = False) -> int:
         return 1
 
     install_assets()
+    apply_settings_replacement()
+    apply_launcher_service()
+    take_launcher_shortcut()
+    reload_kwin_script()
+    apply_software_replacement()
     apply_look_and_feel()          # may re-layout panels; we rebuild them below
     apply_scheme_and_wallpaper()
     apply_fonts()
@@ -859,6 +1064,8 @@ def transform(dry_run: bool = False, quiet: bool = False) -> int:
         print(f"masonosctl: {err}", file=sys.stderr)
         return 1
 
+    if LAUNCHER_BINARY.exists() and not manifest.get("launcherShortcut"):
+        manifest["launcherShortcut"] = plasma_launcher_shortcut()
     manifest.update({"active": True, "panels": panels, "updated": int(time.time())})
     write_manifest(manifest)
 
@@ -874,6 +1081,10 @@ def revert(quiet: bool = False) -> int:
     was_active = bool(manifest.get("active"))
 
     stop_bot()
+
+    # Hand Meta back before plasmashell restarts, so it reads the file we write.
+    saved_meta = str(manifest.get("launcherShortcut") or "")
+    restore_launcher_shortcut(saved_meta)
 
     backup = manifest.get("appletsrc")
     backup_path = Path(backup) if backup else None
@@ -898,6 +1109,9 @@ def revert(quiet: bool = False) -> int:
              f"output.{saved_display['output']}.scale.{format_scale(float(saved_display['scale']))}"])
         manifest["display"] = {}
     remove_gtk_include()
+    remove_settings_replacement()
+    remove_software_replacement()
+    restore_launcher_shortcut(str(manifest.pop("launcherShortcut", "") or ""))
     reconfigure_kwin()
 
     manifest["active"] = False
@@ -1050,7 +1264,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="masonosctl", description="Transform Plasma into MasonOS.")
     parser.add_argument("command", nargs="?", default="toggle",
                         choices=["on", "off", "reload", "toggle", "status", "display",
-                                 "lockscreen", "bot", "settings", "transform", "revert"])
+                                 "lockscreen", "bot", "settings", "software", "files",
+                                 "launcher", "transform", "revert"])
     parser.add_argument("action", nargs="?", default="status",
                         help="with bot: status | start | stop | restart")
     parser.add_argument("--quiet", action="store_true", help="no notifications")
@@ -1083,6 +1298,73 @@ def main(argv: list[str]) -> int:
             )
             return 1
         os.execvp(binary, [binary])
+    if command == "software":
+        binary = software_binary()
+        if not binary.exists():
+            found = shutil.which("mason-software")
+            if not found:
+                print("masonosctl: Mason's Software is not installed — run masonos/install.sh.",
+                      file=sys.stderr)
+                return 1
+            binary = Path(found)
+        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+            print(
+                "masonosctl: Mason's Software needs PySide6 — install it "
+                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                file=sys.stderr,
+            )
+            return 1
+        page = args.action if args.action in ("discover", "updates", "installed", "flatpak") else None
+        argv = [str(binary)] + (["--page", page] if page else [])
+        os.execvp(str(binary), argv)
+    if command == "launcher":
+        binary = HOME / ".local" / "bin" / "masons-launcher"
+        if not binary.exists():
+            found = shutil.which("masons-launcher")
+            if not found:
+                print("masonosctl: Mason's Launcher is not installed — run masonos/install.sh.",
+                      file=sys.stderr)
+                return 1
+            binary = Path(found)
+        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+            print(
+                "masonosctl: Mason's Launcher needs PySide6 — install it "
+                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                file=sys.stderr,
+            )
+            return 1
+        if have("gdbus"):
+            # A resident launcher already owns the name: ask it instead of
+            # starting a second copy of the window.
+            shown = run(["gdbus", "call", "--session", "--dest", "org.masonos.Launcher",
+                         "--object-path", "/Launcher", "--method",
+                         "local.LauncherService.show"])
+            if shown.returncode == 0:
+                return 0
+        os.execvp(str(binary), [str(binary)])
+    if command == "files":
+        binary = HOME / ".local" / "bin" / "masons-files"
+        if not binary.exists():
+            found = shutil.which("masons-files")
+            if not found:
+                print("masonosctl: Mason's Files is not installed — run masonos/install.sh.",
+                      file=sys.stderr)
+                return 1
+            binary = Path(found)
+        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+            print(
+                "masonosctl: Mason's Files needs PySide6 — install it "
+                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                file=sys.stderr,
+            )
+            return 1
+        argv = [str(binary)]
+        target = args.action
+        if target and target != "status":          # from the desktop entry's %U
+            if target.startswith("file://"):
+                target = unquote(urlparse(target).path)
+            argv.append(target)
+        os.execvp(str(binary), argv)
     if command == "on":
         return transform(args.dry_run, args.quiet)
     if command == "off":

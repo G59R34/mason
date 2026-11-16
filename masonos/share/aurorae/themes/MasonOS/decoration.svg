@@ -1,64 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- MasonOS Aurorae frame.
+<!-- MasonOS Aurorae frame — a complete window frame, not a floating title strip.
 
-     The canvas is exactly the titlebar (TitleHeight=24 in MasonOSrc) and there
-     are no side or bottom borders. A taller canvas with a transparent body made
-     KWin reserve frame space it never painted, which left a see-through seam
-     between the bar and the window contents.
+     The earlier version had BorderLeft/Right/Bottom=0 and painted only the
+     titlebar. KWin then derives the frame from a single 24px top edge, and after
+     state changes (maximize, fullscreen, a compositor restart) the client and
+     the frame could desynchronise: the bar was drawn as a detached strip, or not
+     at all, while the title text and buttons kept painting — a see-through
+     titlebar over the window contents.
 
-     Shapes use plain presentation attributes, not <style> classes: Qt's SVG
-     renderer does not apply stylesheet rules reliably, which is what turned the
-     window buttons into grey blocks. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 48 24">
-  <defs>
-    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1a1a22"/>
-      <stop offset="1" stop-color="#121218"/>
-    </linearGradient>
-    <linearGradient id="barInactive" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#15151b"/>
-      <stop offset="1" stop-color="#0f0f14"/>
-    </linearGradient>
-  </defs>
+     So: 1px side and bottom borders (BorderLeft/Right/Bottom=1 in MasonOSrc),
+     the titlebar across the top, rounded top corners, and every fill a literal
+     colour (no gradient or element references — those can fail to resolve while
+     literal ones keep painting, which is what produced the invisible bar).
 
-  <!-- active titlebar -->
+     Canvas = BorderLeft(1) + TitleEdgeLeft(10) + stretched middle + 10 + 1, by
+     TitleHeight(24) + BorderBottom(1). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="25" viewBox="0 0 48 25">
+  <!-- rounded top-left + its part of the side border -->
   <g id="decoration-topleft">
-    <path d="M0 10 A10 10 0 0 1 10 0 L10 24 L0 24 Z" fill="url(#bar)"/>
-    <path d="M0.5 10 A9.5 9.5 0 0 1 10 0.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.26" stroke-width="1"/>
+    <path d="M1 10 A9 9 0 0 1 10 1 L10 25 L1 25 Z" fill="#17171e"/>
+    <path d="M1.5 10 A8.5 8.5 0 0 1 10 1.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.28" stroke-width="1"/>
   </g>
+  <!-- titlebar (stretched horizontally) -->
   <g id="decoration-top">
-    <rect x="10" y="0" width="28" height="24" fill="url(#bar)"/>
-    <rect x="10" y="0" width="28" height="1" fill="#c4b5fd" fill-opacity="0.13"/>
+    <rect x="0" y="0" width="48" height="24" fill="#17171e"/>
+    <rect x="0" y="0" width="48" height="1" fill="#c4b5fd" fill-opacity="0.13"/>
   </g>
+  <!-- rounded top-right -->
   <g id="decoration-topright">
-    <path d="M38 0 A10 10 0 0 1 48 10 L48 24 L38 24 Z" fill="url(#bar)"/>
-    <path d="M47.5 10 A9.5 9.5 0 0 0 38 0.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.26" stroke-width="1"/>
+    <path d="M38 1 A9 9 0 0 1 47 10 L47 25 L38 25 Z" fill="#17171e"/>
+    <path d="M47 10 A8.5 8.5 0 0 0 38 1.5" fill="none" stroke="#c4b5fd" stroke-opacity="0.28" stroke-width="1"/>
   </g>
 
-  <!-- inactive titlebar -->
+  <!-- side borders, 1px, stretched down the window -->
+  <g id="decoration-left"><rect x="0" y="0" width="1" height="25" fill="#23232d"/></g>
+  <g id="decoration-right"><rect x="47" y="0" width="1" height="25" fill="#23232d"/></g>
+  <!-- client area edge (no fill) and bottom border -->
+  <g id="decoration-center"><rect x="1" y="24" width="46" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-bottom"><rect x="1" y="24" width="46" height="1" fill="#23232d"/></g>
+  <g id="decoration-bottomleft"><rect x="0" y="24" width="1" height="1" fill="#23232d"/></g>
+  <g id="decoration-bottomright"><rect x="47" y="24" width="1" height="1" fill="#23232d"/></g>
+
+  <!-- inactive -->
   <g id="decoration-inactive-topleft">
-    <path d="M0 10 A10 10 0 0 1 10 0 L10 24 L0 24 Z" fill="url(#barInactive)"/>
+    <path d="M1 10 A9 9 0 0 1 10 1 L10 25 L1 25 Z" fill="#121217"/>
   </g>
   <g id="decoration-inactive-top">
-    <rect x="10" y="0" width="28" height="24" fill="url(#barInactive)"/>
+    <rect x="0" y="0" width="48" height="24" fill="#121217"/>
   </g>
   <g id="decoration-inactive-topright">
-    <path d="M38 0 A10 10 0 0 1 48 10 L48 24 L38 24 Z" fill="url(#barInactive)"/>
+    <path d="M38 1 A9 9 0 0 1 47 10 L47 25 L38 25 Z" fill="#121217"/>
   </g>
-
-  <!-- zero-height reminders of the body pieces: KWin asks for them even though
-       nothing is painted outside the titlebar -->
-  <g id="decoration-center"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-left"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-right"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-bottom"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-bottomleft"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-bottomright"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-
-  <g id="decoration-inactive-center"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-inactive-left"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-inactive-right"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-inactive-bottom"><rect x="10" y="23" width="28" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-inactive-bottomleft"><rect x="0" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
-  <g id="decoration-inactive-bottomright"><rect x="47" y="23" width="1" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-left"><rect x="0" y="0" width="1" height="25" fill="#1b1b22"/></g>
+  <g id="decoration-inactive-right"><rect x="47" y="0" width="1" height="25" fill="#1b1b22"/></g>
+  <g id="decoration-inactive-center"><rect x="1" y="24" width="46" height="1" fill="#000000" fill-opacity="0"/></g>
+  <g id="decoration-inactive-bottom"><rect x="1" y="24" width="46" height="1" fill="#1b1b22"/></g>
+  <g id="decoration-inactive-bottomleft"><rect x="0" y="24" width="1" height="1" fill="#1b1b22"/></g>
+  <g id="decoration-inactive-bottomright"><rect x="47" y="24" width="1" height="1" fill="#1b1b22"/></g>
 </svg>

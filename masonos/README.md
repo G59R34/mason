@@ -99,11 +99,197 @@ PySide6 control panel (no Plasma restart needed to open it):
 | **Bar & dock** | sliders for bar height (40–72px) and dock height (36–80px); *Rebuild panels* re-runs the scripting |
 | **Mason Bot** | project URL, edge function and anon key (stored 600 in `~/.config/masonos/bot.json`), restart and health test |
 | **Display** | the same report as `masonosctl display`, plus *Apply recommended scaling* |
+| **System** | every KDE system panel — display, sound, network, Bluetooth, power, users, printers, shortcuts… — opened with `kcmshell6` in place, plus a button for the full stock System Settings |
 | **About** | version and every path it touches |
 
 Geometry lives in `~/.config/masonos/masonos.json` (`barHeight`, `dockHeight`,
 default `45`/`48`), read on every transform and on every rebuild. The notch rule
 still wins: the bar is never shorter than the notch plus padding.
+
+### It replaces KDE System Settings
+
+MasonOS Settings is the settings app of the desktop, not an extra one:
+
+* `~/.local/share/applications/systemsettings.desktop` shadows the stock entry, so
+  **System Settings** in the launcher, in search and in the app grid opens MasonOS
+  Settings with the MasonOS icon.
+* `~/.local/bin/systemsettings` is a shim ahead of `/usr/bin` on `PATH`, so the
+  tray's **Configure …** items and anything else that runs `systemsettings` land
+  in MasonOS Settings too. A `kcm_*` request is forwarded to `kcmshell6` (the real
+  KDE panel), `kcm_kscreen` opens MasonOS's own Display page, and any other flag
+  goes straight to the untouched `/usr/bin/systemsettings`.
+* The **System** page lists those panels as buttons — nothing is reimplemented, so
+  behaviour and options are exactly KDE's.
+
+`masonosctl off` removes both files (KDE's own entry and binary come back),
+`masonosctl on` restores them, and `install.sh --no-apply` still installs them.
+The **System → Open KDE System Settings** button always launches the real
+`/usr/bin/systemsettings`, shim or not.
+
+## Mason's Software
+
+`masonosctl software`, or **Mason's Software** in the app grid, is the store — a
+Discover replacement that uses the distro's own package tool instead of
+libpackagekit. It has no daemon, no background service and no root of its own:
+it builds the same commands you would type and escalates with `pkexec` for the
+one step that needs it.
+
+| Backend | Used for | Install / remove |
+|---|---|---|
+| `dnf5` (or `dnf`) | Fedora, RHEL, Nobara… | `pkexec dnf5 install -y …` |
+| `apt` | Debian, Ubuntu, Mint… | `pkexec apt-get install -y …` |
+| `pacman` | Arch, Manjaro, Endeavour… | `pkexec pacman -S --noconfirm …` |
+| `yay` / `paru` | the AUR on Arch (search + build) | opened in a terminal — AUR helpers refuse to run as root |
+| `zypper` | openSUSE, SLES | `pkexec zypper --non-interactive install …` |
+| `flatpak` | every distro, search/list/updates | `flatpak install -y <remote> <app>`, in whichever installation defines that remote (`--user`, or `--system` through `pkexec`) |
+
+Whichever of those exist are detected at startup, so the same app is correct on
+the Asahi Fedora box and on an Arch laptop. Each result card shows its source
+(repo, `flathub`, `aur`), its version and whether it is already installed, and the
+button becomes **Remove** when it is.
+
+### Elevation, and what happens when it fails
+
+Installing needs root, so each action runs through `pkexec`, which asks the
+polkit agent for the usual password dialog. Nothing installs if that dialog never
+appears — and a polkit agent can be missing or wedged (a compositor restart is
+enough to leave the KDE agent reconnecting), in which case `pkexec` exits at once
+with `Not authorized` and the package manager never starts.
+
+Mason's Software treats that as a state to recover from, not as success:
+
+1. it checks for a live polkit agent before trying; with none, it goes straight to
+   step 2;
+2. if `pkexec` returns without the package manager having run, it re-runs the very
+   same command inside a terminal window, where `pkexec` can ask for the password
+   on the terminal instead of through the agent;
+3. a real failure (dependency clash, disk full, no network) is shown in the status
+   bar and the package manager's own output is opened in **Activity** — the app
+   never reports `Installed …` unless the command actually exited zero.
+
+Every escalated command names its tool by absolute path (`/usr/bin/dnf5`), because
+`pkexec` starts it with a sanitised environment. AUR installs always use a
+terminal: `yay` refuses to run as root.
+
+Flatpak is scoped by where its remotes actually live. A `--user` install cannot
+see a remote that is only defined system-wide — that is what produces
+`error: No remote refs found for 'flathub'`. The app queries `flatpak remotes
+--user` and `--system` and installs into the matching installation, escalating
+with `pkexec` when the remote (and so the app) is system-wide. Removal and
+updates follow the installation each app is actually in.
+
+### App pages
+
+Clicking any card (the card, not its button) opens a full page for that app:
+icon, name, summary, source and install state, then screenshots, the complete
+description and the metadata, with **Install** / **Remove** right there and
+**← Back** to wherever you came from.
+
+Where that content comes from, in order:
+
+1. **Flathub's API** (`/api/v2/appstream/<app-id>`) — the real product description
+   as HTML, every screenshot at several resolutions, the developer, categories,
+   licence, download/installed sizes, the latest release notes and the verified
+   badge. Responses are cached for a day in `~/.cache/masonos/appstream`, and
+   images in `~/.cache/masonos/images`, so pages reopen instantly and still work
+   offline.
+2. **AppStream on the machine** (`appstreamcli get --details`) — used to *resolve*
+   a native package to its component (`kdenlive` → `org.kde.kdenlive`), so dnf,
+   apt, pacman and zypper cards get the same Flathub screenshots and description
+   as the Flatpak; it also supplies a plain-text description when Flathub has no
+   entry for the app.
+3. **The package manager** — last resort long description
+   (`dnf5 repoquery --queryformat %{description}`, `apt-cache show`, `pacman -Si`).
+
+When nothing is published — a library, a font, a CLI tool — the page says so
+plainly and shows the package's own summary instead of an empty shell.
+
+| Page | What it shows |
+|---|---|
+| **Discover** | a curated front page — Firefox, GIMP, Inkscape, VLC, Kdenlive, Blender, LibreOffice, Thunderbird, OBS, Steam, Telegram, Krita — from the best source this machine has |
+| **Updates** | every newer version across every source, with **Update everything** running each backend's upgrade in turn |
+| **Installed** | native packages and Flatpaks, removable straight from the list |
+| **Flatpak** | the sandboxed apps you have, from your remotes |
+
+Searching runs every backend at once (DNF repoquery, `apt-cache search`,
+`pacman -Ss` + `yay -Ss`, `zypper search`, `flatpak search`) and merges the
+results. Output of every install, removal and upgrade streams into the
+**Activity** pane, so a failure is visible instead of silent.
+
+### It replaces KDE Discover
+
+Same mechanism as System Settings, and the same one-way rule — nothing in `/usr`
+is touched:
+
+* `~/.local/share/applications/masons-software.desktop` is the app's own entry.
+* `~/.local/share/applications/org.kde.discover.desktop` shadows Discover's entry
+  with `NoDisplay=true`, so the stock store disappears from the grid and search.
+* `~/.local/bin/plasma-discover` is a shim ahead of `/usr/bin` on `PATH`, so the
+  update notifier and anything else that launches Discover open Mason's Software
+  — and fall back to the real binary if PySide6 is ever missing.
+
+`masonosctl off` removes all three and Discover comes back exactly as it was;
+`masonosctl on` puts them back. The store only reads and installs through system
+tools, so removing MasonOS never removes a package you installed with it.
+
+## Mason's Files
+
+`masonosctl files`, **Mason's Files** in the app grid, or `masons-files ~/Pictures`
+opens the file manager. It is a plain Qt file browser over your real filesystem —
+no indexing service, no daemon, no database.
+
+| Part | What it does |
+|---|---|
+| **Sidebar** | Home, Documents, Downloads, Pictures, Music, Videos, Desktop (from `xdg-user-dir`), Computer (`/`), Trash, plus anything mounted under `/run/media`, `/media` or `/mnt` and free space for the current folder |
+| **Toolbar** | back / forward / up buttons with real history, an editable location bar (`~/…`, `/`, any path), and a filter box that narrows the current folder as you type |
+| **Views** | a details list (name, size, type, modified) and an icon grid, toggled with the ▦ button |
+| **Operations** | new folder, rename, copy, cut, paste, move to trash (`gio trash`, so it is restorable), permanent delete with confirmation, empty trash, properties, copy path, open terminal here |
+| **Shortcuts** | `Backspace` up · `Alt+←/→` history · `Ctrl+L` location · `Ctrl+H` hidden files · `Ctrl+Shift+N` new folder · `F2` rename · `Ctrl+C/X/V` · `Delete` trash · `Shift+Delete` delete · `Ctrl+A` select all · `Ctrl+T` terminal · `F5` refresh |
+
+Copy, move and delete run on a worker thread with the operation shown in the
+status bar, so the window stays responsive while a large folder copies.
+
+`masonosctl files` understands the desktop entry's `%U` form, so
+`masons-files file:///home/carter` and opening a folder with *Open With → Mason's
+Files* both land on the right place. Unlike Settings and Software it replaces
+nothing — Dolphin stays installed, because a file manager should not be a single
+point of failure.
+
+## Mason's Launcher (the Super key)
+
+Press **Super** (the Windows key) and the desktop's own application window
+opens: favorites on the left, every installed application in the middle,
+recent applications and categories on the right, search on top, and
+log out / restart / shut down along the bottom.
+
+It is `bin/masons-launcher`, and it lists exactly what Plasma lists — ordinary
+`.desktop` files from `~/.local/share/applications`, `/usr/share/applications`
+and both Flatpak exports, honouring `NoDisplay`, `Hidden`, `TryExec` and
+`Terminal`. Nothing is indexed and nothing is cached: newly installed apps appear
+the next time it opens.
+
+| | |
+|---|---|
+| **Search** | type anywhere — the box is focused on open; `Enter` launches the first match |
+| **Keyboard** | `↑ ↓ ← →` move between apps, `Enter` launches, `Esc` clears the search, then closes |
+| **Favorites** | right-click any app to add or remove it; stored in `~/.config/masonos/launcher.json` |
+| **Recents** | the last eight apps you opened from the launcher, kept in the same file |
+| **Categories** | click one to filter the middle column to it; click again to clear |
+| **Power** | log out through `org.kde.Shutdown`, restart and shut down through logind |
+
+### How the key gets there
+
+The launcher registers nothing itself. The MasonOS KWin script owns `Meta`
+(`registerShortcut("MasonOS Launcher", …, "Meta", …)`) and calls
+`org.masonos.Launcher.toggle()` over D-Bus; a user D-Bus service file
+(`~/.local/share/dbus-1/services/org.masonos.Launcher.service`) starts
+`masons-launcher --service` on demand, so no process sits around until the first
+press. `masonosctl off` removes the service file and the KWin script's binding
+with the rest of MasonOS.
+
+```bash
+masonosctl launcher      # open it without the keyboard
+```
 
 ## Lock screen and login screen
 
@@ -164,10 +350,10 @@ top bar     : 45px, edge clusters with the centre clear
 | **Palette** | `share/color-schemes/MasonOS.colors` — mason-web tokens (`#08080a` … `#8b5cf6`) |
 | **Plasma style** | `share/desktoptheme/com.mason.masonos` — violet-black glass frames with real rounded corners for the bar/dock (`panel-background`) and rounded task tiles (`tasks`); everything else inherits the `default` theme's assets |
 | **Look-and-Feel** | `share/look-and-feel/com.mason.masonos` — one package that bundles palette, style, icons, decoration and the **login splash** (MasonOS mark, wordmark, progress bar) |
-| **Window decoration** | `share/aurorae/themes/MasonOS` — 24px rounded titlebar with a centred title, glyph-only minimize/maximize/close (no plates behind them), accent glyph on hover. The frame is exactly the titlebar: no side/bottom borders and no title edges, so the client area starts right below the bar instead of leaving a see-through seam |
+| **Window decoration** | `share/aurorae/themes/MasonOS` — 24px rounded titlebar with a centred title, glyph-only minimize/maximize/close (no plates behind them), accent glyph on hover, and a 1px frame down the sides and along the bottom. Every fill is a literal colour: the earlier gradient-filled, top-only frame could lose its background after maximize/fullscreen or a compositor restart, which left the title and buttons painting on a see-through strip |
 | **Icons** | `share/icons/MasonOS` inherits `breeze-dark` and overrides only the launcher/brand marks |
 | **GTK apps** | `share/gtk/masonos.css` included from `gtk-3.0/gtk.css` and `gtk-4.0/gtk.css` |
-| **Behaviour** | `share/kwin/masonos-shell` KWin script: guarded tile/maximize/show-desktop shortcuts |
+| **Behaviour** | `share/kwin/masonos-shell` KWin script: guarded tile/maximize/show-desktop shortcuts, and `Meta` opens Mason's Launcher (Plasma's own launcher gives the key up while MasonOS is on) |
 | **Mason Bot** | `share/plasmoids/com.mason.masonos.bot` + `bot/masonos-bot.py` loopback bridge to `smooth-service` |
 
 ## Mason Bot
@@ -188,7 +374,8 @@ time. The panel talks to `127.0.0.1:8765`, so the key never enters QML.
 ```
 
 Reverts the session first, then removes the widget, KWin script, themes, palette,
-wallpaper, desktop icon, autostart entry and GTK include.
+wallpaper, desktop icon, autostart entry and GTK include, and the Settings and
+Software launchers and shims (Discover and System Settings come back).
 
 ## Limits
 

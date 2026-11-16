@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Discover
+Comment=Hidden: Mason's Software replaces Discover
+Exec=false
+Icon=system-software-install
+NoDisplay=true
+Hidden=true

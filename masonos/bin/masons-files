@@ -1,0 +1,1036 @@
+#!/usr/bin/env python3
+"""Mason's Files — the file manager for MasonOS.
+
+A places sidebar, a location bar, details and icon views, a name filter, and the
+file operations people actually use (new folder, rename, copy/cut/paste, move to
+trash, delete, properties, open a terminal here). Everything runs on the normal
+POSIX tools via Qt and Python; deletions go through `gio trash` so they land in
+the desktop trash and can be restored.
+
+    masons-files                 open at home
+    masons-files ~/Pictures      open somewhere specific
+    masons-files --screenshot out.png
+"""
+
+from __future__ import annotations
+
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import threading
+from pathlib import Path
+
+from PySide6.QtCore import QDir, QModelIndex, QObject, QSize, QSortFilterProxyModel, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileSystemModel,
+    QFormLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListView,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
+
+SHARE = Path(__file__).resolve().parent.parent / "share"
+HOME = Path.home()
+VERSION = "1.0"
+
+PALETTE = {
+    "bg": "#08080a",
+    "surface": "#12121a",
+    "surface_alt": "#17171f",
+    "hover": "#1d1d27",
+    "border": "#26262f",
+    "text": "#f4f4f5",
+    "muted": "#9a9aa8",
+    "accent": "#8b5cf6",
+    "accent_soft": "#c4b5fd",
+    "warn": "#fbbf24",
+    "danger": "#fca5a5",
+}
+
+QSS = f"""
+QWidget {{ background: {PALETTE['bg']}; color: {PALETTE['text']};
+           font-family: "DM Sans"; font-size: 14px; }}
+QLabel {{ background: transparent; }}
+#Sidebar {{ background: {PALETTE['surface']}; border-right: 1px solid {PALETTE['border']}; }}
+#Wordmark {{ font-family: "Syne"; font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }}
+#Tagline {{ color: {PALETTE['muted']}; font-size: 10px; letter-spacing: 2px; }}
+#SectionLabel {{ color: {PALETTE['muted']}; font-size: 10px; letter-spacing: 1.6px; }}
+#Crumb {{ font-family: "Syne"; font-size: 17px; font-weight: 700; }}
+#Status {{ color: {PALETTE['muted']}; font-size: 12px; }}
+#Empty {{ color: {PALETTE['muted']}; }}
+QPushButton {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+               border-radius: 9px; padding: 6px 12px; color: {PALETTE['text']}; }}
+QPushButton:hover {{ border-color: {PALETTE['accent']}; }}
+QPushButton#Nav {{ background: transparent; border: none; text-align: left;
+                   padding: 8px 12px; border-radius: 9px; color: {PALETTE['muted']}; }}
+QPushButton#Nav:hover {{ background: {PALETTE['hover']}; color: {PALETTE['text']}; }}
+QPushButton#Nav:checked {{ background: {PALETTE['surface_alt']}; color: {PALETTE['text']};
+                           font-weight: 600; }}
+QPushButton#Tool {{ background: transparent; border: none; padding: 0; border-radius: 8px;
+                    font-size: 19px; font-weight: 600; }}
+QPushButton#Tool:hover {{ background: {PALETTE['surface_alt']}; }}
+QPushButton#Tool:disabled {{ color: #4a4a55; }}
+QPushButton#Primary {{ background: {PALETTE['accent']}; border: none; color: #0b0b10;
+                       font-weight: 700; padding: 7px 14px; }}
+QLineEdit {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+             border-radius: 10px; padding: 7px 12px; font-size: 14px; }}
+QLineEdit:focus {{ border-color: {PALETTE['accent']}; }}
+QTreeView, QListView {{ background: transparent; border: none; outline: none; }}
+QTreeView::item {{ padding: 5px 4px; border-radius: 6px; }}
+QTreeView::item:selected, QListView::item:selected {{
+    background: rgba(139, 92, 246, 46); color: {PALETTE['text']}; }}
+QTreeView::item:hover, QListView::item:hover {{ background: {PALETTE['hover']}; }}
+QHeaderView::section {{ background: {PALETTE['surface']}; color: {PALETTE['muted']};
+                        border: none; border-bottom: 1px solid {PALETTE['border']};
+                        padding: 6px 8px; font-size: 11px; letter-spacing: 1px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {PALETTE['border']}; border-radius: 5px; min-height: 30px; }}
+QScrollBar::handle:vertical:hover {{ background: {PALETTE['accent']}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+QScrollBar:horizontal {{ height: 10px; background: transparent; }}
+QScrollBar::handle:horizontal {{ background: {PALETTE['border']}; border-radius: 5px; min-width: 30px; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+QMenu {{ background: {PALETTE['surface']}; border: 1px solid {PALETTE['border']}; padding: 6px; }}
+QMenu::item {{ padding: 6px 18px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {PALETTE['hover']}; }}
+QDialog {{ background: {PALETTE['surface']}; }}
+"""
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def side_dirs() -> list[tuple[str, str]]:
+    """The places sidebar: XDG folders that exist plus the usual roots."""
+    places: list[tuple[str, str]] = [("Home", str(HOME))]
+    for label, folder in (("Documents", "DOCUMENTS"), ("Downloads", "DOWNLOAD"),
+                          ("Pictures", "PICTURES"), ("Music", "MUSIC"),
+                          ("Videos", "VIDEOS"), ("Desktop", "DESKTOP")):
+        path = xdg_dir(folder)
+        if path and Path(path).is_dir() and path != str(HOME):
+            places.append((label, path))
+    places.append(("Computer", "/"))
+    return places
+
+
+def xdg_dir(name: str) -> str:
+    try:
+        out = subprocess.run(["xdg-user-dir", name], capture_output=True, text=True, timeout=5)
+        path = (out.stdout or "").strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return "" if path == str(HOME) else path
+
+
+def removable() -> list[tuple[str, str]]:
+    found = []
+    for base in (f"/run/media/{os.environ.get('USER', '')}", "/media", "/mnt"):
+        path = Path(base)
+        if not path.is_dir():
+            continue
+        for child in sorted(path.iterdir()):
+            if child.is_dir():
+                found.append((child.name, str(child)))
+    return found
+
+
+def human_size(size: int) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} B"
+
+
+def unique_target(directory: str, name: str) -> Path:
+    target = Path(directory) / name
+    if not target.exists():
+        return target
+    stem, suffix = target.stem, target.suffix
+    if target.is_dir() or not suffix:
+        stem, suffix = name, ""
+    for index in range(1, 999):
+        candidate = Path(directory) / (f"{stem} ({index}){suffix}" if index > 1 else f"{stem} (copy){suffix}")
+        if not candidate.exists():
+            return candidate
+    return Path(directory) / f"{name}-copy"
+
+
+class FilterProxy(QSortFilterProxyModel):
+    """Name filter that never hides folders.
+
+    A plain QSortFilterProxyModel drops the root row itself when the folder name
+    does not match, which leaves the view empty; keeping directories accepted also
+    keeps double-click navigation working while a filter is typed.
+    """
+
+    def filterAcceptsRow(self, source_row: int, source_parent) -> bool:
+        model = self.sourceModel()
+        index = model.index(source_row, 0, source_parent)
+        if model.isDir(index):
+            return True
+        pattern = self.filterRegularExpression().pattern()
+        if not pattern:
+            return True
+        return pattern.lower() in model.fileName(index).lower()
+
+
+class Task(QObject):
+    """One file operation, off the GUI thread."""
+
+    finished = Signal(bool, str)
+
+    def __init__(self, func, message: str):
+        super().__init__()
+        self.func = func
+        self.message = message
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            self.func()
+        except Exception as error:          # report, never crash the window
+            self.finished.emit(False, str(error))
+            return
+        self.finished.emit(True, self.message)
+
+
+class PropertiesDialog(QDialog):
+    def __init__(self, path: Path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Properties")
+        self.setMinimumWidth(430)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(14)
+
+        title = QLabel(path.name or str(path))
+        title.setObjectName("Wordmark")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        try:
+            stat = path.stat()
+            kind = "Folder" if path.is_dir() else (path.suffix[1:].upper() + " file" if path.suffix else "File")
+            form.addRow("Type", QLabel(kind))
+            form.addRow("Location", QLabel(str(path.parent)))
+            form.addRow("Size", QLabel(self._size(path)))
+            form.addRow("Modified", QLabel(self._when(stat.st_mtime)))
+            form.addRow("Permissions", QLabel(oct(stat.st_mode)[-3:]))
+        except OSError as error:
+            form.addRow("Problem", QLabel(str(error)))
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    @staticmethod
+    def _size(path: Path) -> str:
+        if path.is_file():
+            try:
+                return human_size(path.stat().st_size)
+            except OSError:
+                return "unknown"
+        try:
+            out = subprocess.run(["du", "-sh", "--", str(path)], capture_output=True,
+                                 text=True, timeout=8)
+            first = (out.stdout or "").split("\t")[0].strip()
+            return first or "unknown"
+        except (OSError, subprocess.TimeoutExpired):
+            return "unknown"
+
+    @staticmethod
+    def _when(stamp: float) -> str:
+        import time
+        return time.strftime("%d %B %Y, %H:%M", time.localtime(stamp))
+
+
+# ── the window ───────────────────────────────────────────────────────────────
+
+class MasonFiles(QWidget):
+    def __init__(self, start: str | None = None):
+        super().__init__()
+        self.setWindowTitle("Mason's Files")
+        self.resize(1180, 760)
+        self.setMinimumSize(820, 520)
+
+        self.current = str(HOME)
+        self.history: list[str] = []
+        self.history_index = -1
+        self.show_hidden = False
+        self.icon_mode = False
+        self.clipboard: list[tuple[str, bool]] = []      # (path, is_cut)
+        self.tasks: list[Task] = []
+
+        mark = QPixmap(str(SHARE / "icons" / "masonos.svg"))
+        if not mark.isNull():
+            self.setWindowIcon(QIcon(mark))
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._sidebar())
+
+        right = QWidget()
+        column = QVBoxLayout(right)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self._toolbar())
+        column.addWidget(self._views(), 1)
+        column.addWidget(self._statusbar())
+        root.addWidget(right, 1)
+
+        self._model()
+        self._shortcuts()
+        self.navigate(start or str(HOME), push=False)
+
+    # chrome -----------------------------------------------------------------
+    def _sidebar(self) -> QWidget:
+        bar = QWidget()
+        bar.setObjectName("Sidebar")
+        bar.setFixedWidth(212)
+        side = QVBoxLayout(bar)
+        side.setContentsMargins(14, 18, 14, 14)
+        side.setSpacing(4)
+
+        head = QHBoxLayout()
+        logo = QLabel()
+        logo.setPixmap(QIcon(str(SHARE / "icons" / "masonos.svg")).pixmap(24, 24))
+        word = QLabel("Mason's")
+        word.setObjectName("Wordmark")
+        head.addWidget(logo)
+        head.addWidget(word)
+        head.addStretch(1)
+        side.addLayout(head)
+        tag = QLabel("FILES")
+        tag.setObjectName("Tagline")
+        side.addWidget(tag)
+        side.addSpacing(12)
+
+        places_label = QLabel("PLACES")
+        places_label.setObjectName("SectionLabel")
+        side.addWidget(places_label)
+
+        self.place_buttons: list[QPushButton] = []
+        self.places_box = QVBoxLayout()
+        self.places_box.setSpacing(2)
+        side.addLayout(self.places_box)
+
+        self.devices_label = QLabel("DEVICES")
+        self.devices_label.setObjectName("SectionLabel")
+        side.addSpacing(10)
+        side.addWidget(self.devices_label)
+        self.devices_box = QVBoxLayout()
+        self.devices_box.setSpacing(2)
+        side.addLayout(self.devices_box)
+
+        side.addStretch(1)
+        self.free_label = QLabel("")
+        self.free_label.setObjectName("Status")
+        self.free_label.setWordWrap(True)
+        side.addWidget(self.free_label)
+        return bar
+
+    def _toolbar(self) -> QWidget:
+        wrap = QWidget()
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(16, 12, 16, 8)
+        row.setSpacing(8)
+
+        self.back_btn = self._tool("‹", "Back (Alt+←)", self.go_back)
+        self.forward_btn = self._tool("›", "Forward (Alt+→)", self.go_forward)
+        self.up_btn = self._tool("↑", "Parent folder (Backspace)", self.go_up)
+        for button in (self.back_btn, self.forward_btn, self.up_btn):
+            row.addWidget(button)
+
+        self.location = QLineEdit()
+        self.location.setPlaceholderText("Location — type a path, ~/Documents, /")
+        self.location.returnPressed.connect(self._location_entered)
+        row.addWidget(self.location, 1)
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Filter this folder…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._filter_changed)
+        self.search.setFixedWidth(200)
+        row.addWidget(self.search)
+
+        self.view_btn = self._tool("▦", "Switch to icon view", self.toggle_view)
+        row.addWidget(self.view_btn)
+        menu_btn = self._tool("⋯", "Actions", None)
+        menu_btn.clicked.connect(self._show_menu_from_toolbar)
+        row.addWidget(menu_btn)
+        return wrap
+
+    def _tool(self, glyph: str, tip: str, handler) -> QPushButton:
+        """Toolbar button drawn from a glyph, so no icon theme is required."""
+        button = QPushButton(glyph)
+        button.setObjectName("Tool")
+        button.setFixedSize(34, 32)
+        button.setToolTip(tip)
+        font = button.font()
+        font.setPointSize(15 if glyph not in "⋯" else 16)
+        button.setFont(font)
+        if handler is not None:
+            button.clicked.connect(handler)
+        return button
+
+    def _views(self) -> QWidget:
+        self.stack = QStackedWidget()
+
+        self.details = QTreeView()
+        self.details.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.details.setUniformRowHeights(True)
+        self.details.setSortingEnabled(True)
+        self.details.setAlternatingRowColors(False)
+        self.details.setAllColumnsShowFocus(True)
+        self.details.setRootIsDecorated(False)
+        self.details.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.details.customContextMenuRequested.connect(self._context_menu)
+        self.details.activated.connect(self._open_index)
+
+        self.icons = QListView()
+        self.icons.setViewMode(QListView.IconMode)
+        self.icons.setIconSize(QSize(48, 48))
+        self.icons.setGridSize(QSize(126, 104))
+        self.icons.setResizeMode(QListView.Adjust)
+        self.icons.setMovement(QListView.Static)
+        self.icons.setWordWrap(True)
+        self.icons.setTextElideMode(Qt.ElideMiddle)
+        self.icons.setGridSize(QSize(148, 112))
+        self.icons.setUniformItemSizes(True)
+        self.icons.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.icons.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.icons.customContextMenuRequested.connect(self._context_menu)
+        self.icons.activated.connect(self._open_index)
+
+        self.stack.addWidget(self.details)
+        self.stack.addWidget(self.icons)
+        self.stack.setCurrentWidget(self.details)
+        return self.stack
+
+    def _statusbar(self) -> QWidget:
+        wrap = QWidget()
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(18, 4, 18, 10)
+        self.message = QLabel("")          # what just happened
+        self.message.setObjectName("Status")
+        row.addWidget(self.message, 1)
+        self.busy = QLabel("")             # running operation
+        self.busy.setObjectName("Status")
+        row.addWidget(self.busy)
+        self.status = QLabel("")           # item counts
+        self.status.setObjectName("Status")
+        row.addWidget(self.status)
+        return wrap
+
+    def _model(self) -> None:
+        self.model = QFileSystemModel(self)
+        self.model.setRootPath(QDir.rootPath())
+        self.model.setFilter(self._filters())
+        self.model.setReadOnly(True)
+
+        self.proxy = FilterProxy(self)
+        self.proxy.setSourceModel(self.model)
+        self.proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.proxy.setFilterKeyColumn(0)
+        self.proxy.setDynamicSortFilter(True)
+
+        self.details.setModel(self.proxy)
+        self.icons.setModel(self.proxy)
+        self.details.selectionModel().selectionChanged.connect(lambda *_: self._update_status())
+        self.icons.selectionModel().selectionChanged.connect(lambda *_: self._update_status())
+        self.proxy.sort(0, Qt.AscendingOrder)
+        self.proxy.rowsInserted.connect(lambda *_: self._update_status())
+        self.proxy.rowsRemoved.connect(lambda *_: self._update_status())
+        self.proxy.layoutChanged.connect(lambda *_: self._update_status())
+        self.model.directoryLoaded.connect(lambda *_: self._update_status())
+        header = self.details.header()
+        header.setStretchLastSection(False)
+        self.details.setColumnWidth(0, 420)
+        for column, width in ((1, 110), (2, 160), (3, 190)):
+            self.details.setColumnWidth(column, width)
+
+    def _filters(self):
+        filters = QDir.AllEntries | QDir.NoDotAndDotDot
+        if self.show_hidden:
+            filters |= QDir.Hidden
+        return filters
+
+    def _shortcuts(self) -> None:
+        bindings = (
+            ("Backspace", self.go_up),
+            ("Alt+Left", self.go_back),
+            ("Alt+Right", self.go_forward),
+            ("F5", lambda: self.navigate(self.current, push=False)),
+            ("Ctrl+H", self.toggle_hidden),
+            ("Ctrl+Shift+N", self.new_folder),
+            ("Ctrl+L", self.focus_location),
+            ("F2", self.rename_selected),
+            ("Ctrl+C", self.copy_selected),
+            ("Ctrl+X", self.cut_selected),
+            ("Ctrl+V", self.paste),
+            ("Delete", self.trash_selected),
+            ("Shift+Delete", self.delete_selected),
+            ("Ctrl+A", self.select_all),
+            ("Ctrl+T", self.open_terminal),
+        )
+        for keys, handler in bindings:
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(handler)
+
+    # navigation -------------------------------------------------------------
+    def navigate(self, path: str, push: bool = True) -> None:
+        target = os.path.expanduser(path.strip())
+        if not target:
+            return
+        if not os.path.isdir(target):
+            self._flash(f"Not a folder: {target}", warn=True)
+            return
+        target = os.path.abspath(target)
+        self.current = target
+        self.location.setText(target)
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+        self.proxy.setFilterFixedString("")
+
+        if push:
+            self.history = self.history[: self.history_index + 1] + [target]
+            self.history_index = len(self.history) - 1
+        elif not self.history:
+            self.history = [target]
+            self.history_index = 0
+
+        source_index = self.model.index(target)
+        proxy_index = self.proxy.mapFromSource(source_index)
+        self.details.setRootIndex(proxy_index)
+        self.icons.setRootIndex(proxy_index)
+        self._update_nav()
+        self._update_status()
+        self._refresh_places()
+
+    def _location_entered(self) -> None:
+        self.navigate(self.location.text())
+
+    def go_back(self) -> None:
+        if self.history_index > 0:
+            self.history_index -= 1
+            self.navigate(self.history[self.history_index], push=False)
+
+    def go_forward(self) -> None:
+        if self.history_index + 1 < len(self.history):
+            self.history_index += 1
+            self.navigate(self.history[self.history_index], push=False)
+
+    def go_up(self) -> None:
+        parent = os.path.dirname(self.current.rstrip("/")) or "/"
+        self.navigate(parent)
+
+    def _update_nav(self) -> None:
+        self.back_btn.setEnabled(self.history_index > 0)
+        self.forward_btn.setEnabled(self.history_index + 1 < len(self.history))
+        self.up_btn.setEnabled(self.current != "/")
+
+    def focus_location(self) -> None:
+        self.location.setFocus()
+        self.location.selectAll()
+
+    # selection --------------------------------------------------------------
+    def _view(self):
+        return self.stack.currentWidget()
+
+    def selected_paths(self) -> list[str]:
+        view = self._view()
+        paths = []
+        for index in view.selectionModel().selectedIndexes():
+            if index.column() != 0:
+                continue
+            source = self.proxy.mapToSource(index)
+            paths.append(self.model.filePath(source))
+        return paths
+
+    def select_all(self) -> None:
+        self._view().selectAll()
+
+    def _open_index(self, index: QModelIndex) -> None:
+        if not index.isValid():
+            return
+        self._open_path(self.model.filePath(self.proxy.mapToSource(index)))
+
+    def _open_path(self, path: str) -> None:
+        """Open a file the way a file manager should.
+
+        Documents go to the default handler, but executables must not: handing an
+        AppImage to xdg-open means KRun/KIO, which refuses with "launching
+        executables is not allowed in this context". Those are started directly.
+        """
+        target = Path(path)
+        if target.is_dir():
+            self.navigate(str(target))
+            return
+        if target.suffix.lower() == ".desktop":
+            self._launch_desktop(target)
+            return
+        if target.is_file() and (os.access(target, os.X_OK) or self._looks_runnable(target)):
+            self._run_executable(target)
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    @staticmethod
+    def _looks_runnable(target: Path) -> bool:
+        """AppImages and friends are often downloaded without the exec bit."""
+        if target.suffix.lower() in (".appimage", ".run", ".bin", ".sh", ".bash", ".py", ".pl"):
+            return True
+        try:
+            with target.open("rb") as handle:
+                return handle.read(4) == b"\x7fELF"
+        except OSError:
+            return False
+
+    def _run_executable(self, target: Path) -> None:
+        if not os.access(target, os.X_OK):
+            answer = QMessageBox.question(
+                self, f"Make “{target.name}” executable?",
+                f"{target.name} is not marked as executable. Make it executable and run it?",
+                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+            if answer != QMessageBox.Yes:
+                return
+            try:
+                target.chmod(target.stat().st_mode | 0o755)
+            except OSError as error:
+                self._flash(f"Could not make {target.name} executable: {error}", warn=True)
+                return
+        try:
+            proc = subprocess.Popen([str(target)], cwd=str(target.parent), start_new_session=True,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except OSError as error:
+            self._flash(f"Could not run {target.name}: {error}", warn=True)
+            return
+        self._flash(f"Started {target.name}")
+        QTimer.singleShot(1500, lambda: self._check_start(proc, target))
+
+    def _check_start(self, proc, target: Path) -> None:
+        """Say something when an AppImage dies immediately (no FUSE, bad arch…)."""
+        if proc.poll() is None:
+            return
+        detail = ""
+        try:
+            if proc.stderr is not None:
+                detail = proc.stderr.read().decode("utf-8", "replace").strip()
+        except (OSError, ValueError):
+            detail = ""
+        if detail:
+            last = detail.splitlines()[-1][:160]
+            self._flash(f"{target.name} exited: {last}", warn=True)
+
+    def _launch_desktop(self, target: Path) -> None:
+        name, exec_line = target.stem, ""
+        try:
+            for line in target.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("Exec=") and not exec_line:
+                    exec_line = line[5:].strip()
+                elif line.startswith("Name="):
+                    name = line[5:].strip()
+        except OSError:
+            pass
+        if not exec_line:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+            return
+        answer = QMessageBox.question(
+            self, f"Run “{name}”?",
+            f"This runs the launcher entry:\n\n{exec_line}",
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            subprocess.Popen(["gio", "launch", str(target)], start_new_session=True)
+        except OSError:
+            try:
+                subprocess.Popen(shlex.split(exec_line), cwd=str(target.parent), start_new_session=True)
+            except (OSError, ValueError) as error:
+                self._flash(f"Could not run {name}: {error}", warn=True)
+
+    def _filter_changed(self, text: str) -> None:
+        self.proxy.setFilterFixedString(text)
+        self._update_status()
+
+    def toggle_view(self) -> None:
+        self.icon_mode = not self.icon_mode
+        self.stack.setCurrentWidget(self.icons if self.icon_mode else self.details)
+        self.view_btn.setText("▤" if self.icon_mode else "▦")
+        self.view_btn.setToolTip("Switch to list view" if self.icon_mode else "Switch to icon view")
+        self._update_status()
+
+    def toggle_hidden(self) -> None:
+        self.show_hidden = not self.show_hidden
+        self.model.setFilter(self._filters())
+        self._flash("Showing hidden files" if self.show_hidden else "Hidden files are hidden")
+
+    # operations -------------------------------------------------------------
+    def _run(self, func, message: str) -> None:
+        self.busy.setText(message)
+        task = Task(func, message)
+        task.finished.connect(lambda ok, msg, t=task: self._task_done(ok, msg, t))
+        self.tasks.append(task)
+        task.start()
+
+    def _task_done(self, ok: bool, message: str, task) -> None:
+        if task in self.tasks:
+            self.tasks.remove(task)
+        self.busy.setText("")
+        if ok:
+            self._flash(message)
+        else:
+            self._flash(message, warn=True)
+        self.navigate(self.current, push=False)
+
+    def new_folder(self) -> None:
+        name, ok = QInputDialog.getText(self, "New folder", "Folder name:", text="New folder")
+        if not ok or not name.strip():
+            return
+        target = Path(self.current) / name.strip()
+        try:
+            target.mkdir()
+        except OSError as error:
+            self._flash(str(error), warn=True)
+            return
+        self.navigate(self.current, push=False)
+        self._flash(f"Created {target.name}")
+
+    def rename_selected(self) -> None:
+        paths = self.selected_paths()
+        if len(paths) != 1:
+            self._flash("Select one item to rename", warn=True)
+            return
+        old = Path(paths[0])
+        name, ok = QInputDialog.getText(self, "Rename", "New name:", text=old.name)
+        if not ok or not name.strip() or name.strip() == old.name:
+            return
+        try:
+            old.rename(old.with_name(name.strip()))
+        except OSError as error:
+            self._flash(str(error), warn=True)
+            return
+        self.navigate(self.current, push=False)
+
+    def copy_selected(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            self.clipboard = [(path, False) for path in paths]
+            self._flash(f"Copied {len(paths)} item(s)")
+
+    def cut_selected(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            self.clipboard = [(path, True) for path in paths]
+            self._flash(f"Cut {len(paths)} item(s)")
+
+    def paste(self) -> None:
+        if not self.clipboard:
+            self._flash("Nothing to paste", warn=True)
+            return
+        items = list(self.clipboard)
+        destination = self.current
+
+        def work() -> None:
+            for source, cut in items:
+                src = Path(source)
+                if not src.exists():
+                    continue
+                target = unique_target(destination, src.name)
+                if cut:
+                    shutil.move(str(src), str(target))
+                elif src.is_dir():
+                    shutil.copytree(src, target, symlinks=True)
+                else:
+                    shutil.copy2(src, target)
+
+        self._run(work, f"Pasting {len(items)} item(s)…")
+        if all(cut for _, cut in items):
+            self.clipboard = []
+
+    def trash_selected(self) -> None:
+        paths = self.selected_paths()
+        if not paths:
+            return
+        in_trash = "/.local/share/Trash/" in paths[0]
+        if in_trash:
+            self.delete_selected()
+            return
+        try:
+            subprocess.run(["gio", "trash", "--", *paths], check=True,
+                           capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            self._flash(f"Could not move to trash: {error}", warn=True)
+            return
+        self._flash(f"Moved {len(paths)} item(s) to trash")
+        self.navigate(self.current, push=False)
+
+    def delete_selected(self) -> None:
+        paths = self.selected_paths()
+        if not paths:
+            return
+        names = ", ".join(Path(path).name for path in paths[:3])
+        more = "" if len(paths) <= 3 else f" and {len(paths) - 3} more"
+        answer = QMessageBox.question(
+            self, "Delete permanently",
+            f"Delete {names}{more} permanently? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+        if answer != QMessageBox.Yes:
+            return
+
+        def work() -> None:
+            for path in paths:
+                target = Path(path)
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+
+        self._run(work, "Deleting…")
+
+    def empty_trash(self) -> None:
+        trash = HOME / ".local" / "share" / "Trash" / "files"
+        if not trash.is_dir():
+            self._flash("Trash is empty")
+            return
+        answer = QMessageBox.question(self, "Empty trash", "Delete everything in the trash permanently?",
+                                      QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+        if answer != QMessageBox.Yes:
+            return
+
+        def work() -> None:
+            for entry in trash.iterdir():
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            info_dir = trash.parent / "info"
+            if info_dir.is_dir():
+                for info in info_dir.glob("*.trashinfo"):
+                    try:
+                        info.unlink()
+                    except OSError:
+                        pass
+
+        self._run(work, "Emptying the trash…")
+
+    def open_terminal(self) -> None:
+        for term in ("konsole", "kgx", "gnome-terminal", "alacritty", "kitty", "xterm"):
+            if shutil.which(term):
+                if term == "konsole":
+                    subprocess.Popen([term, "--workdir", self.current])
+                elif term == "gnome-terminal":
+                    subprocess.Popen([term, "--working-directory", self.current])
+                else:
+                    subprocess.Popen([term], cwd=self.current)
+                return
+        self._flash("No terminal found", warn=True)
+
+    def open_selected(self) -> None:
+        for path in self.selected_paths():
+            self._open_path(path)
+
+    def reveal(self) -> None:
+        paths = self.selected_paths()
+        if not paths:
+            return
+        source = self.proxy.mapToSource(self._view().currentIndex())
+        path = self.model.filePath(source)
+        if os.path.isdir(path):
+            self.navigate(path)
+
+    def properties(self) -> None:
+        paths = self.selected_paths()
+        if not paths:
+            self._flash("Select something first", warn=True)
+            return
+        PropertiesDialog(Path(paths[0]), self).exec()
+
+    def copy_path(self) -> None:
+        paths = self.selected_paths()
+        if paths:
+            QApplication.clipboard().setText("\n".join(paths))
+            self._flash("Path copied")
+
+    # menus ------------------------------------------------------------------
+    def _show_menu_from_toolbar(self) -> None:
+        button = self.sender()
+        point = button.mapToGlobal(button.rect().bottomLeft())
+        self._menu(point)
+
+    def _context_menu(self, point) -> None:
+        self._menu(self._view().viewport().mapToGlobal(point))
+
+    def _menu(self, global_point) -> None:
+        menu = QMenu(self)
+        has_selection = bool(self.selected_paths())
+        in_trash = "/.local/share/Trash/" in (self.current or "")
+
+        def add(text: str, handler, enabled: bool = True, shortcut: str = "") -> None:
+            action = QAction(text + (f"\t{shortcut}" if shortcut else ""), menu)
+            action.setEnabled(enabled)
+            action.triggered.connect(handler)
+            menu.addAction(action)
+
+        add("New folder", self.new_folder, True, "Ctrl+Shift+N")
+        menu.addSeparator()
+        add("Open", self.open_selected, has_selection)
+        ordinary = [path for path in self.selected_paths() if os.access(path, os.X_OK)
+                    and not path.endswith(".desktop")]
+        if ordinary:
+            add("Run", lambda: [self._open_path(path) for path in ordinary], True)
+        add("Rename", self.rename_selected, has_selection, "F2")
+        add("Copy", self.copy_selected, has_selection, "Ctrl+C")
+        add("Cut", self.cut_selected, has_selection, "Ctrl+X")
+        add("Paste", self.paste, bool(self.clipboard), "Ctrl+V")
+        menu.addSeparator()
+        add("Move to Trash", self.trash_selected, has_selection, "Delete")
+        add("Delete permanently", self.delete_selected, has_selection, "Shift+Delete")
+        if in_trash:
+            add("Empty Trash", self.empty_trash)
+        menu.addSeparator()
+        add("Copy path", self.copy_path, has_selection)
+        add("Properties", self.properties, has_selection)
+        menu.addSeparator()
+        add("Show hidden files", self.toggle_hidden, True, "Ctrl+H")
+        add("Open Terminal Here", self.open_terminal, True, "Ctrl+T")
+        add("Refresh", lambda: self.navigate(self.current, push=False), True, "F5")
+        menu.exec(global_point)
+
+    # places -----------------------------------------------------------------
+    def _refresh_places(self) -> None:
+        entries = side_dirs()
+        trash = HOME / ".local" / "share" / "Trash" / "files"
+        if trash.is_dir():
+            entries.append(("Trash", str(trash)))
+        devices = removable()
+        key = (tuple(entries), tuple(devices))
+
+        if key != getattr(self, "_places_key", None):
+            self._places_key = key
+            self._clear_layout(self.places_box)
+            self._clear_layout(self.devices_box)
+            self.place_entries: list[tuple[QPushButton, str]] = []
+            for label, path in entries:
+                button = self._place_button(label, path)
+                self.places_box.addWidget(button)
+                self.place_entries.append((button, path))
+            self.devices_label.setVisible(bool(devices))
+            for label, path in devices:
+                button = self._place_button(label, path)
+                self.devices_box.addWidget(button)
+                self.place_entries.append((button, path))
+
+        current = os.path.abspath(self.current)
+        for button, path in self.place_entries:
+            button.setChecked(current == os.path.abspath(path))
+
+        try:
+            usage = shutil.disk_usage(self.current)
+            self.free_label.setText(f"{human_size(usage.free)} free of {human_size(usage.total)}")
+        except OSError:
+            self.free_label.setText("")
+
+    def _place_button(self, label: str, path: str) -> QPushButton:
+        button = QPushButton(label)
+        button.setObjectName("Nav")
+        button.setCheckable(True)
+        button.setChecked(os.path.abspath(self.current) == os.path.abspath(path))
+        button.clicked.connect(lambda _=False, p=path: self.navigate(p))
+        return button
+
+    def _checked_places(self) -> list[str]:
+        return [path for button, path in getattr(self, "place_entries", []) if button.isChecked()]
+
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)      # detach now, so no stale copy can paint
+                widget.deleteLater()
+
+    # status -----------------------------------------------------------------
+    def _update_status(self) -> None:
+        view = self._view()
+        model = view.model()
+        root = view.rootIndex()
+        total = model.rowCount(root) if root.isValid() else model.rowCount()
+        selected = len(self.selected_paths())
+        shown = "" if not self.search.text() else f" matching “{self.search.text()}”"
+        parts = [f"{total} item{'' if total == 1 else 's'}{shown}"]
+        if selected:
+            parts.append(f"{selected} selected")
+        self.status.setText(" · ".join(parts))
+        self._update_nav()
+
+    def _flash(self, message: str, warn: bool = False) -> None:
+        self.message.setText(message)
+        self.message.setStyleSheet(f"color: {PALETTE['warn'] if warn else PALETTE['muted']};")
+
+
+def main(argv: list[str]) -> int:
+    start = None
+    screenshot = None
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--screenshot" and index + 1 < len(argv):
+            screenshot = argv[index + 1]
+            index += 2
+            continue
+        if arg in ("-h", "--help"):
+            print(__doc__)
+            return 0
+        if not arg.startswith("-"):
+            start = arg
+        index += 1
+
+    app = QApplication(["masons-files"])
+    app.setApplicationName("Mason's Files")
+    app.setStyleSheet(QSS)
+    window = MasonFiles(start)
+    if screenshot:
+        import time
+        window.show()
+        for _ in range(30):            # let the filesystem model list the folder
+            app.processEvents()
+            time.sleep(0.05)
+        window.grab().save(screenshot)
+        print(f"wrote {screenshot}")
+        return 0
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

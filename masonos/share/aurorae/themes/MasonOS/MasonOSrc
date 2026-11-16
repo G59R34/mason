@@ -13,24 +13,25 @@ RightButtons=IAX
 Shadow=false
 Animation=1
 
-# The frame is a titlebar and nothing else: no side or bottom borders and no
-# padding, so the client area starts exactly below the bar (a taller canvas used
-# to leave an unpainted, see-through seam).
+# A complete frame: 24px titlebar plus a 1px border on the sides and bottom.
+# A title-only frame (all other borders 0) let KWin desynchronise the client and
+# the frame after maximize/fullscreen, which drew the bar as a detached or
+# transparent strip.
 [Layout]
-BorderLeft=0
-BorderRight=0
-BorderBottom=0
+BorderLeft=1
+BorderRight=1
+BorderBottom=1
 TitleHeight=24
 TitleEdgeTop=0
 TitleEdgeBottom=0
-TitleEdgeLeft=14
-TitleEdgeRight=14
+TitleEdgeLeft=10
+TitleEdgeRight=10
 TitleBorderLeft=0
 TitleBorderRight=0
 ButtonWidth=20
 ButtonHeight=20
 ButtonSpacing=8
-ButtonMarginTop=0
+ButtonMarginTop=2
 ButtonMarginLeft=6
 ExplicitButtonSpacer=0
 PaddingTop=0
@@ -39,5 +40,5 @@ PaddingRight=0
 PaddingLeft=0
 TitleEdgeTopMaximized=0
 TitleEdgeBottomMaximized=0
-TitleEdgeLeftMaximized=14
-TitleEdgeRightMaximized=14
+TitleEdgeLeftMaximized=10
+TitleEdgeRightMaximized=10

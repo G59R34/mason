@@ -227,10 +227,15 @@ class OverviewPage(Page):
         self.revert_btn = QPushButton("Revert to Plasma")
         self.revert_btn.setObjectName("Danger")
         self.revert_btn.clicked.connect(self.confirm_revert)
+        lockscreen_btn = QPushButton("Lock screen artwork")
+        lockscreen_btn.clicked.connect(
+            lambda: self.app.ctl("Branding the lock screen…", "lockscreen", reload_after=False)
+        )
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.app.refresh_all)
         actions.addWidget(self.apply_btn)
         actions.addWidget(self.revert_btn)
+        actions.addWidget(lockscreen_btn)
         actions.addStretch(1)
         actions.addWidget(refresh_btn)
         self.body.addLayout(actions)
@@ -439,6 +444,129 @@ class DisplayPage(Page):
         self.report.setText(out.strip() or "kscreen-doctor did not answer.")
 
 
+# KDE's own panels, opened with kcmshell6 — this is what makes MasonOS Settings a
+# drop-in replacement rather than a second, smaller settings window.
+KCM_GROUPS = [
+    ("Look & feel", [
+        ("Colour scheme", "kcm_colors", "Palette used by Plasma, apps and the lock screen"),
+        ("Plasma style", "kcm_desktoptheme", "Panel, widget and tooltip theme"),
+        ("Global theme", "kcm_lookandfeel", "Apply a whole Look-and-Feel package"),
+        ("Window decorations", "kcm_kwindecoration", "Titlebars, buttons and their buttons' order"),
+        ("Icons", "kcm_icons", "Icon theme for apps and the panel"),
+        ("Fonts", "kcm_fonts", "UI font, sizes and antialiasing"),
+        ("Cursors", "kcm_cursortheme", "Pointer theme and size"),
+        ("Desktop effects", "kcm_kwin_effects", "Blur, animations and compositing"),
+    ]),
+    ("Hardware", [
+        ("Displays", "kcm_kscreen", "Resolution, arrangement and scaling"),
+        ("Keyboard", "kcm_keyboard", "Layout, repeat rate and layouts"),
+        ("Mouse", "kcm_mouse", "Pointer speed, acceleration and buttons"),
+        ("Touchpad", "kcm_touchpad", "Tapping, scrolling and palm rejection"),
+        ("Sound", "kcm_pulseaudio", "Outputs, inputs and volume limits"),
+        ("Bluetooth", "kcm_bluetooth", "Pair and trust devices"),
+        ("Power management", "kcm_powerdevil|kcm_mobile_power", "Sleep, screen dimming and battery"),
+        ("Night light", "kcm_nightlight", "Warm the screen after dark"),
+        ("Printers", "kcm_printer_manager", "Add and configure printers"),
+    ]),
+    ("Network", [
+        ("Connections", "kcm_networkmanagement", "Wi-Fi, wired and VPN profiles"),
+        ("Proxy", "kcm_proxy", "System-wide proxy for KDE apps"),
+        ("Sharing", "kcm_samba", "Samba shares on this machine"),
+    ]),
+    ("System", [
+        ("Users", "kcm_users", "Accounts, avatars and passwords"),
+        ("Date & time", "kcm_clock", "Clock, time zone and NTP"),
+        ("Region & language", "kcm_regionandlang", "Formats, spell check and languages"),
+        ("Autostart", "kcm_autostart", "What launches when you log in"),
+        ("Notifications", "kcm_notifications", "Per-app notification behaviour"),
+        ("Accessibility", "kcm_access", "Sticky keys, zoom and screen reader"),
+        ("About this system", "kcm_about-distro", "Plasma, kernel and hardware versions"),
+    ]),
+]
+
+
+def available_kcms() -> set[str]:
+    """Ask KDE which modules this machine actually has, so nothing dead is shown."""
+    if not shutil.which("kcmshell6"):
+        return set()
+    try:
+        proc = subprocess.run(["kcmshell6", "--list"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    return {
+        line.split()[0]
+        for line in (proc.stdout or "").splitlines()
+        if line.strip().startswith("kcm_")
+    }
+
+
+def launch_kcm(module: str) -> None:
+    if shutil.which("kcmshell6"):
+        QProcess.startDetached("kcmshell6", [module])
+    elif Path("/usr/bin/systemsettings").exists():
+        QProcess.startDetached("/usr/bin/systemsettings", [module])
+
+
+class SystemPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("System", "MasonOS Settings stands in for KDE System Settings — every "
+                            "system panel below is the real KDE one, opened in place.")
+        self.available = available_kcms()
+        self.buttons: dict[str, QPushButton] = {}
+
+        for group, rows in KCM_GROUPS:
+            inner = section(self.body, group)
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(10)
+            grid.setVerticalSpacing(10)
+            for index, (label, module, blurb) in enumerate(rows):
+                button = QPushButton(label)
+                resolved = self._resolve(module)
+                installed = resolved is not None
+                button.setEnabled(installed)
+                button.setToolTip(blurb if installed else f"{blurb} — not installed on this system")
+                button.clicked.connect(lambda _=False, mod=resolved or module: launch_kcm(mod.split("|")[0]))
+                grid.addWidget(button, index // 2, index % 2)
+                self.buttons[module] = button
+            inner.addLayout(grid)
+
+        inner = section(self.body, "Full KDE System Settings",
+                        "Anything not listed above is still one window away — this opens "
+                        "the stock KDE application untouched.")
+        row = QHBoxLayout()
+        kde_btn = QPushButton("Open KDE System Settings")
+        kde_btn.clicked.connect(open_kde_settings)
+        row.addWidget(kde_btn)
+        row.addStretch(1)
+        inner.addLayout(row)
+        self.body.addStretch(1)
+
+    def _resolve(self, module: str) -> str | None:
+        """First candidate KCM this machine actually ships (power has two names)."""
+        for candidate in module.split("|"):
+            if not self.available or candidate in self.available:
+                return candidate
+        return None
+
+    def refresh(self) -> None:
+        if not self.available:
+            self.available = available_kcms()
+        for module, button in self.buttons.items():
+            button.setEnabled(self._resolve(module) is not None)
+
+
+def open_kde_settings() -> None:
+    """Bypass our own shim: always the real binary."""
+    real = Path("/usr/bin/systemsettings")
+    if real.exists():
+        QProcess.startDetached(str(real), [])
+        return
+    found = shutil.which("systemsettings")
+    if found:
+        QProcess.startDetached(found, [])
+
+
 class AboutPage(Page):
     def __init__(self, app):
         super().__init__(app)
@@ -508,9 +636,12 @@ class MasonSettings(QWidget):
         self.panels = PanelsPage(self)
         self.bot = BotPage(self)
         self.display = DisplayPage(self)
+        self.system = SystemPage(self)
         self.about = AboutPage(self)
+        self.page_names = ["overview", "panels", "bot", "display", "system", "about"]
         nav_specs = [("Overview", self.overview), ("Bar && dock", self.panels),
-                     ("Mason Bot", self.bot), ("Display", self.display), ("About", self.about)]
+                     ("Mason Bot", self.bot), ("Display", self.display),
+                     ("System", self.system), ("About", self.about)]
         self.nav_buttons = []
         for index, (label, page) in enumerate(nav_specs):
             button = QPushButton(label)
@@ -549,6 +680,16 @@ class MasonSettings(QWidget):
         if hasattr(page, "refresh"):
             page.refresh()
 
+    def show_page_named(self, name: str) -> None:
+        aliases = {
+            "overview": "overview", "bar": "panels", "dock": "panels", "panels": "panels",
+            "bot": "bot", "display": "display", "system": "system", "settings": "system",
+            "about": "about",
+        }
+        target = aliases.get(name.strip().lower())
+        if target:
+            self.show_page(self.page_names.index(target))
+
     def refresh_all(self) -> None:
         code, out = run_ctl("status")
         status = parse_status(out)
@@ -580,13 +721,42 @@ class MasonSettings(QWidget):
             QTimer.singleShot(400, self.refresh_all)
 
 
+# A KCM that has a MasonOS page of its own opens that page instead of a second window.
+KCM_TO_PAGE = {"kcm_kscreen": "display"}
+
+
 def main(argv: list[str]) -> int:
-    app = QApplication(argv)
+    page = None
+    rest: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--page" and index + 1 < len(argv):
+            page = argv[index + 1]
+            index += 2
+            continue
+        rest.append(arg)
+        index += 1
+
+    # `systemsettings kcm_x` requests are forwarded here by our shim. Panels we
+    # have a page for open in-app; everything else is KDE's own window.
+    requested = [arg for arg in rest if arg.startswith("kcm_") or arg.startswith("kcm-")]
+    if requested:
+        module = requested[0].split()[0]
+        if module in KCM_TO_PAGE:
+            page = KCM_TO_PAGE[module]
+        else:
+            launch_kcm(module)
+            return 0
+
+    app = QApplication([rest[0] if rest else "masonos-settings"])
     app.setApplicationName("MasonOS Settings")
     app.setStyleSheet(QSS)
     window = MasonSettings()
-    if "--screenshot" in argv:
-        target = argv[argv.index("--screenshot") + 1]
+    if page:
+        window.show_page_named(page)
+    if "--screenshot" in rest:
+        target = rest[rest.index("--screenshot") + 1]
         window.show()
         app.processEvents()
         window.grab().save(target)

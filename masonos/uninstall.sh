@@ -3,6 +3,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bin="$HOME/.local/bin"
 data="${XDG_DATA_HOME:-$HOME/.local/share}"
 config="${XDG_CONFIG_HOME:-$HOME/.config}"
 state="${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -33,6 +34,16 @@ rm -f "$data/color-schemes/MasonOS.colors" \
       "$data/icons/hicolor/scalable/apps/masonos.svg" \
       "$data/applications/masonos-transform.desktop" \
       "$data/applications/masonos-settings.desktop" \
+      "$data/applications/systemsettings.desktop" \
+      "$data/applications/masons-software.desktop" \
+      "$data/applications/masons-files.desktop" \
+      "$data/applications/org.kde.discover.desktop" \
+      "$bin/systemsettings" \
+      "$bin/plasma-discover" \
+      "$data/dbus-1/services/org.masonos.Launcher.service" \
+      "$HOME/.local/bin/mason-software" \
+      "$HOME/.local/bin/masons-files" \
+      "$HOME/.local/bin/masons-launcher" \
       "$desktop_dir/MasonOS.desktop" \
       "$config/autostart/masonos.desktop" \
       "$config/gtk-3.0/masonos.css" \

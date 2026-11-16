@@ -26,6 +26,8 @@ Installs MasonOS into ~/.local (no root) and transforms the running session:
   · MasonOS plasma style, Look-and-Feel + splash, window decoration,
     icon overrides, GTK accent, KWin shortcuts, wallpaper, palette, fonts
   · ~/.local/bin/masonosctl
+  · MasonOS Settings, Mason's Software (in place of Discover), Mason's Files
+    and Mason's Launcher on the Super key
   · a "Transform MasonOS" icon on the Desktop and in the app grid
   · an autostart entry (--no-autostart to skip)
 
@@ -181,8 +183,60 @@ if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
     "$here/share/masonos-settings.desktop.in" > "$data/applications/masonos-settings.desktop"
   chmod +x "$data/applications/masonos-settings.desktop"
   say "MasonOS Settings -> $bin/masonos-settings (app grid)"
+
+  # Stand in for KDE System Settings: shadow its launcher entry and put a shim
+  # ahead of /usr/bin, so both the app grid and the tray's Configure items open
+  # MasonOS Settings. masonosctl off removes both again.
+  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
+    "$here/share/systemsettings.desktop.in" > "$data/applications/systemsettings.desktop"
+  chmod +x "$data/applications/systemsettings.desktop"
+  install -m 755 "$here/share/systemsettings-shim.sh" "$bin/systemsettings"
+  say "System Settings -> MasonOS Settings (KDE panels inside)"
 else
   say "MasonOS Settings skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
+fi
+
+# 5c. Mason's Software (Discover replacement; PySide6 again) ------------------
+if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
+  chmod +x "$here/bin/mason-software"
+  ln -sf "$here/bin/mason-software" "$bin/mason-software"
+  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
+    "$here/share/masons-software.desktop.in" > "$data/applications/masons-software.desktop"
+  chmod +x "$data/applications/masons-software.desktop"
+  say "Mason's Software -> $bin/mason-software (app grid)"
+  if [[ -f /usr/share/applications/org.kde.discover.desktop ]]; then
+    install -m 644 "$here/share/discover-shadow.desktop.in" \
+      "$data/applications/org.kde.discover.desktop"
+    install -m 755 "$here/share/plasma-discover-shim.sh" "$bin/plasma-discover"
+    say "Discover hidden; plasma-discover -> Mason's Software"
+  fi
+else
+  say "Mason's Software skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
+fi
+
+# 5d. Mason's Files ----------------------------------------------------------
+if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
+  chmod +x "$here/bin/masons-files"
+  ln -sf "$here/bin/masons-files" "$bin/masons-files"
+  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
+    "$here/share/masons-files.desktop.in" > "$data/applications/masons-files.desktop"
+  chmod +x "$data/applications/masons-files.desktop"
+  say "Mason's Files -> $bin/masons-files (app grid)"
+else
+  say "Mason's Files skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
+fi
+
+# 5e. Mason's Launcher (Super key) ------------------------------------------
+if have python3 && python3 -c "import PySide6.QtDBus" >/dev/null 2>&1; then
+  chmod +x "$here/bin/masons-launcher"
+  ln -sf "$here/bin/masons-launcher" "$bin/masons-launcher"
+  mkdir -p "$data/dbus-1/services"
+  sed -e "s|@LAUNCHER@|$bin/masons-launcher|g" \
+    "$here/share/org.masonos.Launcher.service.in" \
+    > "$data/dbus-1/services/org.masonos.Launcher.service"
+  say "Mason's Launcher -> Super key (D-Bus service installed)"
+else
+  say "Mason's Launcher skipped: PySide6 (with QtDBus) is missing"
 fi
 
 # 6. Desktop icon + app grid -------------------------------------------------
@@ -266,7 +320,7 @@ backup = state_dir / "appletsrc.pre-masonos"
 if backup.exists():
     manifest["appletsrc"] = str(backup)
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    print(" · remembered the pre-MasonDE settings for a clean revert")
+print(" · remembered the pre-MasonDE settings for a clean revert")
 PY
 fi
 

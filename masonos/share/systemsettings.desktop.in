@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=System Settings
+GenericName=System Settings
+Comment=MasonOS control panel — shell, display and every KDE system panel
+Exec=@MASONOSCTL@ settings
+Icon=preferences-system
+Terminal=false
+Categories=Qt;KDE;Settings;DesktopSettings;
+Keywords=settings;system;configure;display;network;bluetooth;power;masonos;plasma;
+X-KDE-StartupNotify=true
+StartupWMClass=masonos-settings
+NoDisplay=false

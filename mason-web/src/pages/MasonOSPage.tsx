@@ -24,8 +24,8 @@ const FEATURES = [
     body: 'The same assistant as the site, as a panel widget talking to a loopback bridge. Keys stay in ~/.config, never in QML.',
   },
   {
-    title: 'MasonOS Settings',
-    body: 'A PySide6 control panel for bar and dock height, bot credentials, display scaling, and apply/revert — no terminal needed.',
+    title: 'It is System Settings',
+    body: 'MasonOS Settings replaces the KDE one: the launcher entry and the tray’s Configure items open it, and its System page lists every real KDE panel — display, sound, network, power, users, printers — one click deep.',
   },
   {
     title: 'Themed end to end',
@@ -43,6 +43,7 @@ const CHANGES = [
   ['Window decoration', '24px rounded titlebar, glyph-only controls, no seam under the bar'],
   ['Look-and-Feel', 'Bundles palette, style, icons, decoration and the login splash'],
   ['Lock screen', 'MasonOS artwork behind Plasma’s own unlock UI'],
+  ['Settings', 'MasonOS Settings takes over the System Settings entry and shim; the KDE panels are still there, in-app'],
   ['Display', 'On Wayland, snaps the session to ~130 effective PPI (1.75× on the 2560×1664 Air panel); on X11 your scale is left alone'],
 ];
 

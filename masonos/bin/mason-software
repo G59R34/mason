@@ -1,0 +1,1243 @@
+#!/usr/bin/env python3
+"""Mason's Software — the software centre for MasonOS.
+
+A Discover replacement: it talks to whatever the distro ships (dnf5/dnf, apt,
+pacman, yay/paru for the AUR, zypper) plus Flatpak, and installs and removes
+through the normal system tools, escalating with pkexec only for the step that
+needs root. The packaging work lives in ../lib/mason_software_backend.py.
+
+    mason-software               open the store
+    mason-software --page updates
+    mason-software --screenshot out.png
+"""
+
+from __future__ import annotations
+
+import html
+import os
+import shutil
+import sys
+import threading
+from hashlib import sha1
+from pathlib import Path
+
+from PySide6.QtCore import QProcess, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QIcon, QPixmap, QTextCursor
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QScrollArea,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+LIB = Path(__file__).resolve().parent.parent / "lib"
+if str(LIB) not in sys.path:
+    sys.path.insert(0, str(LIB))
+
+from mason_appdetails import details_for  # noqa: E402  (path set up above)
+from mason_software_backend import (  # noqa: E402  (path set up above)
+    MAX_RESULTS,
+    Package,
+    active_backends,
+    backend_by_key,
+    curated_packages,
+    distro_label,
+)
+
+SHARE = Path(__file__).resolve().parent.parent / "share"
+VERSION = "1.0"
+
+PALETTE = {
+    "bg": "#08080a",
+    "surface": "#12121a",
+    "surface_alt": "#17171f",
+    "border": "#26262f",
+    "text": "#f4f4f5",
+    "muted": "#9a9aa8",
+    "accent": "#8b5cf6",
+    "accent_soft": "#c4b5fd",
+    "ok": "#4ade80",
+    "warn": "#fbbf24",
+}
+
+QSS = f"""
+QWidget {{ background: {PALETTE['bg']}; color: {PALETTE['text']};
+           font-family: "DM Sans"; font-size: 14px; }}
+QLabel {{ background: transparent; }}
+#Sidebar {{ background: {PALETTE['surface']}; border-right: 1px solid {PALETTE['border']}; }}
+#Wordmark {{ font-family: "Syne"; font-size: 19px; font-weight: 700; letter-spacing: 1px; }}
+#Tagline {{ color: {PALETTE['muted']}; font-size: 10px; letter-spacing: 2px; }}
+#PageTitle {{ font-family: "Syne"; font-size: 23px; font-weight: 700; }}
+#HeroTitle {{ font-family: "Syne"; font-size: 27px; font-weight: 700; }}
+#PageHint {{ color: {PALETTE['muted']}; }}
+#Prose {{ color: #d6d6dd; font-size: 14px; line-height: 150%; }}
+#Meta {{ color: {PALETTE['muted']}; font-size: 12px; }}
+#Shot {{ background: {PALETTE['surface']}; border: 1px solid {PALETTE['border']};
+        border-radius: 14px; }}
+QPushButton#Thumb {{ background: {PALETTE['surface']}; border: 1px solid {PALETTE['border']};
+                     border-radius: 9px; padding: 0; }}
+QPushButton#Thumb:hover {{ border-color: {PALETTE['accent']}; }}
+#Card {{ background: {PALETTE['surface']}; border: 1px solid {PALETTE['border']};
+         border-radius: 14px; }}
+#Card:hover {{ border-color: {PALETTE['accent']}; }}
+#CardTitle {{ font-family: "Syne"; font-size: 15px; font-weight: 700; }}
+#CardSummary {{ color: {PALETTE['muted']}; }}
+#Chip {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+         border-radius: 9px; padding: 2px 8px; color: {PALETTE['accent_soft']}; font-size: 11px; }}
+#ChipInstalled {{ background: rgba(74, 222, 128, 24); border: 1px solid rgba(74, 222, 128, 70);
+                  border-radius: 9px; padding: 2px 8px; color: {PALETTE['ok']}; font-size: 11px; }}
+QPushButton {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+               border-radius: 10px; padding: 8px 14px; color: {PALETTE['text']}; }}
+QPushButton:hover {{ border-color: {PALETTE['accent']}; }}
+QPushButton:disabled {{ color: {PALETTE['muted']}; border-color: {PALETTE['border']}; }}
+QPushButton#Primary {{ background: {PALETTE['accent']}; border: none; color: #0b0b10;
+                       font-weight: 700; padding: 9px 18px; }}
+QPushButton#Primary:hover {{ background: {PALETTE['accent_soft']}; }}
+QPushButton#Danger {{ border-color: #7f1d1d; color: #fca5a5; }}
+QPushButton#Nav {{ background: transparent; border: none; text-align: left;
+                   padding: 10px 14px; border-radius: 10px; color: {PALETTE['muted']}; }}
+QPushButton#Nav:checked {{ background: {PALETTE['surface_alt']}; color: {PALETTE['text']};
+                           font-weight: 600; }}
+QPushButton#Nav:hover {{ color: {PALETTE['text']}; }}
+QLineEdit {{ background: {PALETTE['surface_alt']}; border: 1px solid {PALETTE['border']};
+             border-radius: 12px; padding: 10px 14px; font-size: 15px; }}
+QLineEdit:focus {{ border-color: {PALETTE['accent']}; }}
+QScrollArea {{ border: none; }}
+QPlainTextEdit {{ background: #0c0c11; border: 1px solid {PALETTE['border']}; border-radius: 10px;
+                  color: #c9c9d3; font-family: "JetBrains Mono", monospace; font-size: 11px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {PALETTE['border']}; border-radius: 5px; min-height: 30px; }}
+QScrollBar::handle:vertical:hover {{ background: {PALETTE['accent']}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+QScrollBar:horizontal {{ height: 10px; background: transparent; }}
+QScrollBar::handle:horizontal {{ background: {PALETTE['border']}; border-radius: 5px; min-width: 30px; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+"""
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def mark_pixmap(size: int = 26) -> QPixmap:
+    for candidate in (SHARE / "icons" / "masonos.svg",
+                      Path("/usr/share/icons/hicolor/scalable/apps/masonos.svg")):
+        if candidate.exists():
+            pix = QPixmap(str(candidate))
+            if not pix.isNull():
+                return pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    return QPixmap()
+
+
+def pretty_source(source: str) -> str:
+    source = (source or "").strip()
+    mapping = {"@System": "installed", "installed": "installed", "updates": "update"}
+    return mapping.get(source, source or "repo")
+
+
+def terminal_command(argv: list[str]) -> list[str] | None:
+    """AUR helpers must not run as root, so those actions open a terminal."""
+    quoted = " ".join(shell_quote(part) for part in argv)
+    for term in ("konsole", "kgx", "gnome-terminal", "alacritty", "kitty", "xterm"):
+        if shutil.which(term):
+            if term in ("gnome-terminal",):
+                return [term, "--", "bash", "-lc", f"{quoted}; echo; read -n 1 -s -r -p 'Press any key…'"]
+            return [term, "-e", "bash", "-lc", f"{quoted}; echo; read -n 1 -s -r -p 'Press any key…'"]
+    return None
+
+
+AUTH_FAILURES = (
+    "authentication agent", "not authorized", "error executing command as another user",
+    "polkit", "no such file or directory", "failed to execute",
+)
+
+# The user closed the password dialog: that is a decision, not a broken agent.
+CANCELLED = ("request dismissed", "dismissed", "cancelled by user")
+
+
+def graphical_auth_available() -> bool:
+    """Is a polkit authentication agent alive in this session?
+
+    pkexec needs one to put the password dialog on screen; without it the call
+    fails instantly, which is exactly the case where a terminal works instead.
+    """
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        # comm is truncated to 15 characters, so read the whole command line.
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        command = raw.replace(b"\0", b" ").decode("utf-8", "replace").lower()
+        if "polkit" in command and "agent" in command:
+            return True
+    return False
+
+
+def shell_quote(text: str) -> str:
+    if not text or any(ch in text for ch in " \t\"'$`\\!*?[](){}<>|&;#"):
+        return "'" + text.replace("'", "'\\''") + "'"
+    return text
+
+
+class PackageCard(QFrame):
+    """One result: name, version, source, and the action that fits its state."""
+
+    def __init__(self, package: Package, on_install, on_remove, on_update=None, mode: str = "auto",
+                 on_open=None):
+        super().__init__()
+        self.package = package
+        self.on_open = on_open
+        self.setObjectName("Card")
+        self.setCursor(Qt.PointingHandCursor)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(16, 12, 14, 12)
+        row.setSpacing(14)
+
+        icon = QLabel()
+        icon.setPixmap(QIcon.fromTheme("package-x-generic",
+                                       QIcon(str(SHARE / "icons" / "masonos.svg"))).pixmap(28, 28))
+        icon.setFixedWidth(32)
+        row.addWidget(icon, 0, Qt.AlignTop)
+
+        text = QVBoxLayout()
+        text.setSpacing(3)
+        title = QLabel(package.label)
+        title.setObjectName("CardTitle")
+        text.addWidget(title)
+        summary = QLabel(package.summary or "No description available.")
+        summary.setObjectName("CardSummary")
+        summary.setWordWrap(True)
+        text.addWidget(summary)
+
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        source = pretty_source(package.source)
+        for label, style in ((source, "Chip") if source != "installed" else ("", ""),
+                             (f"{package.backend}", "Chip"),
+                             ("installed", "ChipInstalled") if package.installed else ("", "")):
+            if not label:
+                continue
+            chip = QLabel(label)
+            chip.setObjectName(style)
+            chips.addWidget(chip)
+        if package.version:
+            version = QLabel(package.version)
+            version.setObjectName("Chip")
+            chips.addWidget(version)
+        chips.addStretch(1)
+        text.addLayout(chips)
+        row.addLayout(text, 1)
+
+        if mode == "update" and on_update is not None:
+            self.button = QPushButton("Update")
+            self.button.setObjectName("Primary")
+            self.button.clicked.connect(lambda: on_update(package))
+        elif package.installed:
+            self.button = QPushButton("Remove")
+            self.button.setObjectName("Danger")
+            self.button.clicked.connect(lambda: on_remove(package))
+        else:
+            self.button = QPushButton("Install")
+            self.button.setObjectName("Primary")
+            self.button.clicked.connect(lambda: on_install(package))
+        self.button.setMinimumWidth(96)
+        row.addWidget(self.button, 0, Qt.AlignVCenter)
+
+    def mouseReleaseEvent(self, event) -> None:  # clicking the card opens its app page
+        if event.button() == Qt.LeftButton and self.on_open is not None:
+            self.on_open(self.package)
+        super().mouseReleaseEvent(event)
+
+
+class ResultsView(QWidget):
+    def __init__(self, app: "MasonSoftware"):
+        super().__init__()
+        self.app = app
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(10)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.holder = QWidget()
+        self.holder.setObjectName("ResultsHolder")
+        self.list = QVBoxLayout(self.holder)
+        self.list.setContentsMargins(0, 0, 6, 0)
+        self.list.setSpacing(10)
+        self.list.addStretch(1)
+        self.scroll.setWidget(self.holder)
+        outer.addWidget(self.scroll, 1)
+
+        self.empty = QLabel("Search for an app, or pick something above.")
+        self.empty.setObjectName("PageHint")
+        self.empty.setAlignment(Qt.AlignCenter)
+        outer.addWidget(self.empty, 0)
+        self.empty.hide()
+
+    def _clear(self) -> None:
+        while self.list.count():
+            item = self.list.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def set_packages(self, packages: list[Package], empty_text: str = "",
+                     mode: str = "auto") -> None:
+        self._clear()
+        for package in packages[:MAX_RESULTS]:
+            self.list.addWidget(PackageCard(package, self.app.install, self.app.remove,
+                                            self.app.update, mode, self.app.open_details))
+        self.list.addStretch(1)
+        if empty_text:
+            self.empty.setText(empty_text)
+            self.empty.setVisible(not packages)
+        else:
+            self.empty.hide()
+
+
+class Page(QWidget):
+    def __init__(self, app: "MasonSoftware"):
+        super().__init__()
+        self.app = app
+        self.body = QVBoxLayout(self)
+        self.body.setContentsMargins(24, 20, 24, 18)
+        self.body.setSpacing(12)
+
+    def title(self, text: str, hint: str | None = None) -> None:
+        label = QLabel(text)
+        label.setObjectName("PageTitle")
+        self.body.addWidget(label)
+        self.title_label = label
+        self.hint_label = None
+        if hint:
+            sub = QLabel(hint)
+            sub.setObjectName("PageHint")
+            sub.setWordWrap(True)
+            self.body.addWidget(sub)
+            self.hint_label = sub
+
+    def set_title(self, text: str, hint: str) -> None:
+        self.title_label.setText(text)
+        if self.hint_label is not None:
+            self.hint_label.setText(hint)
+
+    def refresh(self) -> None:  # pragma: no cover - overridden
+        pass
+
+
+class DiscoverPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Discover", "Curated apps, installed with this distro's own tools.")
+        self.results = ResultsView(app)
+        self.body.addWidget(self.results, 1)
+        self.loaded = False
+        self.heading = ("Discover", "Curated apps, installed with this distro's own tools.")
+
+    def refresh(self) -> None:
+        packages = curated_packages(active_backends())
+        packages.sort(key=lambda p: (not p.installed, p.label.lower()))
+        self.results.set_packages(packages, "No curated apps for these sources.")
+        self.set_title(*self.heading)
+        self.loaded = True
+
+    def search(self, packages: list[Package], query: str) -> None:
+        sources = ", ".join(sorted({backend.label for backend in self.app.backends}))
+        self.set_title(f"Search: {query}", f"{len(packages)} result(s) from {sources}.")
+        self.results.set_packages(packages, f"Nothing found for “{query}”.")
+
+
+class UpdatesPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Updates", "Everything with a newer version waiting, from every source.")
+        bar = QHBoxLayout()
+        self.update_all = QPushButton("Update everything")
+        self.update_all.setObjectName("Primary")
+        self.update_all.clicked.connect(self.app.update_all)
+        bar.addWidget(self.update_all)
+        bar.addStretch(1)
+        self.body.addLayout(bar)
+        self.results = ResultsView(app)
+        self.body.addWidget(self.results, 1)
+
+    def refresh(self) -> None:
+        self.app.load_updates(self.results, self.update_all)
+
+
+class InstalledPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Installed", "What is on this machine — native packages and Flatpaks.")
+        self.results = ResultsView(app)
+        self.body.addWidget(self.results, 1)
+
+    def refresh(self) -> None:
+        self.app.load_installed(self.results)
+
+
+class FlatpakPage(Page):
+    def __init__(self, app):
+        super().__init__(app)
+        self.title("Flatpak", "Sandboxed apps from your remotes.")
+        self.results = ResultsView(app)
+        self.body.addWidget(self.results, 1)
+
+    def refresh(self) -> None:
+        self.app.load_flatpaks(self.results)
+
+
+class DetailsPage(QWidget):
+    """An app page: icon, screenshots, the Flathub description, and the action."""
+
+    details_ready = Signal(object)
+
+    def __init__(self, app: "MasonSoftware"):
+        super().__init__()
+        self.app = app
+        self.package: Package | None = None
+        self.back_index = 0
+        self.shots = []
+        self.preview_pixmap = QPixmap()
+        self.pixmaps: dict[str, QPixmap] = {}
+        self.nam = QNetworkAccessManager(self)
+        self.details_ready.connect(self._apply, Qt.QueuedConnection)
+        self.last_details = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        bar = QHBoxLayout()
+        bar.setContentsMargins(20, 12, 20, 0)
+        self.back = QPushButton("←  Back")
+        self.back.clicked.connect(self.app.back_from_details)
+        bar.addWidget(self.back)
+        bar.addStretch(1)
+        root.addLayout(bar)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.content = QWidget()
+        self.scroll.setWidget(self.content)
+        root.addWidget(self.scroll, 1)
+
+        body = QVBoxLayout(self.content)
+        body.setContentsMargins(24, 10, 24, 22)
+        body.setSpacing(16)
+
+        head = QHBoxLayout()
+        head.setSpacing(18)
+        self.icon = QLabel()
+        self.icon.setFixedSize(96, 96)
+        self.icon.setAlignment(Qt.AlignCenter)
+        head.addWidget(self.icon, 0, Qt.AlignTop)
+
+        info = QVBoxLayout()
+        info.setSpacing(6)
+        self.name = QLabel("")
+        self.name.setObjectName("HeroTitle")
+        self.name.setWordWrap(True)
+        self.summary = QLabel("")
+        self.summary.setObjectName("PageHint")
+        self.summary.setWordWrap(True)
+        self.chips = QHBoxLayout()
+        self.chips.setSpacing(6)
+        info.addWidget(self.name)
+        info.addWidget(self.summary)
+        info.addLayout(self.chips)
+        self.action = QPushButton("Install")
+        self.action.setObjectName("Primary")
+        self.action.setMinimumWidth(120)
+        info.addWidget(self.action, 0, Qt.AlignLeft)
+        head.addLayout(info, 1)
+        body.addLayout(head)
+
+        self.gallery = QWidget()
+        gallery = QVBoxLayout(self.gallery)
+        gallery.setContentsMargins(0, 0, 0, 0)
+        gallery.setSpacing(8)
+        self.preview = QLabel()
+        self.preview.setObjectName("Shot")
+        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setMinimumHeight(300)
+        gallery.addWidget(self.preview)
+        self.thumb_row = QHBoxLayout()
+        self.thumb_row.setSpacing(8)
+        self.thumb_row.addStretch(1)
+        gallery.addLayout(self.thumb_row)
+        body.addWidget(self.gallery)
+
+        self.loading = QLabel("Loading details…")
+        self.loading.setObjectName("PageHint")
+        body.addWidget(self.loading)
+
+        self.desc = QLabel("")
+        self.desc.setObjectName("Prose")
+        self.desc.setWordWrap(True)
+        self.desc.setTextFormat(Qt.RichText)
+        self.desc.setOpenExternalLinks(True)
+        self.desc.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        body.addWidget(self.desc)
+
+        self.meta = QLabel("")
+        self.meta.setObjectName("Meta")
+        self.meta.setWordWrap(True)
+        self.meta.setTextFormat(Qt.RichText)
+        self.meta.setOpenExternalLinks(True)
+        self.meta.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        body.addWidget(self.meta)
+
+        self.notes = QLabel("")
+        self.notes.setObjectName("Prose")
+        self.notes.setWordWrap(True)
+        self.notes.setTextFormat(Qt.RichText)
+        body.addWidget(self.notes)
+        body.addStretch(1)
+
+    # opening ----------------------------------------------------------------
+    def open(self, package: Package, back_index: int) -> None:
+        self.package = package
+        self.back_index = back_index
+        self.shots = []
+        self.last_details = None
+        self._clear(self.chips)
+        self._clear(self.thumb_row)
+        self._render_header()
+        self.gallery.hide()
+        self.desc.setText("")
+        self.meta.setText("")
+        self.notes.setText("")
+        self.loading.setText(f"Looking up {package.label}…")
+        self.loading.show()
+        self.scroll.verticalScrollBar().setValue(0)
+        threading.Thread(target=self._fetch, args=(package,), daemon=True).start()
+
+    def _fetch(self, package: Package) -> None:
+        try:
+            details = details_for(package)
+        except Exception as error:            # never take the window down over metadata
+            details = None
+            print(f"mason-software: details failed: {error}", file=sys.stderr)
+        self.details_ready.emit(details)
+
+    def _apply(self, details) -> None:
+        if self.package is None:
+            return
+        self.loading.hide()
+        if details is None:
+            self.desc.setText("No catalogue entry for this package.")
+            return
+
+        self.last_details = details
+        self._render_header(details)
+
+        if details.description:
+            self.desc.setText(details.description if details.html
+                              else self._paragraphs(details.description))
+        else:
+            self.desc.setText("No description is published for this package.")
+
+        rows = []
+        if details.developer:
+            rows.append(f"<b>Developer</b> {html.escape(details.developer)}")
+        if details.categories:
+            rows.append("<b>Categories</b> " + html.escape(", ".join(details.categories)))
+        if details.license:
+            rows.append(f"<b>License</b> {html.escape(details.license)}")
+        if details.download_size or details.installed_size:
+            sizes = " · ".join(part for part in (
+                f"{details.download_size} download" if details.download_size else "",
+                f"{details.installed_size} installed" if details.installed_size else "") if part)
+            rows.append(f"<b>Size</b> {html.escape(sizes)}")
+        if details.version:
+            when = f" ({details.released})" if details.released else ""
+            rows.append(f"<b>Latest release</b> {html.escape(details.version)}{when}")
+        if details.homepage:
+            rows.append(f'<b>Homepage</b> <a href="{html.escape(details.homepage)}">'
+                        f'{html.escape(details.homepage)}</a>')
+        if details.source == "flathub" and details.app_id:
+            page_url = f"https://flathub.org/apps/{details.app_id}"
+            rows.append(f'<b>Flathub</b> <a href="{html.escape(page_url)}">'
+                        f'{html.escape(details.app_id)}</a>')
+        elif details.app_id:
+            rows.append(f"<b>Catalogue id</b> {html.escape(details.app_id)}")
+        self.meta.setText("<br>".join(rows))
+
+        if details.notes:
+            title = f"What's new in {html.escape(details.version)}" if details.version else "What's new"
+            self.notes.setText(f"<b>{title}</b><br>{details.notes}")
+        else:
+            self.notes.setText("")
+
+        self.shots = details.screenshots
+        if self.shots:
+            self.gallery.show()
+            self.preview.setText("Loading screenshots…")
+            self.thumb_row.addStretch(1)
+            for index, shot in enumerate(self.shots):
+                button = QPushButton()
+                button.setObjectName("Thumb")
+                button.setFixedSize(112, 64)
+                button.setToolTip(shot.caption or f"Screenshot {index + 1}")
+                button.clicked.connect(lambda _=False, i=index: self._show_shot(i))
+                self.thumb_row.insertWidget(self.thumb_row.count() - 1, button)
+                self.load_image(shot.thumb or shot.full,
+                                lambda pix, b=button: b.setIcon(QIcon(pix.scaled(
+                                    104, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation))))
+                button.setIconSize(QSize(104, 56))
+            self._show_shot(0)
+
+    def _show_shot(self, index: int) -> None:
+        if not (0 <= index < len(self.shots)):
+            return
+        shot = self.shots[index]
+        cached = self.pixmaps.get(shot.full)
+        if cached is not None:
+            self._set_preview(cached)
+            return
+        self.preview.setText("Loading screenshot…")
+        self.load_image(shot.full, self._set_preview)
+
+    def _set_preview(self, pix: QPixmap) -> None:
+        if pix.isNull():
+            return
+        self.preview_pixmap = pix
+        width = max(420, min(880, self.preview.width() or 780))
+        self.preview.setPixmap(pix.scaled(QSize(width, 330), Qt.KeepAspectRatio,
+                                          Qt.SmoothTransformation))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if not self.preview_pixmap.isNull():
+            self._set_preview(self.preview_pixmap)
+
+    # header -----------------------------------------------------------------
+    def _render_header(self, details=None) -> None:
+        package = self.package
+        if package is None:
+            return
+        self.name.setText((details.name if details and details.name else package.label))
+        self.summary.setText((details.summary if details and details.summary else package.summary)
+                             or "No summary available.")
+
+        self._clear(self.chips)
+        source = pretty_source(package.source)
+        for text, style in ((source, "Chip"),
+                            (package.backend, "Chip"),
+                            ("installed", "ChipInstalled") if package.installed else ("", ""),
+                            ("Flathub verified", "Chip") if details and details.verified else ("", ""),
+                            (package.version, "Chip") if package.version else ("", "")):
+            if not text:
+                continue
+            chip = QLabel(text)
+            chip.setObjectName(style)
+            self.chips.addWidget(chip)
+        self.chips.addStretch(1)
+
+        mark = QIcon.fromTheme("package-x-generic",
+                              QIcon(str(SHARE / "icons" / "masonos.svg"))).pixmap(72, 72)
+        self.icon.setPixmap(mark)
+        if details is not None and details.icon_url:
+            self.load_image(details.icon_url,
+                            lambda pix: self.icon.setPixmap(pix.scaled(
+                                96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
+        self._render_action()
+
+    def _render_action(self) -> None:
+        package = self.package
+        if package is None:
+            return
+        try:
+            self.action.clicked.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        if package.installed:
+            self.action.setText("Remove")
+            self.action.setObjectName("Danger")
+            self.action.clicked.connect(lambda: self.app.remove(package))
+        else:
+            self.action.setText("Install")
+            self.action.setObjectName("Primary")
+            self.action.clicked.connect(lambda: self.app.install(package))
+        self.action.style().unpolish(self.action)
+        self.action.style().polish(self.action)
+
+    def refresh(self) -> None:
+        """After an install or removal: keep the page, refresh what is installed."""
+        if self.package is None:
+            return
+        backend = backend_by_key(self.package.backend)
+        if backend is not None:
+            try:
+                self.package.installed = self.package.name in backend.installed_names()
+            except Exception:
+                pass
+        self._render_header(self.last_details)
+
+    # misc -------------------------------------------------------------------
+    @staticmethod
+    def _clear(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    @staticmethod
+    def _paragraphs(text: str) -> str:
+        return "<br><br>".join(html.escape(part).replace("\n", "<br>")
+                               for part in text.split("\n\n") if part.strip())
+
+    def load_image(self, url: str, callback) -> None:
+        if not url:
+            return
+        if url in self.pixmaps:
+            callback(self.pixmaps[url])
+            return
+        key = sha1(url.encode("utf-8")).hexdigest()
+        path = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / \
+            "masonos" / "images" / key
+        if path.exists():
+            pix = QPixmap(str(path))
+            if not pix.isNull():
+                self.pixmaps[url] = pix
+                callback(pix)
+                return
+        reply = self.nam.get(QNetworkRequest(QUrl(url)))
+        reply.finished.connect(lambda: self._image_ready(reply, url, path, callback))
+
+    def _image_ready(self, reply, url: str, path: Path, callback) -> None:
+        try:
+            if reply.error() == QNetworkReply.NetworkError.NoError:
+                data = bytes(reply.readAll())
+                pix = QPixmap()
+                if data and pix.loadFromData(data):
+                    self.pixmaps[url] = pix
+                    try:
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(data)
+                    except OSError:
+                        pass
+                    callback(pix)
+        finally:
+            reply.deleteLater()
+
+
+# ── window ───────────────────────────────────────────────────────────────────
+
+class MasonSoftware(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Mason's Software")
+        self.setMinimumSize(940, 620)
+        self.resize(1100, 720)
+        mark = mark_pixmap(64)
+        if not mark.isNull():
+            self.setWindowIcon(QIcon(mark))
+
+        self.backends = active_backends()
+        self.procs: list[QProcess] = []
+
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._sidebar())
+
+        right = QVBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(0)
+        right.addWidget(self._header())
+
+        self.pages = QStackedWidget()
+        self.discover = DiscoverPage(self)
+        self.updates = UpdatesPage(self)
+        self.installed = InstalledPage(self)
+        self.flatpak = FlatpakPage(self)
+        self.page_names = ["discover", "updates", "installed", "flatpak"]
+        for page in (self.discover, self.updates, self.installed, self.flatpak):
+            self.pages.addWidget(page)
+        self.details = DetailsPage(self)
+        self.pages.addWidget(self.details)
+        right.addWidget(self.pages, 1)
+        right.addWidget(self._activity())
+        root.addLayout(right, 1)
+
+        self.show_page(0)
+
+    # chrome -----------------------------------------------------------------
+    def _sidebar(self) -> QWidget:
+        bar = QWidget()
+        bar.setObjectName("Sidebar")
+        bar.setFixedWidth(226)
+        side = QVBoxLayout(bar)
+        side.setContentsMargins(16, 20, 16, 16)
+        side.setSpacing(6)
+
+        head = QHBoxLayout()
+        logo = QLabel()
+        logo.setPixmap(mark_pixmap(26))
+        word = QLabel("Mason's")
+        word.setObjectName("Wordmark")
+        head.addWidget(logo)
+        head.addWidget(word)
+        head.addStretch(1)
+        side.addLayout(head)
+        tag = QLabel("SOFTWARE")
+        tag.setObjectName("Tagline")
+        side.addWidget(tag)
+        side.addSpacing(14)
+
+        self.nav_buttons = []
+        for index, label in enumerate(("Discover", "Updates", "Installed", "Flatpak")):
+            button = QPushButton(label)
+            button.setObjectName("Nav")
+            button.setCheckable(True)
+            button.clicked.connect(lambda _=False, i=index: self.show_page(i))
+            side.addWidget(button)
+            self.nav_buttons.append(button)
+
+        side.addStretch(1)
+        self.sources = QLabel(self._sources_text())
+        self.sources.setObjectName("PageHint")
+        self.sources.setWordWrap(True)
+        side.addWidget(self.sources)
+        return bar
+
+    def _sources_text(self) -> str:
+        if not self.backends:
+            return "No package backend found."
+        names = ", ".join(backend.label for backend in self.backends)
+        distro = distro_label().split("(")[0].strip()
+        return f"{distro}\n{names}"
+
+    def _header(self) -> QWidget:
+        wrap = QWidget()
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(24, 16, 24, 8)
+        row.setSpacing(10)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search apps and packages…")
+        self.search.returnPressed.connect(self.do_search)
+        self.search.textChanged.connect(self._search_hint)
+        row.addWidget(self.search, 1)
+        self.search_btn = QPushButton("Search")
+        self.search_btn.setObjectName("Primary")
+        self.search_btn.clicked.connect(self.do_search)
+        row.addWidget(self.search_btn)
+        self.activity_btn = QPushButton("Activity")
+        self.activity_btn.setCheckable(True)
+        self.activity_btn.clicked.connect(self._toggle_activity)
+        row.addWidget(self.activity_btn)
+        return wrap
+
+    def _activity(self) -> QWidget:
+        self.activity = QWidget()
+        box = QVBoxLayout(self.activity)
+        box.setContentsMargins(24, 0, 24, 14)
+        box.setSpacing(6)
+        self.status = QLabel("")
+        self.status.setObjectName("PageHint")
+        box.addWidget(self.status)
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setFixedHeight(120)
+        self.log.setVisible(False)
+        box.addWidget(self.log)
+        return self.activity
+
+    def _toggle_activity(self) -> None:
+        self.log.setVisible(self.activity_btn.isChecked())
+
+    def _search_hint(self, text: str) -> None:
+        del text
+        if hasattr(self, "search_btn"):
+            self.search_btn.setEnabled(bool(self.search.text().strip()))
+
+    # pages ------------------------------------------------------------------
+    def show_page(self, index: int) -> None:
+        self.pages.setCurrentIndex(index)
+        for i, button in enumerate(self.nav_buttons):
+            button.setChecked(i == index)
+        page = self.pages.currentWidget()
+        page.refresh()
+
+    def show_page_named(self, name: str) -> None:
+        if name in self.page_names:
+            self.show_page(self.page_names.index(name))
+
+    def open_details(self, package: Package) -> None:
+        current = self.pages.currentWidget()
+        back_index = self.pages.indexOf(current) if current is not self.details else self.details.back_index
+        self.details.open(package, back_index)
+        self.pages.setCurrentWidget(self.details)
+
+    def back_from_details(self) -> None:
+        index = self.details.back_index if self.details.back_index < self.pages.count() - 1 else 0
+        self.pages.setCurrentIndex(max(0, index))
+        self.pages.currentWidget().refresh()
+
+    def do_search(self) -> None:
+        query = self.search.text().strip()
+        if not query:
+            return
+        self.set_busy(f"Searching for “{query}”…")
+        collected: list[Package] = []
+        state = {"pending": 0, "finished": False}
+
+        def finish() -> None:
+            if state["finished"]:
+                return
+            state["finished"] = True
+            self.clear_busy()
+            collected.sort(key=lambda p: (not p.installed, p.label.lower(), p.source))
+            self.discover.search(collected, query)
+            self.status.setText(f"{len(collected)} result(s) for “{query}”.")
+
+        for backend in self.backends:
+            cmd = backend.search_cmd(query)
+            if not cmd:
+                continue
+            state["pending"] += 1
+
+            def handler(text: str, backend=backend, query=query) -> None:
+                collected.extend(backend.parse_search(text or "", query))
+
+            def one_done(code: int = 0, text: str = "") -> None:
+                del code, text
+                state["pending"] -= 1
+                if state["pending"] <= 0:
+                    finish()
+
+            self.run(cmd, on_output=handler, on_done=one_done)
+        if state["pending"] == 0:
+            finish()
+
+    # data loading -----------------------------------------------------------
+    def load_updates(self, view: ResultsView, button: QPushButton) -> None:
+        self.set_busy("Checking for updates…")
+        collected: list[Package] = []
+        pending = {"count": 0}
+
+        state = {"done": False}
+
+        def one_done(code: int = 0, text: str = "") -> None:
+            del code, text
+            pending["count"] -= 1
+            if pending["count"] <= 0:
+                done()
+
+        def done() -> None:
+            if state["done"]:
+                return
+            state["done"] = True
+            self.clear_busy()
+            collected.sort(key=lambda p: p.name)
+            view.set_packages(collected, "Everything is up to date.", mode="update")
+            button.setEnabled(bool(collected))
+            self.status.setText(f"{len(collected)} update(s) available.")
+
+        for backend in self.backends:
+            cmd = backend.updates_cmd()
+            if not cmd:
+                continue
+            pending["count"] += 1
+            self.run(cmd, on_output=lambda text, b=backend: collected.extend(b.parse_updates(text or "")),
+                     on_done=one_done)
+        if pending["count"] == 0:
+            done()
+
+    def load_installed(self, view: ResultsView) -> None:
+        self.set_busy("Reading installed packages…")
+        collected: list[Package] = []
+
+        state = {"pending": 0, "done": False}
+
+        def done() -> None:
+            if state["done"]:
+                return
+            state["done"] = True
+            self.clear_busy()
+            collected.sort(key=lambda p: p.name.lower())
+            view.set_packages(collected, "Nothing installed from these sources.")
+            self.status.setText(f"{len(collected)} installed package(s).")
+
+        def one_done(code: int = 0, text: str = "") -> None:
+            del code, text
+            state["pending"] -= 1
+            if state["pending"] <= 0:
+                done()
+
+        for backend in self.backends:
+            cmd = backend.installed_cmd()
+            if not cmd:
+                continue
+            state["pending"] += 1
+            self.run(cmd, on_output=lambda text, b=backend: collected.extend(b.parse_installed(text or "")),
+                     on_done=one_done)
+        if state["pending"] == 0:
+            done()
+
+    def load_flatpaks(self, view: ResultsView) -> None:
+        backend = backend_by_key("flatpak")
+        if backend is None:
+            view.set_packages([], "Flatpak is not installed on this system.")
+            return
+        cmd = backend.installed_cmd()
+        if not cmd:
+            return
+        self.set_busy("Reading Flatpaks…")
+        self.run(cmd, on_output=lambda text: view.set_packages(backend.parse_installed(text or ""),
+                                                              "No Flatpak apps yet — search for one above."),
+                 on_done=lambda code=0, text="": self.clear_busy())
+
+    # actions ----------------------------------------------------------------
+    def install(self, package: Package) -> None:
+        backend = backend_by_key(package.backend)
+        if backend is None:
+            return
+        cmd = backend.install_cmd([package])
+        if not cmd:
+            self.fail(f"{backend.label} cannot install that here.")
+            return
+        self.act(cmd, f"Installing {package.label}…", f"Installed {package.label}.",
+                 self.pages.currentWidget(),
+                 terminal=getattr(backend, "needs_terminal", lambda: False)())
+
+    def remove(self, package: Package) -> None:
+        backend = backend_by_key(package.backend)
+        if backend is None:
+            return
+        cmd = backend.remove_cmd([package])
+        if not cmd:
+            return
+        self.act(cmd, f"Removing {package.label}…", f"Removed {package.label}.",
+                 self.pages.currentWidget())
+
+    def update(self, package: Package) -> None:
+        backend = backend_by_key(package.backend)
+        if backend is None:
+            return
+        cmd = backend.update_cmd([package])
+        if not cmd:
+            return
+        self.act(cmd, f"Updating {package.label}…", f"Updated {package.label}.", self.updates)
+
+    def update_all(self) -> None:
+        commands: list[list[str]] = []
+        for backend in self.backends:
+            commands.extend(backend.upgrade_cmds())
+        if not commands:
+            return
+
+        def step(index: int) -> None:
+            if index >= len(commands):
+                self._after_change("Update finished.", self.updates)
+                return
+            self.act(commands[index], "Updating every source…", "A source finished updating.",
+                     self.updates, refresh=False, then=lambda: step(index + 1))
+
+        step(0)
+
+    def act(self, argv: list[str], busy: str, success: str, page, terminal: bool = False,
+            refresh: bool = True, then=None) -> None:
+        """Run one package action, and make sure the user finds out what happened.
+
+        Distro tools need root, so the command goes through pkexec and the polkit
+        agent's password dialog. That dialog only exists while an agent is alive
+        in the session; when it is gone (or wedged) pkexec exits at once with an
+        error and nothing is installed. In that case — and whenever the helper
+        has to build as a normal user, like yay — the same command is re-run
+        inside a terminal window, where pkexec can ask for the password on the
+        tty instead.
+        """
+        self.log.clear()
+        self.activity_btn.setChecked(True)
+        self.log.setVisible(True)
+        self.set_busy(busy)
+
+        def advance() -> None:
+            if then is not None:
+                then()
+
+        escalated = bool(argv) and argv[0] == "pkexec"
+        if terminal or (escalated and not graphical_auth_available()):
+            self.run_in_terminal(argv, busy, page, refresh, advance)
+            return
+
+        def done(code: int, text: str) -> None:
+            if code == 0:
+                if refresh:
+                    self._after_change(success, page)
+                advance()
+                return
+            lowered = text.lower()
+            if escalated and any(marker in lowered for marker in CANCELLED):
+                self.clear_busy()
+                self.status.setText("Cancelled — nothing was changed.")
+                return
+            unresolved = not text.strip() or any(marker in lowered for marker in AUTH_FAILURES)
+            if escalated and unresolved:
+                # Never got past the password prompt: the terminal can still ask.
+                self.run_in_terminal(argv, busy, page, refresh, advance,
+                                     why=(text.strip().splitlines() or [""])[-1])
+                return
+            self.fail(f"{busy.rstrip('…')} failed — see Activity for the output.", text)
+
+        self.run(argv, stream=True, on_done=done)
+
+    def run_in_terminal(self, argv: list[str], busy: str, page, refresh: bool,
+                        advance, why: str = "") -> None:
+        term = terminal_command(argv)
+        if term is None:
+            self.fail(f"No terminal found to run: {' '.join(argv)}")
+            return
+        self.log.moveCursor(QTextCursor.End)
+        if why:
+            self.log.insertPlainText(f"\n{why}\n")
+        self.log.insertPlainText(f"→ {' '.join(argv)}\n(running in a terminal window)\n")
+        self.set_busy(f"{busy.rstrip('…')} in a terminal — enter your password there")
+
+        def closed(code: int, text: str) -> None:
+            del code, text
+            if refresh:
+                self._after_change("Checked again — the list shows the result.", page)
+            else:
+                self.clear_busy()
+            advance()
+
+        self.run(term, on_done=closed)
+
+    def fail(self, message: str, detail: str = "") -> None:
+        """Say it out loud: a failure the user can read, not a silent no-op."""
+        self.clear_busy()
+        self.status.setText(message)
+        self.status.setStyleSheet(f"color: {PALETTE['warn']};")
+        self.activity_btn.setChecked(True)
+        self.log.setVisible(True)
+        if detail.strip():
+            self.log.moveCursor(QTextCursor.End)
+            self.log.insertPlainText(detail if not self.log.toPlainText() else f"\n{detail}")
+            self.log.ensureCursorVisible()
+
+    def _after_change(self, message: str, page) -> None:
+        self.clear_busy()
+        self.status.setText(message)
+        for backend in self.backends:
+            for stale in ("_installed_cache", "_installed_scopes", "_remote_scopes"):
+                backend.__dict__.pop(stale, None)
+        QTimer.singleShot(300, page.refresh)
+
+    # process plumbing -------------------------------------------------------
+    def run(self, argv: list[str], on_output=None, on_done=None, stream: bool = False) -> None:
+        """Start one command; call on_done(exit_code, merged_output)."""
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.MergedChannels)
+        self.procs.append(proc)
+        buffer: list[str] = []
+        state = {"done": False}
+
+        def collect() -> None:
+            try:
+                chunk = bytes(proc.readAllStandardOutput()).decode("utf-8", "replace")
+            except RuntimeError:      # the QProcess was already torn down
+                return
+            if not chunk:
+                return
+            buffer.append(chunk)
+            if stream:
+                self.log.moveCursor(QTextCursor.End)
+                self.log.insertPlainText(chunk)
+                self.log.ensureCursorVisible()
+
+        def finished(code: int) -> None:
+            if state["done"]:
+                return
+            state["done"] = True
+            collect()
+            text = "".join(buffer)
+            if not text.strip() and code != 0:
+                try:
+                    text = proc.errorString()
+                except RuntimeError:
+                    text = ""
+            if on_output is not None:
+                on_output(text)
+            if on_done is not None:
+                on_done(code, text)
+            try:
+                if proc in self.procs:
+                    self.procs.remove(proc)
+                proc.deleteLater()
+            except RuntimeError:
+                pass
+
+        def on_finished(exit_code: int, exit_status) -> None:
+            finished(exit_code if exit_status == QProcess.ExitStatus.NormalExit else -1)
+
+        proc.readyReadStandardOutput.connect(collect)
+        proc.finished.connect(on_finished)
+        proc.errorOccurred.connect(lambda _err: finished(-1))
+        proc.start(argv[0], argv[1:])
+
+    def set_busy(self, message: str) -> None:
+        self.status.setStyleSheet("")
+        self.status.setText(message)
+        self.setCursor(Qt.BusyCursor)
+        for button in (self.search_btn,):
+            button.setEnabled(False)
+
+    def clear_busy(self) -> None:
+        self.unsetCursor()
+        self.status.setStyleSheet("")
+        self.search_btn.setEnabled(bool(self.search.text().strip()))
+
+
+def main(argv: list[str]) -> int:
+    page = None
+    screenshot = None
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--page" and index + 1 < len(argv):
+            page = argv[index + 1]
+            index += 2
+            continue
+        if arg == "--screenshot" and index + 1 < len(argv):
+            screenshot = argv[index + 1]
+            index += 2
+            continue
+        index += 1
+
+    app = QApplication(["mason-software"])
+    app.setApplicationName("Mason's Software")
+    app.setStyleSheet(QSS)
+    window = MasonSoftware()
+    if page:
+        window.show_page_named(page)
+    if screenshot:
+        window.show()
+        app.processEvents()
+        window.grab().save(screenshot)
+        print(f"wrote {screenshot}")
+        return 0
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

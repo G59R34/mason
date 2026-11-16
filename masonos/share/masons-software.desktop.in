@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Mason's Software
+GenericName=Software Centre
+Comment=Install and remove apps, Flatpaks and AUR packages
+Exec=@MASONOSCTL@ software
+Icon=system-software-install
+Terminal=false
+Categories=Qt;KDE;System;PackageManager;
+Keywords=software;apps;install;remove;update;store;flatpak;package;discover;masonos;
+X-KDE-StartupNotify=true
+StartupWMClass=mason-software
+NoDisplay=false

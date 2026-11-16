@@ -1,0 +1,838 @@
+#!/usr/bin/env python3
+"""Mason's Launcher — the Super-key application launcher for MasonOS.
+
+Favorites on the left, applications in the middle, recents and categories on the
+right, power actions along the bottom, and one search box over the top — the
+familiar Kicker layout, drawn in MasonOS colours.
+
+It reads ordinary ``.desktop`` files (system, user and Flatpak exports), so it
+lists exactly what the rest of the desktop lists, and it starts applications the
+same way a shell would.
+
+    masons-launcher              open it (and quit when closed)
+    masons-launcher --service    stay resident and answer D-Bus, used by the
+                                 Super key through the MasonOS KWin script
+"""
+
+from __future__ import annotations
+
+import configparser
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from PySide6.QtCore import QEvent, QObject, QSize, QRect, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QKeySequence, QLinearGradient, QPainter, QPixmap, QShortcut
+from PySide6.QtWidgets import (
+    QApplication,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+SHARE = Path(__file__).resolve().parent.parent / "share"
+HOME = Path.home()
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "masonos" / "launcher.json"
+VERSION = "1.0"
+
+PALETTE = {
+    "bg_top": "#0a0a0f",
+    "bg_bottom": "#08080a",
+    "surface": "#12121a",
+    "surface_alt": "#17171f",
+    "hover": "#1d1d27",
+    "border": "#26262f",
+    "text": "#f4f4f5",
+    "muted": "#9a9aa8",
+    "accent": "#8b5cf6",
+    "accent_soft": "#c4b5fd",
+}
+
+APP_DIRS = [
+    Path(os.environ.get("XDG_DATA_HOME") or HOME / ".local" / "share") / "applications",
+    Path("/var/lib/flatpak/exports/share/applications"),
+    Path("/usr/local/share/applications"),
+    Path("/usr/share/applications"),
+]
+
+DEFAULT_FAVORITES = [
+    "masons-files.desktop",
+    "masons-software.desktop",
+    "systemsettings.desktop",
+    "org.mozilla.firefox.desktop",
+    "firefox.desktop",
+    "org.kde.konsole.desktop",
+    "org.kde.dolphin.desktop",
+]
+
+CATEGORY_LABELS = {
+    "Development": "Development",
+    "Education": "Education",
+    "Game": "Games",
+    "Graphics": "Graphics",
+    "Network": "Internet",
+    "Office": "Office",
+    "Science": "Science",
+    "Settings": "Settings",
+    "System": "System",
+    "Utility": "Utilities",
+    "AudioVideo": "Multimedia",
+    "Audio": "Audio",
+    "Video": "Video",
+}
+
+QSS = f"""
+QWidget {{ background: transparent; color: {PALETTE['text']};
+           font-family: "DM Sans"; font-size: 14px; }}
+QLabel#Heading {{ font-family: "Syne"; font-size: 17px; font-weight: 700; }}
+QLabel#Hint {{ color: {PALETTE['muted']}; font-size: 12px; }}
+QLabel#TileLabel {{ color: {PALETTE['text']}; font-size: 12px; }}
+QLineEdit {{ background: rgba(23, 23, 31, 220); border: 1px solid {PALETTE['accent']};
+             border-radius: 14px; padding: 12px 18px; font-size: 16px; }}
+QLineEdit:focus {{ border-color: {PALETTE['accent_soft']}; }}
+QPushButton#Side {{ background: transparent; border: none; text-align: left;
+                    padding: 8px 12px; border-radius: 9px; color: {PALETTE['text']}; }}
+QPushButton#Side:hover {{ background: rgba(139, 92, 246, 46); }}
+QPushButton#Side:checked {{ background: rgba(139, 92, 246, 70); color: {PALETTE['accent_soft']}; }}
+QToolButton#Power {{ background: transparent; border: none; padding: 6px;
+                     color: {PALETTE['text']}; font-size: 12px; }}
+QToolButton#Power:hover {{ background: rgba(139, 92, 246, 46); border-radius: 10px; }}
+QScrollArea {{ border: none; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; }}
+QScrollBar::handle:vertical {{ background: {PALETTE['border']}; border-radius: 5px; min-height: 30px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+"""
+
+
+# ── application catalogue ────────────────────────────────────────────────────
+
+@dataclass
+class AppEntry:
+    key: str
+    name: str
+    exec_line: str
+    icon: str = ""
+    categories: list[str] = field(default_factory=list)
+    comment: str = ""
+    terminal: bool = False
+
+    def argv(self) -> list[str]:
+        line = re.sub(r"%[fFuUdDnNickvm]", " ", self.exec_line)
+        line = line.replace("%%", "%").strip()
+        try:
+            argv = shlex.split(line)
+        except ValueError:
+            argv = line.split()
+        if not argv:
+            return []
+        if self.terminal:
+            for term in ("konsole", "kgx", "gnome-terminal", "alacritty", "xterm"):
+                if shutil.which(term):
+                    if term == "gnome-terminal":
+                        return [term, "--"] + argv
+                    return [term, "-e"] + argv
+        return argv
+
+
+def load_apps() -> list[AppEntry]:
+    entries: dict[str, AppEntry] = {}
+    for directory in APP_DIRS:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.desktop")):
+            if path.name in entries:
+                continue                       # first directory wins
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            try:
+                parser.read(path, encoding="utf-8")
+            except (configparser.Error, OSError, UnicodeDecodeError):
+                continue
+            if not parser.has_section("Desktop Entry"):
+                continue
+            section = parser["Desktop Entry"]
+            if section.get("Type", "Application") != "Application":
+                continue
+            if section.get("NoDisplay", "false").strip().lower() == "true":
+                continue
+            if section.get("Hidden", "false").strip().lower() == "true":
+                continue
+            name = section.get("Name", "").strip()
+            exec_line = section.get("Exec", "").strip()
+            if not name or not exec_line:
+                continue
+            try_exec = section.get("TryExec", "").strip()
+            if try_exec and not (shutil.which(try_exec) or Path(try_exec).exists()):
+                continue
+            entries[path.name] = AppEntry(
+                key=path.name,
+                name=name,
+                exec_line=exec_line,
+                icon=section.get("Icon", "").strip(),
+                categories=[part for part in section.get("Categories", "").split(";") if part],
+                comment=section.get("Comment", "").strip(),
+                terminal=section.get("Terminal", "false").strip().lower() == "true",
+            )
+    return sorted(entries.values(), key=lambda entry: entry.name.lower())
+
+
+def load_state() -> dict:
+    try:
+        data = json.loads(CONFIG.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def save_state(state: dict) -> None:
+    try:
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def letter_pixmap(name: str, size: int) -> QPixmap:
+    """A coloured initial, for apps whose icon the current theme does not have."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(139, 92, 246, 210))
+    painter.drawRoundedRect(0, 0, size, size, size * 0.28, size * 0.28)
+    painter.setPen(QColor("#0b0b10"))
+    font = QFont("Syne")
+    font.setPixelSize(int(size * 0.52))
+    font.setBold(True)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, (name[:1] or "?").upper())
+    painter.end()
+    return pixmap
+
+
+def app_icon(entry: AppEntry, size: int) -> QPixmap:
+    if entry.icon:
+        icon = QIcon.fromTheme(entry.icon)
+        if not icon.isNull():
+            return icon.pixmap(QSize(size, size))
+    for fallback in ("application-x-executable", "applications-other", "exec"):
+        icon = QIcon.fromTheme(fallback)
+        if not icon.isNull():
+            return icon.pixmap(QSize(size, size))
+    return letter_pixmap(entry.name, size)
+
+
+def glyph_pixmap(glyph: str, size: int, colour: str = PALETTE["text"]) -> QPixmap:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QColor(colour))
+    font = QFont("DM Sans")
+    font.setPixelSize(int(size * 0.8))
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, glyph)
+    painter.end()
+    return pixmap
+
+
+# ── widgets ──────────────────────────────────────────────────────────────────
+
+class AppTile(QWidget):
+    """One app: icon above a two-line label, with hover and keyboard focus."""
+
+    activated = Signal(object)
+    context_requested = Signal(object, object)
+
+    def __init__(self, entry: AppEntry, parent=None):
+        super().__init__(parent)
+        self.entry = entry
+        self.setFixedSize(116, 108)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setToolTip(f"{entry.name}\n{entry.comment}" if entry.comment else entry.name)
+        self._hover = False
+        self._pressed = False
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        if self._hover or self.hasFocus():
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(139, 92, 246, 70 if self.hasFocus() else 40))
+            painter.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
+        pixmap = app_icon(self.entry, 48)
+        painter.drawPixmap(int((self.width() - 48) / 2), 12, pixmap)
+        painter.setPen(QColor(PALETTE["text"]))
+        font = QFont(self.font())
+        font.setPointSizeF(9.5)
+        painter.setFont(font)
+        metrics = QFontMetrics(font)
+        lines = self._wrap(metrics, self.entry.name, self.width() - 14, 2)
+        y = 68
+        for line in lines:
+            painter.drawText(QRect(7, y, self.width() - 14, 15), Qt.AlignHCenter, line)
+            y += 15
+
+    @staticmethod
+    def _wrap(metrics: QFontMetrics, text: str, width: int, max_lines: int) -> list[str]:
+        words = text.split()
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if metrics.horizontalAdvance(candidate) <= width or not current:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+                if len(lines) == max_lines:
+                    break
+        if current and len(lines) < max_lines:
+            lines.append(current)
+        if not lines:
+            return [metrics.elidedText(text, Qt.ElideRight, width)]
+        return [metrics.elidedText(line, Qt.ElideRight, width) for line in lines[:max_lines]]
+
+    def enterEvent(self, event) -> None:
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        self._hover = False
+        self.update()
+
+    def focusInEvent(self, event) -> None:
+        self.update()
+
+    def focusOutEvent(self, event) -> None:
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.activated.emit(self.entry)
+
+    def contextMenuEvent(self, event) -> None:
+        self.context_requested.emit(self.entry, event.globalPos())
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            self.activated.emit(self.entry)
+            return
+        super().keyPressEvent(event)
+
+
+class Column(QWidget):
+    """A titled, scrollable tile grid."""
+
+    activated = Signal(object)
+    context_requested = Signal(object, object)
+
+    def __init__(self, title: str, columns: int = 4, width: int | None = None, parent=None):
+        super().__init__(parent)
+        self.columns = columns
+        self.tiles: list[AppTile] = []
+        self._entries: list[AppEntry] = []
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.heading = QLabel(title)
+        self.heading.setObjectName("Heading")
+        layout.addWidget(self.heading)
+        rule = QWidget()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(f"background: {PALETTE['border']};")
+        layout.addWidget(rule)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.inner = QWidget()
+        self.grid = QGridLayout(self.inner)
+        self.grid.setContentsMargins(0, 8, 0, 0)
+        self.grid.setHorizontalSpacing(4)
+        self.grid.setVerticalSpacing(4)
+        self.scroll.setWidget(self.inner)
+        layout.addWidget(self.scroll, 1)
+        if width:
+            self.setFixedWidth(width)
+
+    def set_entries(self, entries: list[AppEntry]) -> None:
+        self._entries = list(entries)
+        self._relayout()
+
+    def _fitted_columns(self) -> int:
+        width = self.scroll.viewport().width() or self.width() or self.columns * 120
+        return max(1, width // 122)
+
+    def _relayout(self, columns: int | None = None) -> None:
+        if columns:
+            self.columns = columns
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        self.tiles = []
+        columns = max(1, self.columns)
+        for index, entry in enumerate(self._entries):
+            tile = AppTile(entry)
+            tile.activated.connect(self.activated)
+            tile.context_requested.connect(self.context_requested)
+            self.grid.addWidget(tile, index // columns, index % columns, Qt.AlignLeft | Qt.AlignTop)
+            self.tiles.append(tile)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        fitted = self._fitted_columns()
+        if fitted != self.columns and self._entries:
+            self._relayout(fitted)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        fitted = self._fitted_columns()
+        if fitted != self.columns:
+            self._relayout(fitted)
+
+    def set_title(self, text: str) -> None:
+        self.heading.setText(text)
+
+
+# ── window ───────────────────────────────────────────────────────────────────
+
+class Launcher(QWidget):
+    def __init__(self, service: bool = False, screenshot_size: tuple[int, int] | None = None):
+        super().__init__()
+        self.service_mode = service
+        self.screenshot_size = screenshot_size
+        self.setWindowTitle("Mason's Launcher")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+        self.apps = load_apps()
+        self.by_key = {entry.key: entry for entry in self.apps}
+        self.state = load_state()
+        favorites = self.state.get("favorites")
+        if not isinstance(favorites, list) or not favorites:
+            favorites = [key for key in DEFAULT_FAVORITES if key in self.by_key]
+        self.favorites: list[str] = favorites
+        self.recent: list[str] = [key for key in self.state.get("recent", []) if key in self.by_key]
+        self.active_category: str | None = None
+
+        self._build()
+        self._refresh()
+
+        for keys in ("Escape", "Ctrl+Q"):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.activated.connect(self.close_or_hide)
+
+    # layout -----------------------------------------------------------------
+    def _build(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(56, 32, 56, 26)
+        outer.setSpacing(18)
+
+        search_row = QHBoxLayout()
+        search_row.addStretch(1)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search…")
+        self.search.setFixedWidth(880)
+        self.search.setFixedHeight(58)
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._on_search)
+        self.search.returnPressed.connect(self._activate_first)
+        self.search.installEventFilter(self)
+        search_row.addWidget(self.search)
+        search_row.addStretch(1)
+        outer.addLayout(search_row)
+
+        columns = QHBoxLayout()
+        columns.setSpacing(34)
+        self.favorites_col = Column("Favorites", columns=3, width=372)
+        self.favorites_col.activated.connect(self.launch)
+        self.favorites_col.context_requested.connect(self._tile_menu)
+        columns.addWidget(self.favorites_col, 0, Qt.AlignTop)
+
+        self.apps_col = Column("Applications", columns=6)
+        self.apps_col.activated.connect(self.launch)
+        self.apps_col.context_requested.connect(self._tile_menu)
+        columns.addWidget(self.apps_col, 1)
+
+        right = QWidget()
+        right.setFixedWidth(238)
+        side = QVBoxLayout(right)
+        side.setContentsMargins(0, 0, 0, 0)
+        side.setSpacing(4)
+
+        recents_heading = QLabel("Recent Applications")
+        recents_heading.setObjectName("Heading")
+        side.addWidget(recents_heading)
+        self.recent_box = QVBoxLayout()
+        self.recent_box.setSpacing(0)
+        side.addLayout(self.recent_box)
+        side.addSpacing(10)
+
+        self.category_box = QVBoxLayout()
+        self.category_box.setSpacing(0)
+        side.addLayout(self.category_box)
+        side.addStretch(1)
+        columns.addWidget(right, 0, Qt.AlignTop)
+        outer.addLayout(columns, 1)
+
+        power = QHBoxLayout()
+        power.setSpacing(24)
+        for label, icon, glyph, handler in (
+            ("Log Out", "system-log-out", "⇥", self.log_out),
+            ("Restart", "system-reboot", "↻", self.restart),
+            ("Shut Down", "system-shutdown", "⏻", self.shutdown),
+        ):
+            button = QToolButton()
+            button.setObjectName("Power")
+            button.setText(label)
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            themed = QIcon.fromTheme(icon)
+            button.setIcon(themed if not themed.isNull() else QIcon(glyph_pixmap(glyph, 28)))
+            button.setIconSize(QSize(28, 28))
+            button.setFixedWidth(96)
+            button.clicked.connect(handler)
+            power.addWidget(button)
+        power.addStretch(1)
+        self.hint = QLabel("Esc to close · type to search · Enter to launch")
+        self.hint.setObjectName("Hint")
+        power.addWidget(self.hint, 0, Qt.AlignBottom)
+        outer.addLayout(power)
+
+    # painting ---------------------------------------------------------------
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0.0, QColor(10, 10, 15, 246))
+        gradient.setColorAt(1.0, QColor(8, 8, 10, 246))
+        painter.fillRect(self.rect(), gradient)
+        painter.setPen(QColor(139, 92, 246, 60))
+        painter.drawLine(0, 0, self.width(), 0)
+
+    # data -------------------------------------------------------------------
+    def _refresh(self) -> None:
+        self.favorites_col.set_entries([self.by_key[key] for key in self.favorites if key in self.by_key])
+        self._rebuild_recents()
+        self._rebuild_categories()
+        self._apply_filter(self.search.text())
+
+    def _rebuild_recents(self) -> None:
+        while self.recent_box.count():
+            item = self.recent_box.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        shown = self.recent[:8]
+        if not shown:
+            empty = QLabel("Nothing launched yet")
+            empty.setObjectName("Hint")
+            self.recent_box.addWidget(empty)
+            return
+        for key in shown:
+            entry = self.by_key.get(key)
+            if entry is None:
+                continue
+            button = QPushButton(entry.name)
+            button.setObjectName("Side")
+            button.setIcon(QIcon(app_icon(entry, 20)))
+            button.setIconSize(QSize(18, 18))
+            button.clicked.connect(lambda _=False, e=entry: self.launch(e))
+            self.recent_box.addWidget(button)
+
+    def _rebuild_categories(self) -> None:
+        while self.category_box.count():
+            item = self.category_box.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        counts: dict[str, int] = {}
+        for entry in self.apps:
+            for category in entry.categories:
+                if category in CATEGORY_LABELS:
+                    counts[category] = counts.get(category, 0) + 1
+        for category, label in CATEGORY_LABELS.items():
+            if not counts.get(category):
+                continue
+            button = QPushButton(label)
+            button.setObjectName("Side")
+            button.setCheckable(True)
+            button.setChecked(self.active_category == category)
+            button.clicked.connect(lambda _=False, c=category: self._pick_category(c))
+            self.category_box.addWidget(button)
+
+    def _pick_category(self, category: str) -> None:
+        self.active_category = None if self.active_category == category else category
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+        self._rebuild_categories()
+        self._apply_filter("")
+
+    # filtering --------------------------------------------------------------
+    def _on_search(self, text: str) -> None:
+        self.active_category = None
+        self._apply_filter(text)
+
+    def _apply_filter(self, text: str) -> None:
+        query = text.strip().lower()
+        if query:
+            entries = [entry for entry in self.apps
+                       if query in entry.name.lower() or query in entry.comment.lower()]
+            self.apps_col.set_title(f"Search results — {len(entries)}")
+        elif self.active_category:
+            entries = [entry for entry in self.apps if self.active_category in entry.categories]
+            self.apps_col.set_title(CATEGORY_LABELS.get(self.active_category, self.active_category))
+        else:
+            entries = self.apps
+            self.apps_col.set_title("Applications")
+        self.apps_col.set_entries(entries)
+
+    # actions ----------------------------------------------------------------
+    def launch(self, entry: AppEntry) -> None:
+        argv = entry.argv()
+        if not argv:
+            return
+        try:
+            subprocess.Popen(argv, start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return
+        self.recent = [entry.key] + [key for key in self.recent if key != entry.key]
+        self.state["recent"] = self.recent[:8]
+        self.state["favorites"] = self.favorites
+        save_state(self.state)
+        self._rebuild_recents()
+        self.close_or_hide()
+
+    def _activate_first(self) -> None:
+        if self.apps_col.tiles:
+            self.launch(self.apps_col.tiles[0].entry)
+
+    def _tile_menu(self, entry: AppEntry, position) -> None:
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        starred = entry.key in self.favorites
+        action = menu.addAction("Remove from Favorites" if starred else "Add to Favorites")
+        if menu.exec(position) is action:
+            if starred:
+                self.favorites = [key for key in self.favorites if key != entry.key]
+            else:
+                self.favorites.append(entry.key)
+            self.state["favorites"] = self.favorites
+            save_state(self.state)
+            self.favorites_col.set_entries([self.by_key[key] for key in self.favorites if key in self.by_key])
+
+    def log_out(self) -> None:
+        self.close_or_hide()
+        subprocess.Popen(["gdbus", "call", "--session", "--dest", "org.kde.Shutdown",
+                          "--object-path", "/Shutdown", "--method", "org.kde.Shutdown.logout"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def restart(self) -> None:
+        self.close_or_hide()
+        subprocess.Popen(["systemctl", "reboot"])
+
+    def shutdown(self) -> None:
+        self.close_or_hide()
+        subprocess.Popen(["systemctl", "poweroff"])
+
+    # window -----------------------------------------------------------------
+    def open_launcher(self) -> None:
+        self.apps = load_apps()             # pick up newly installed entries
+        self.by_key = {entry.key: entry for entry in self.apps}
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+        self.active_category = None
+        self._refresh()
+        if self.screenshot_size:
+            self.resize(*self.screenshot_size)
+            self.show()
+        else:
+            self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
+        self.windowHandle().requestActivate()
+        self.search.setFocus()
+        self.setFocus()
+
+    def toggle(self) -> None:
+        # A shortcut can be registered more than once (a KWin script reloaded
+        # alongside the login copy); ignore a burst so it never opens and
+        # immediately closes itself again.
+        now = time.monotonic()
+        if now - getattr(self, "_last_toggle", 0.0) < 0.35:
+            return
+        self._last_toggle = now
+        if self.isVisible():
+            self.close_or_hide()
+        else:
+            self.open_launcher()
+
+    def close_or_hide(self) -> None:
+        self.hide()
+        if not self.service_mode:
+            QApplication.instance().quit()
+
+    def closeEvent(self, event) -> None:
+        event.ignore()
+        self.close_or_hide()
+
+    def eventFilter(self, watched, event):
+        if watched is self.search and event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key == Qt.Key_Escape:
+                if self.search.text():
+                    self.search.clear()
+                else:
+                    self.close_or_hide()
+                return True
+            if key == Qt.Key_Down:
+                if self.apps_col.tiles:
+                    self.apps_col.tiles[0].setFocus()
+                return True
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        if key == Qt.Key_Escape:
+            self.close_or_hide()
+            return
+        if key in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            self._move_focus(key)
+            return
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            focused = QApplication.focusWidget()
+            if isinstance(focused, AppTile):
+                self.launch(focused.entry)
+            else:
+                self._activate_first()
+            return
+        super().keyPressEvent(event)
+
+    def _move_focus(self, key: int) -> None:
+        tiles = [tile for tile in self.apps_col.tiles if tile.isVisible()]
+        if not tiles:
+            return
+        current = QApplication.focusWidget()
+        if not isinstance(current, AppTile) or current not in tiles:
+            tiles[0].setFocus()
+            return
+        index = tiles.index(current)
+        columns = self.apps_col.columns
+        step = {Qt.Key_Left: -1, Qt.Key_Right: 1,
+                Qt.Key_Up: -columns, Qt.Key_Down: columns}[key]
+        target = index + step
+        if 0 <= target < len(tiles):
+            tiles[target].setFocus()
+
+
+# ── D-Bus for the Super key ──────────────────────────────────────────────────
+
+class LauncherService(QObject):
+    """`masons-launcher --service` answers this; the KWin script calls it."""
+
+    def __init__(self, window: Launcher):
+        super().__init__()
+        self.window = window
+
+    @Slot()
+    def toggle(self) -> None:
+        self.window.toggle()
+
+    @Slot()
+    def show(self) -> None:
+        self.window.open_launcher()
+
+    @Slot()
+    def hide(self) -> None:
+        self.window.close_or_hide()
+
+    @Slot(result=bool)
+    def visible(self) -> bool:
+        return self.window.isVisible()
+
+    @Slot(result=bool)
+    def focused(self) -> bool:
+        return self.window.isActiveWindow()
+
+    @Slot()
+    def quit(self) -> None:
+        QApplication.instance().quit()
+
+
+def register_service(window: Launcher) -> bool:
+    try:
+        from PySide6.QtDBus import QDBusConnection
+    except ImportError:
+        return False
+    bus = QDBusConnection.sessionBus()
+    if not bus.isConnected():
+        return False
+    service = LauncherService(window)
+    window._service_object = service      # keep alive
+    bus.registerObject("/Launcher", service, QDBusConnection.ExportAllSlots)
+    return bus.registerService("org.masonos.Launcher")
+
+
+def main(argv: list[str]) -> int:
+    service = "--service" in argv
+    screenshot = None
+    for index, arg in enumerate(argv):
+        if arg == "--screenshot" and index + 1 < len(argv):
+            screenshot = argv[index + 1]
+    if "-h" in argv or "--help" in argv:
+        print(__doc__)
+        return 0
+
+    app = QApplication(["masons-launcher"])
+    app.setApplicationName("Mason's Launcher")
+    app.setStyleSheet(QSS)
+    app.setQuitOnLastWindowClosed(False)
+
+    window = Launcher(service=service, screenshot_size=(1463, 936) if screenshot else None)
+    if service:
+        if not register_service(window):
+            print("masons-launcher: could not take org.masonos.Launcher on the session bus",
+                  file=sys.stderr)
+    if screenshot:
+        import time
+        window.open_launcher()
+        for _ in range(30):
+            app.processEvents()
+            time.sleep(0.05)
+        window.grab().save(screenshot)
+        print(f"wrote {screenshot}")
+        return 0
+    if not service:
+        window.open_launcher()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
