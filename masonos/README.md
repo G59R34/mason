@@ -57,6 +57,10 @@ Or straight from the site:
 curl -fsSL https://sexwithmason.com/masonos/install.sh | bash
 ```
 
+On the **Arch Linux ISO** that same line is the whole install: there is no desktop
+to theme yet, so it runs `arch-install.sh` instead (see below). Arguments go
+through, so `| bash -s -- --disk /dev/nvme0n1 --yes --password …` works there too.
+
 Everything lands in `~/.local`; nothing needs root. `install.sh` checks the
 Plasma version and dependencies up front, and also migrates a pre-rename
 MasonDE install (removes the old widget, moves state and bot config, remembers

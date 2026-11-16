@@ -8,8 +8,12 @@
 # hands over to the real installer inside it. Everything lands in ~/.local and
 # `masonosctl off` puts your Plasma setup back.
 #
+# On the Arch Linux ISO the same line installs Arch itself: it hands over to
+# masonos/arch-install.sh (partition a disk, Arch + Plasma 6, then MasonOS).
+#
 # Extra arguments are passed straight through, e.g.
 #   curl -fsSL …/install.sh | bash -s -- --no-apply
+#   curl -fsSL …/install.sh | bash -s -- --disk /dev/nvme0n1 --yes --password …
 set -euo pipefail
 
 BASE_URL="${MASONOS_BASE_URL:-__BASE_URL__}"
@@ -32,11 +36,21 @@ fetch() {
 printf '\n  MasonOS installer\n'
 say "source: $BASE_URL"
 
-command -v plasmashell >/dev/null 2>&1 || die "this installs a KDE Plasma 6 desktop theme — plasmashell was not found"
-case "${XDG_CURRENT_DESKTOP:-}${XDG_SESSION_TYPE:-}" in
-  *KDE*|*Plasma*|*wayland*) : ;;
-  *) say "warning: no Plasma session detected in this shell; install will still work" ;;
-esac
+# Running from the Arch ISO? Then there is no desktop to theme yet, and this
+# becomes the full install: arch-install.sh, first thing.
+ARCH_LIVE=0
+if [[ ${EUID:-$(id -u)} -eq 0 ]] && { [[ -d /run/archiso ]] || [[ -f /etc/arch-release ]]; }; then
+  ARCH_LIVE=1
+  say "Arch live environment: installing Arch Linux + Plasma 6 + MasonOS"
+fi
+
+if [[ $ARCH_LIVE -eq 0 ]]; then
+  command -v plasmashell >/dev/null 2>&1 || die "this installs a KDE Plasma 6 desktop theme — plasmashell was not found"
+  case "${XDG_CURRENT_DESKTOP:-}${XDG_SESSION_TYPE:-}" in
+    *KDE*|*Plasma*|*wayland*) : ;;
+    *) say "warning: no Plasma session detected in this shell; install will still work" ;;
+  esac
+fi
 
 fetch "$BASE_URL/masonos.tar.gz" "$TMP_DIR/masonos.tar.gz"
 say "downloaded $(du -h "$TMP_DIR/masonos.tar.gz" | cut -f1)"
@@ -52,6 +66,16 @@ fi
 
 tar -xzf "$TMP_DIR/masonos.tar.gz" -C "$TMP_DIR"
 [[ -x "$TMP_DIR/masonos/install.sh" ]] || die "the package is missing install.sh"
+
+if [[ $ARCH_LIVE -eq 1 ]]; then
+  [[ -x "$TMP_DIR/masonos/arch-install.sh" ]] || die "the package is missing arch-install.sh"
+  say "running the Arch installer — it asks which disk to erase, and erases it"
+  printf '\n'
+  cd "$TMP_DIR/masonos"
+  # The package is the MasonOS checkout, so arch-install.sh copies it from here
+  # into ~/mason of the new system. exec keeps the temp dir alive for that.
+  exec ./arch-install.sh --repo "$TMP_DIR" "$@"
+fi
 
 say "running the installer"
 printf '\n'
