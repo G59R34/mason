@@ -57,13 +57,31 @@ fi
 fetch "$BASE_URL/masonos.tar.gz" "$TMP_DIR/masonos.tar.gz"
 say "downloaded $(du -h "$TMP_DIR/masonos.tar.gz" | cut -f1)"
 
-if fetch "$BASE_URL/sha256.txt" "$TMP_DIR/sha256.txt" 2>/dev/null; then
-  expected="$(cut -d' ' -f1 "$TMP_DIR/sha256.txt")"
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$TMP_DIR/masonos.tar.gz" | cut -d' ' -f1)"
-    [[ "$expected" == "$actual" ]] || die "checksum mismatch — download was corrupted, try again"
-    say "checksum ok"
+if command -v sha256sum >/dev/null 2>&1; then
+  hash_of() { sha256sum "$1" | cut -d' ' -f1; }
+  expected=""
+  if fetch "$BASE_URL/sha256.txt" "$TMP_DIR/sha256.txt" 2>/dev/null; then
+    expected="$(head -1 "$TMP_DIR/sha256.txt" | cut -d' ' -f1)"
   fi
+  if [[ "$expected" != "$(hash_of "$TMP_DIR/masonos.tar.gz")" ]]; then
+    # A release that is still uploading, or a CDN holding one file back, looks
+    # exactly like this: both files are fine, but from different builds. One
+    # fresh fetch past the cache is normally all it takes.
+    say "the package and its checksum disagree — fetching both once more"
+    fetch "$BASE_URL/masonos.tar.gz?cb=$(date +%s)" "$TMP_DIR/masonos.tar.gz" \
+      || die "could not download the package"
+    if fetch "$BASE_URL/sha256.txt?cb=$(date +%s)" "$TMP_DIR/sha256.txt" 2>/dev/null; then
+      expected="$(head -1 "$TMP_DIR/sha256.txt" | cut -d' ' -f1)"
+    fi
+  fi
+  actual="$(hash_of "$TMP_DIR/masonos.tar.gz")"
+  if [[ -n "$expected" && "$expected" != "$actual" ]]; then
+    printf 'MasonOS: checksum mismatch — the package on the server is mid-release.\n' >&2
+    printf '  expected %s\n  got      %s\n' "${expected:0:16}" "${actual:0:16}" >&2
+    printf '  try again in a minute.\n' >&2
+    exit 1
+  fi
+  [[ -n "$expected" ]] && say "checksum ok"
 fi
 
 tar -xzf "$TMP_DIR/masonos.tar.gz" -C "$TMP_DIR"
