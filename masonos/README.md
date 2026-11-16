@@ -101,9 +101,43 @@ bash arch-install.sh --no-masonos                       # Arch + Plasma, no Maso
 ```
 
 Options: `--disk`, `--user`, `--hostname`, `--timezone`, `--password`,
-`--root-password`, `--encrypt`, `--swap GiB`/`--no-swap`,
+`--root-password`, `--encrypt`, `--luks-password`, `--swap GiB`/`--no-swap`,
 `--gpu auto|intel|amd|nvidia|vm`, `--repo PATH|URL`, `--no-masonos`, `--yes`,
 `--dry-run`, `--force-live`.
+
+## The installer window
+
+`arch-install-gui.sh` is the same install with menus instead of questions in the
+dark — the way ArchTitus does it. It is a full-screen dialog interface, because
+a freshly booted Arch ISO has no desktop to draw a window on; every question
+becomes a screen, and the install then runs behind a live log window.
+
+```bash
+bash arch-install-gui.sh      # on the Arch ISO
+```
+
+On the ISO the one-liner opens it for you: `curl -fsSL …/install.sh | bash`.
+Pass flags instead and it stays in plain-text mode.
+
+| Screen | What it asks |
+|---|---|
+| Welcome | what will happen, and the warning that a disk gets erased |
+| Disk | every whole disk with its size and model, live USB hidden, one preselected |
+| Account | hostname and username (validated), password twice |
+| Timezone | a menu of common zones, or type any zone name |
+| Options | encrypt root (LUKS2), install MasonOS, swap on/off and size, GPU driver set |
+| Confirm | the whole plan in one box before anything is touched |
+| Installing | the installer's own output, streaming, staying up if it fails |
+| Done | offers to reboot |
+
+Keys: arrows/Tab to move, Space to tick a box, Enter to accept, Esc to cancel
+(nothing is changed if you cancel before the install starts). Encryption asks
+for the LUKS2 passphrase up front and hands it to `arch-install.sh` through
+`--luks-password`, so the install never sits waiting on an invisible prompt.
+Each choice becomes a flag — the window is a front end, not a second installer —
+and it all ends up in `/tmp/masonos-arch-install.log`. If `dialog`/`whiptail`
+is missing it installs `dialog` from the ISO's own mirrors, and if even that
+fails it tells you to run `arch-install.sh`.
 
 It refuses to run anywhere but the live ISO (`--force-live` overrides), refuses
 the USB it booted from, refuses x86-incompatible machines (use Arch Linux ARM

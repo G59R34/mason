@@ -33,6 +33,7 @@ HOSTNAME_VALUE="masonos"
 TIMEZONE=""
 PASSWORD=""
 ROOT_PASSWORD=""
+LUKS_PASSWORD=""
 ENCRYPT=0
 SWAP_SIZE="auto"
 MAKE_SWAP=1
@@ -52,13 +53,19 @@ else
   C_DIM=""; C_B=""; C_V=""; C_R=""; C_Y=""; C_G=""; C_0=""
 fi
 
-say()  { printf '%s·%s %s\n' "$C_V" "$C_0" "$*"; }
-step() { printf '\n%s==>%s %s%s%s\n' "$C_V" "$C_0" "$C_B" "$*" "$C_0"; }
-warn() { printf '%s!%s %s\n' "$C_Y" "$C_0" "$*" >&2; }
-die()  { printf '%sx%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
-run()  { printf '%s  $%s %s\n' "$C_DIM" "$C_0" "$*"; "$@"; }
+# Every message goes to the screen AND straight to the log, one line at a time.
+# (Piping stdout through a single `tee` buffers everything in bash, which makes
+# a running install look hung: prompts it printed never reached the terminal.)
+log()  { printf '%s %s\n' "$(date -Is)" "$*" >> "$LOG_FILE" 2>/dev/null || true; }
+
+say()  { printf '%s·%s %s\n' "$C_V" "$C_0" "$*"; log "· $*"; }
+step() { printf '\n%s==>%s %s%s%s\n' "$C_V" "$C_0" "$C_B" "$*" "$C_0"; log "==> $*"; }
+warn() { printf '%s!%s %s\n' "$C_Y" "$C_0" "$*" >&2; log "! $*"; }
+die()  { printf '%sx%s %s\n' "$C_R" "$C_0" "$*" >&2; log "x $*"; exit 1; }
+run()  { printf '%s  $%s %s\n' "$C_DIM" "$C_0" "$*"; log "  \$ $*"; "$@"; }
 
 trap 'printf "\n%sx failed at line %s: %s%s\n" "$C_R" "$LINENO" "$BASH_COMMAND" "$C_0" >&2;
+      log "x failed at line $LINENO: $BASH_COMMAND";
       printf "  log: %s\n" "$LOG_FILE" >&2' ERR
 
 usage() {
@@ -75,6 +82,8 @@ EVERYTHING ON THE CHOSEN DISK IS ERASED.
   --password PASS      password for the user (asked if omitted)
   --root-password PASS password for root (default: root stays locked, use sudo)
   --encrypt            encrypt the root filesystem with LUKS2 (asks a passphrase)
+  --luks-password PASS LUKS2 passphrase, so --encrypt never has to ask (unattended
+                       and the GUI installer both use this)
   --swap SIZE          swap partition size in GiB, or 0 for none (default: auto)
   --no-swap            same as --swap 0
   --gpu auto|intel|amd|nvidia|vm
@@ -100,6 +109,7 @@ while [[ $# -gt 0 ]]; do
     --timezone)      TIMEZONE="${2:?--timezone needs a zone}"; shift 2 ;;
     --password)      PASSWORD="${2:?--password needs a value}"; shift 2 ;;
     --root-password) ROOT_PASSWORD="${2:?--root-password needs a value}"; shift 2 ;;
+    --luks-password) LUKS_PASSWORD="${2:?--luks-password needs a value}"; shift 2 ;;
     --encrypt)       ENCRYPT=1; shift ;;
     --swap)          SWAP_SIZE="${2:?--swap needs a size}"; MAKE_SWAP=1; shift 2 ;;
     --no-swap)       MAKE_SWAP=0; SWAP_SIZE="0"; shift ;;
@@ -115,6 +125,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── preflight ────────────────────────────────────────────────────────────────
+
+require_tty() {
+  [[ -t 0 ]] && return 0
+  die "nothing to ask on (stdin is not a terminal). Pass $1, or run arch-install.sh directly."
+}
 
 require_root() {
   [[ ${EUID} -eq 0 ]] || die "run this as root (on the Arch ISO you already are)."
@@ -141,9 +156,20 @@ system unless you pass --force-live."
 }
 
 require_network() {
-  if ping -c1 -W3 -q archlinux.org >/dev/null 2>&1; then
+  say "checking the network…"
+  # timeout, because a resolv.conf pointing at an unreachable nameserver makes
+  # ping hang in getaddrinfo with no packet timeout at all.
+  if timeout 15 ping -c1 -W3 -q archlinux.org >/dev/null 2>&1; then
     say "network: online"
-    return
+    return 0
+  fi
+  if timeout 10 ping -c1 -W3 -q 1.1.1.1 >/dev/null 2>&1; then
+    warn "network is up but DNS is not resolving — using 1.1.1.1 and 8.8.8.8"
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+    if timeout 15 ping -c1 -W3 -q archlinux.org >/dev/null 2>&1; then
+      say "network: online"
+      return 0
+    fi
   fi
   warn "no internet access — pacstrap cannot download packages."
   if [[ $ASSUME_YES -eq 1 ]]; then
@@ -203,7 +229,9 @@ list_disks() {
 choose_disk() {
   if [[ -z "$DISK" ]]; then
     list_disks
-    read -r -p "  Target disk (whole disk, e.g. /dev/nvme0n1): " DISK
+    require_tty "--disk /dev/sdX"
+    read -r -p "  Target disk (whole disk, e.g. /dev/nvme0n1): " DISK \
+      || die "no disk given — stdin is not a terminal, so pass --disk /dev/sdX"
   fi
   [[ -n "$DISK" ]] || die "no disk given."
   [[ -b "$DISK" ]] || die "$DISK is not a block device."
@@ -219,7 +247,8 @@ choose_disk() {
     if [[ $ASSUME_YES -eq 1 ]]; then
       die "unmount them first (umount -R each), then rerun."
     fi
-    read -r -p "  Unmount them now? [y/N] " reply
+    require_tty "--disk, after unmounting them yourself"
+    read -r -p "  Unmount them now? [y/N] " reply || die "nothing was changed."
     [[ "$reply" =~ ^[Yy]$ ]] || die "nothing was changed."
     while read -r point; do
       [[ -n "$point" ]] && umount -R "$point" || true
@@ -291,8 +320,9 @@ confirm_wipe() {
     return 0
   fi
   printf '  %sThere is no undo and no backup.%s\n' "$C_B" "$C_0"
+  require_tty "--yes (which skips this confirmation)"
   local answer
-  read -r -p "  Type the device name ($DISK) to erase it: " answer
+  read -r -p "  Type the device name ($DISK) to erase it: " answer || die "nothing was changed."
   [[ "$answer" == "$DISK" ]] || die "not confirmed — nothing was changed."
 }
 
@@ -341,7 +371,8 @@ EOF
     if [[ $ASSUME_YES -eq 1 ]]; then
       INSTALL_MASONOS=0
     else
-      read -r -p "  Continue without MasonOS? [y/N] " reply
+      require_tty "--no-masonos, or --repo /path/to/mason"
+      read -r -p "  Continue without MasonOS? [y/N] " reply || die "put the repo somewhere findable and rerun."
       [[ "$reply" =~ ^[Yy]$ ]] || die "put the repo somewhere findable and rerun."
       INSTALL_MASONOS=0
     fi
@@ -380,9 +411,17 @@ format_and_mount() {
     run mkswap -L swap "$SWAP_PART"
   fi
   if [[ $ENCRYPT -eq 1 ]]; then
-    say "LUKS2 passphrase for $ROOT_PART (asked once, used at every boot):"
-    run cryptsetup luksFormat --type luks2 --pbkdf argon2id "$ROOT_PART"
-    run cryptsetup open "$ROOT_PART" cryptroot
+    if [[ -n "$LUKS_PASSWORD" ]]; then
+      say "encrypting $ROOT_PART with LUKS2 (passphrase from --luks-password)"
+      printf '%s' "$LUKS_PASSWORD" | run cryptsetup -q --batch-mode luksFormat \
+        --type luks2 --pbkdf argon2id "$ROOT_PART" -
+      printf '%s' "$LUKS_PASSWORD" | run cryptsetup open "$ROOT_PART" cryptroot -
+    else
+      require_tty "--luks-password, to give the LUKS2 passphrase up front"
+      say "LUKS2 passphrase for $ROOT_PART (asked once, used at every boot):"
+      run cryptsetup luksFormat --type luks2 --pbkdf argon2id "$ROOT_PART"
+      run cryptsetup open "$ROOT_PART" cryptroot
+    fi
     ROOT_DEVICE=/dev/mapper/cryptroot
   else
     ROOT_DEVICE="$ROOT_PART"
@@ -547,7 +586,9 @@ configure_system() {
 install_masonos() {
   [[ $INSTALL_MASONOS -eq 1 ]] || { say "skipping MasonOS (--no-masonos)"; return; }
   step "Installing MasonOS for $USERNAME"
-  local target="$MOUNT_POINT/home/$USERNAME/mason"
+  # REPO_DIR is the masonos/ package itself, and install.sh is looked for at
+  # ~/mason/masonos/install.sh, so it goes in one level down.
+  local target="$MOUNT_POINT/home/$USERNAME/mason/masonos"
   run mkdir -p "$target"
   # The checkout is copied in: ~/.local/bin symlinks point at it, so it stays.
   tar -C "$REPO_DIR" -cf - . | tar -C "$target" -xf -
@@ -565,7 +606,7 @@ exec /usr/bin/plasmashell "$@"
 SH
   chmod 755 "$shim"
 
-  say "running masonos/install.sh --no-apply as $USERNAME (first login applies it)"
+  say "running ~/mason/masonos/install.sh --no-apply as $USERNAME (first login applies it)"
   local status=0
   arch-chroot "$MOUNT_POINT" sudo -u "$USERNAME" -H env QT_QPA_PLATFORM=offscreen \
     bash -lc 'cd ~/mason/masonos && ./install.sh --no-apply' || status=$?
@@ -602,16 +643,21 @@ EOF
 # ── main ─────────────────────────────────────────────────────────────────────
 
 main() {
-  exec > >(tee -a "$LOG_FILE") 2>&1
+  : > "$LOG_FILE"
 
   printf '%s\n' "${C_V}${C_B}MasonOS — Arch Linux installer${C_0}"
   printf '%s\n' "${C_DIM}$(date -Is) · log: $LOG_FILE${C_0}"
 
+  step "Checking this machine"
   require_root
   require_x86_64
   require_arch_live
   require_uefi_or_bios
+
+  step "Checking the network"
   require_network
+
+  step "Choosing the disk"
   choose_disk
   partition_names
   resolve_swap
@@ -628,9 +674,10 @@ main() {
 
   if [[ -z "$PASSWORD" && $DRY_RUN -eq 0 && $ASSUME_YES -eq 0 ]]; then
     local first second
+    require_tty "--password"
     while true; do
-      read -r -s -p "  Password for $USERNAME: " first; printf '\n'
-      read -r -s -p "  Repeat: " second; printf '\n'
+      read -r -s -p "  Password for $USERNAME: " first || die "no password given"; printf '\n'
+      read -r -s -p "  Repeat: " second || die "no password given"; printf '\n'
       [[ -n "$first" ]] || { warn "password cannot be empty"; continue; }
       [[ "$first" == "$second" ]] && break
       warn "passwords do not match"

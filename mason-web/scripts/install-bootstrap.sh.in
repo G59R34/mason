@@ -9,7 +9,9 @@
 # `masonosctl off` puts your Plasma setup back.
 #
 # On the Arch Linux ISO the same line installs Arch itself: it hands over to
-# masonos/arch-install.sh (partition a disk, Arch + Plasma 6, then MasonOS).
+# masonos/arch-install-gui.sh (the full-screen installer) or, with flags or no
+# terminal, to masonos/arch-install.sh (partition a disk, Arch + Plasma 6, then
+# MasonOS).
 #
 # Extra arguments are passed straight through, e.g.
 #   curl -fsSL …/install.sh | bash -s -- --no-apply
@@ -72,6 +74,18 @@ if [[ $ARCH_LIVE -eq 1 ]]; then
   say "running the Arch installer — it asks which disk to erase, and erases it"
   printf '\n'
   cd "$TMP_DIR/masonos"
+  # stdin was the `curl |` pipe, already at EOF: questions (which disk, the
+  # password, the wipe confirmation) need the real terminal instead.
+  if ! exec </dev/tty 2>/dev/null; then
+    say "no terminal to ask on — pass --disk and --password if it stops"
+  fi
+  # With a terminal and no flags, show the full-screen installer instead of
+  # asking in plain text (dialog menus: disk, account, timezone, options).
+  if [[ $# -eq 0 && -x ./arch-install-gui.sh ]]; then
+    say "starting the installer window"
+    printf '\n'
+    exec ./arch-install-gui.sh
+  fi
   # The package is the MasonOS checkout, so arch-install.sh copies it from here
   # into ~/mason of the new system. exec keeps the temp dir alive for that.
   exec ./arch-install.sh --repo "$TMP_DIR" "$@"
