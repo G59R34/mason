@@ -31,6 +31,9 @@ LUKS_PASSWORD=""
 
 die() { printf 'MasonOS: %s\n' "$*" >&2; exit 1; }
 
+# clear(1) needs a TERM; a bare console or a weird caller can lack one.
+cls() { clear 2>/dev/null || printf '\033[2J\033[H'; }
+
 # ── the dialog front end ─────────────────────────────────────────────────────
 
 pick_dialog() {
@@ -43,18 +46,43 @@ pick_dialog() {
   die "no dialog or whiptail — run arch-install.sh instead (it asks in plain text)."
 }
 
+readonly UI_ERR="/tmp/masonos-gui-error.txt"
+
 ui() { "$DIALOG" --backtitle "$BACKTITLE" --stdout "$@"; }
 
+# The menus need a terminal, and a sane TERM. Both are forced here so that a
+# dialog error is reported instead of just returning to a black screen.
+gui_broken() {
+  printf '\nMasonOS: the installer window could not start (dialog exit %s, TERM=%s).\n' \
+    "$1" "${TERM:-unset}" >&2
+  if [[ -s "$UI_ERR" ]]; then
+    printf 'dialog said:\n' >&2
+    sed 's/^/  /' "$UI_ERR" >&2
+  fi
+  printf 'Starting the plain-text installer instead.\n\n' >&2
+  exec "$INSTALLER" --repo "$SELF_DIR"
+}
+
 # A cancel (Esc) is a real answer: stop cleanly instead of continuing empty.
+# Never call this inside $(...): the exit would only leave the subshell and the
+# caller would carry on with an empty value. Read UI_OUT after the call instead.
+UI_OUT=""
 ui_or_quit() {
-  local out
-  out="$(ui "$@")" || { clear; printf 'MasonOS: cancelled — nothing was changed.\n'; exit 1; }
-  printf '%s' "$out"
+  local out rc=0
+  out="$(ui "$@" 2>"$UI_ERR")" || rc=$?
+  if (( rc == 1 )); then
+    cls
+    printf 'MasonOS: cancelled — nothing was changed.\n'
+    exit 1
+  fi
+  (( rc != 0 )) && gui_broken "$rc"
+  UI_OUT="$out"
 }
 
 # ── screens ──────────────────────────────────────────────────────────────────
 
 screen_welcome() {
+  local rc=0
   ui --title "MasonOS" \
     --yesno "\n  MasonOS turns a fresh Arch Linux box into this desktop:\n\
   Mason's panels, launcher, terminal and files on KDE Plasma 6.\n\n\
@@ -62,7 +90,12 @@ screen_welcome() {
     ·  erase one disk completely (no undo, no backup)\n\
     ·  install Arch Linux, Plasma 6, SDDM, PipeWire and the drivers\n\
     ·  set up Maz's user account and install MasonOS into it\n\n\
-  Next: pick the disk.\n" 20 74 || { clear; printf 'Nothing was changed.\n'; exit 0; }
+  Next: pick the disk.\n" 20 74 2>"$UI_ERR" || {
+    rc=$?
+    # 1 means the No/Quit button; anything else is the interface failing.
+    if (( rc == 1 )); then cls; printf 'Nothing was changed.\n'; exit 0; fi
+    gui_broken "$rc"
+  }
 }
 
 live_medium_disk() {
@@ -105,21 +138,21 @@ screen_disk() {
     i=$(( i + 2 ))
   done
 
-  DISK="$(ui_or_quit --title "Disk" --radiolist \
+  ui_or_quit --title "Disk" --radiolist \
     "\n  Which disk should Arch Linux be installed on?\n\n  Everything on it is erased: partitions, files, other systems.\n" \
-    20 78 8 "${list[@]}")"
+    20 78 8 "${list[@]}"
+  DISK="$UI_OUT"
   [[ -n "$DISK" ]] || die "no disk chosen."
   [[ -b "$DISK" ]] || die "$DISK is not a block device."
 }
 
 screen_identity() {
-  local form
-  form="$(ui_or_quit --title "Account" --form \
+  ui_or_quit --title "Account" --form \
     "\n  The account MasonOS uses. It gets sudo (wheel group).\n" \
     14 66 2 \
     "Hostname:" 1 2  "$HOSTNAME_VALUE" 1 16 30 32 \
-    "Username:" 2 2  "$USERNAME_VALUE" 2 16 30 32)"
-  { read -r HOSTNAME_VALUE; read -r USERNAME_VALUE; } <<< "$form"
+    "Username:" 2 2  "$USERNAME_VALUE" 2 16 30 32
+  { read -r HOSTNAME_VALUE; read -r USERNAME_VALUE; } <<< "$UI_OUT"
   [[ "$USERNAME_VALUE" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
     || die "invalid username: $USERNAME_VALUE (lowercase letters, digits, _ and -)"
   [[ "$HOSTNAME_VALUE" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] \
@@ -127,10 +160,10 @@ screen_identity() {
 
   local first second
   while true; do
-    first="$(ui_or_quit --title "Password" --passwordbox \
-      "\n  Password for $USERNAME_VALUE:\n" 10 60)"
-    second="$(ui_or_quit --title "Password" --passwordbox \
-      "\n  Same password again:\n" 10 60)"
+    ui_or_quit --title "Password" --passwordbox "\n  Password for $USERNAME_VALUE:\n" 10 60
+    first="$UI_OUT"
+    ui_or_quit --title "Password" --passwordbox "\n  Same password again:\n" 10 60
+    second="$UI_OUT"
     if [[ -z "$first" ]]; then
       ui --title "Password" --msgbox "\n  The password cannot be empty.\n" 8 60
       continue
@@ -149,8 +182,7 @@ screen_timezone() {
   current="$(readlink -f /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||' || true)"
   [[ -n "$current" && -e "/usr/share/zoneinfo/$current" ]] || current="Europe/London"
 
-  local choice
-  choice="$(ui_or_quit --title "Timezone" --menu \
+  ui_or_quit --title "Timezone" --menu \
     "\n  Clock and time zone (currently $current):\n" 22 66 12 \
     "$current" "detected on this ISO" \
     Europe/London "UK" \
@@ -167,22 +199,23 @@ screen_timezone() {
     Asia/Tokyo "Japan" \
     Australia/Sydney "Australia" \
     UTC "UTC" \
-    other "Type a zone (e.g. Europe/Dublin)")"
+    other "Type a zone (e.g. Europe/Dublin)"
+  local choice="$UI_OUT"
   if [[ "$choice" == "other" ]]; then
-    choice="$(ui_or_quit --title "Timezone" --inputbox "\n  Zone name:\n" 10 60 "$current")"
+    ui_or_quit --title "Timezone" --inputbox "\n  Zone name:\n" 10 60 "$current"
+    choice="$UI_OUT"
   fi
   [[ -e "/usr/share/zoneinfo/$choice" ]] || die "unknown timezone: $choice"
   TIMEZONE_VALUE="$choice"
 }
 
 screen_options() {
-  local picks
-  picks="$(ui_or_quit --title "Options" --checklist \
+  ui_or_quit --title "Options" --checklist \
     "\n  Space selects, Enter confirms.\n" 18 74 3 \
     encrypt "Encrypt the root filesystem (LUKS2 passphrase at every boot)" on \
     masonos "Install MasonOS desktop and applications (recommended)" on \
-    swap "Create a swap partition" on)"
-  picks="${picks//\"/}"
+    swap "Create a swap partition" on
+  local picks="${UI_OUT//\"/}"
   ENCRYPT=0; INSTALL_MASONOS=0
   local make_swap=0
   [[ " $picks " == *" encrypt "* ]] && ENCRYPT=1
@@ -190,28 +223,32 @@ screen_options() {
   [[ " $picks " == *" swap "* ]] && make_swap=1
 
   if (( make_swap )); then
-    SWAP_VALUE="$(ui_or_quit --title "Swap" --inputbox \
-      "\n  Swap size in GiB — 'auto' is half your RAM, capped at 8:\n" 10 62 "auto")"
+    ui_or_quit --title "Swap" --inputbox \
+      "\n  Swap size in GiB — 'auto' is half your RAM, capped at 8:\n" 10 62 "auto"
+    SWAP_VALUE="$UI_OUT"
     [[ "$SWAP_VALUE" =~ ^(auto|[0-9]{1,3})$ ]] || die "swap size must be a number or auto."
   else
     SWAP_VALUE="0"
   fi
 
-  GPU_VALUE="$(ui_or_quit --title "Graphics" --menu \
+  ui_or_quit --title "Graphics" --menu \
     "\n  Driver set:\n" 16 66 6 \
     auto "Detect from the hardware (recommended)" \
     intel "Intel / Mesa" \
     amd "AMD / Mesa" \
     nvidia "NVIDIA proprietary driver, KMS on" \
-    vm "Virtual machine (Mesa + virgl)")"
+    vm "Virtual machine (Mesa + virgl)"
+  GPU_VALUE="$UI_OUT"
 
   if (( ENCRYPT )); then
     local first second
     while true; do
-      first="$(ui_or_quit --title "Disk encryption" --passwordbox \
-        "\n  LUKS2 passphrase (asked at every boot):\n" 10 66)"
-      second="$(ui_or_quit --title "Disk encryption" --passwordbox \
-        "\n  Same passphrase again:\n" 10 66)"
+      ui_or_quit --title "Disk encryption" --passwordbox \
+        "\n  LUKS2 passphrase (asked at every boot):\n" 10 66
+      first="$UI_OUT"
+      ui_or_quit --title "Disk encryption" --passwordbox \
+        "\n  Same passphrase again:\n" 10 66
+      second="$UI_OUT"
       if [[ -z "$first" ]]; then
         ui --title "Disk encryption" --msgbox "\n  The passphrase cannot be empty.\n" 8 64
         continue
@@ -270,7 +307,7 @@ run_install() {
       "\n  Installing Arch Linux + MasonOS on $DISK.\n  This takes a while — the window follows the log.\n" \
       22 78 || install_failed
   else
-    clear
+    cls
     printf '\n  Running the installer — this takes a while.\n\n'
     "${cmd[@]}" || install_failed
   fi
@@ -282,7 +319,7 @@ install_failed() {
   ui --title "Install stopped" --msgbox \
     "  The installer did not finish. Full log: /tmp/masonos-arch-install.log\n\n\
 $(printf '%s' "$tail_text" | tail -n 12 | cut -c1-100)" 24 100
-  clear
+  cls
   printf 'MasonOS: installer stopped — see /tmp/masonos-arch-install.log\n' >&2
   exit 1
 }
@@ -291,10 +328,10 @@ screen_done() {
   if ui --title "Done" \
     --yesno "\n  Arch Linux + MasonOS is installed.\n\n  Reboot, then log in as $USERNAME_VALUE — MasonOS sets itself up on that first login.\n\n  Reboot now?\n" 16 70
   then
-    clear
+    cls
     reboot
   else
-    clear
+    cls
     printf 'Reboot when you are ready: reboot\n'
   fi
 }
@@ -304,6 +341,13 @@ screen_done() {
 main() {
   [[ ${EUID} -eq 0 ]] || die "start it as root (on the Arch ISO you already are)."
   [[ -x "$INSTALLER" ]] || die "$INSTALLER is missing — run this from the MasonOS package."
+  # Draw on the real terminal whatever the caller did with stdout, and make
+  # sure TERM is something newt can use (a bare console often has none).
+  if ! exec </dev/tty >/dev/tty 2>&1; then
+    die "no terminal to draw in — run this on the ISO console, or use arch-install.sh"
+  fi
+  case "${TERM:-}" in ""|dumb|unknown) export TERM=linux ;; esac
+  : > "$UI_ERR"
   pick_dialog
   screen_welcome
   screen_disk
