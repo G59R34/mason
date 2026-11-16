@@ -165,6 +165,9 @@ require_network() {
   fi
   if timeout 10 ping -c1 -W3 -q 1.1.1.1 >/dev/null 2>&1; then
     warn "network is up but DNS is not resolving — using 1.1.1.1 and 8.8.8.8"
+    # resolv.conf is often a symlink into /run (systemd-resolved); writing
+    # through it fails when that target does not exist yet.
+    rm -f /etc/resolv.conf
     printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
     if timeout 15 ping -c1 -W3 -q archlinux.org >/dev/null 2>&1; then
       say "network: online"
@@ -173,7 +176,7 @@ require_network() {
   fi
   warn "no internet access — pacstrap cannot download packages."
   if [[ $ASSUME_YES -eq 1 ]]; then
-    die "connect first: `iwctl` for Wi-Fi, or `systemctl start dhcpcd` / `nmcli`, then rerun."
+    die "connect first (iwctl for Wi-Fi, systemctl start dhcpcd for wired), then rerun."
   fi
   cat <<'EOF'
 
@@ -242,17 +245,31 @@ choose_disk() {
   local mounted
   mounted="$(lsblk -no MOUNTPOINT "$DISK" | grep -v '^$' || true)"
   if [[ -n "$mounted" ]]; then
-    warn "partitions of $DISK are mounted:"
+    warn "partitions of $DISK are in use:"
     printf '%s\n' "$mounted" | sed 's/^/    /' >&2
-    if [[ $ASSUME_YES -eq 1 ]]; then
-      die "unmount them first (umount -R each), then rerun."
+    if [[ $ASSUME_YES -ne 1 ]]; then
+      require_tty "--disk, after unmounting them yourself"
+      read -r -p "  Unmount them now? [y/N] " reply || die "nothing was changed."
+      [[ "$reply" =~ ^[Yy]$ ]] || die "nothing was changed."
     fi
-    require_tty "--disk, after unmounting them yourself"
-    read -r -p "  Unmount them now? [y/N] " reply || die "nothing was changed."
-    [[ "$reply" =~ ^[Yy]$ ]] || die "nothing was changed."
+    # The disk is about to be erased, so clearing its mounts is not a decision
+    # worth stopping for; whatever is still busy afterwards is.
+    say "unmounting $DISK"
+    swapoff -a 2>/dev/null || true
     while read -r point; do
-      [[ -n "$point" ]] && umount -R "$point" || true
+      [[ -n "$point" && "$point" != "[SWAP]" ]] || continue
+      # A half-finished earlier run usually leaves a chroot's /dev, /proc and
+      # /sys mounted underneath; clear those before the tree itself.
+      for nested in dev/pts dev proc sys run boot; do
+        umount "$point/$nested" 2>/dev/null || true
+      done
+      umount -R "$point" 2>/dev/null || umount -R -l "$point" 2>/dev/null || true
     done <<< "$mounted"
+    mounted="$(lsblk -no MOUNTPOINT "$DISK" | grep -v '^$' || true)"
+    if [[ -n "$mounted" ]]; then
+      die "still in use: $(printf '%s ' $mounted)
+Close whatever is holding it (lsof +D <mountpoint>), then rerun."
+    fi
   fi
 }
 
@@ -385,6 +402,10 @@ EOF
 
 wipe_and_partition() {
   step "Partitioning $DISK"
+  # Leftovers from an earlier attempt (its chroot mounts, a swap partition, a
+  # lazily detached mount) otherwise make mkfs refuse with "apparently in use".
+  swapoff -a 2>/dev/null || true
+  umount -R "$MOUNT_POINT" 2>/dev/null || umount -R -l "$MOUNT_POINT" 2>/dev/null || true
   run wipefs --all --force "$DISK"
   run sgdisk --zap-all "$DISK"
   if [[ $BOOT_MODE == uefi ]]; then
@@ -408,7 +429,7 @@ format_and_mount() {
     run mkfs.fat -F32 -n BOOT "$BOOT_PART"
   fi
   if [[ $MAKE_SWAP -eq 1 ]]; then
-    run mkswap -L swap "$SWAP_PART"
+    run mkswap -f -L swap "$SWAP_PART"
   fi
   if [[ $ENCRYPT -eq 1 ]]; then
     if [[ -n "$LUKS_PASSWORD" ]]; then
@@ -426,7 +447,9 @@ format_and_mount() {
   else
     ROOT_DEVICE="$ROOT_PART"
   fi
-  run mkfs.ext4 -L root "$ROOT_DEVICE"
+  # -F: the disk is meant to be erased, so do not stop for a stale signature
+  # left behind by an interrupted earlier run.
+  run mkfs.ext4 -F -L root "$ROOT_DEVICE"
   run mount "$ROOT_DEVICE" "$MOUNT_POINT"
   if [[ $BOOT_MODE == uefi ]]; then
     run mkdir -p "$MOUNT_POINT/boot"
@@ -460,6 +483,23 @@ package_list() {
 pacstrap_system() {
   step "Installing Arch Linux (this is the slow part)"
   package_list
+  # pacstrap bind-mounts /dev into the target and needs /dev/pts inside it.
+  # A minimal live environment (or a container) can come up without devpts.
+  if [[ ! -d /dev/pts ]] || ! mountpoint -q /dev/pts; then
+    mkdir -p /dev/pts
+    mount -t devpts devpts /dev/pts 2>/dev/null || warn "no /dev/pts — pacstrap may complain"
+  fi
+  if [[ ! -d /dev/shm ]] || ! mountpoint -q /dev/shm; then
+    mkdir -p /dev/shm
+    mount -t tmpfs tmpfs /dev/shm 2>/dev/null || warn "no /dev/shm — pacstrap may complain"
+  fi
+  # The live ISO's pacman-init service builds this at boot. Container/minimal
+  # boots skip it, and then pacstrap dies with "required key missing from keyring".
+  if [[ ! -d /etc/pacman.d/gnupg ]]; then
+    say "initialising the pacman keyring (it is not set up in this environment)"
+    pacman-key --init >/dev/null 2>&1 || warn "pacman-key --init failed"
+    pacman-key --populate archlinux >/dev/null 2>&1 || warn "pacman-key --populate failed"
+  fi
   run pacstrap -K "$MOUNT_POINT" "${PACKAGES[@]}"
   run genfstab -U "$MOUNT_POINT"
   genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
@@ -552,7 +592,7 @@ CHROOT
     cat >> "$MOUNT_POINT/root/masonos-arch-setup.sh" <<CHROOT
 
 pacman --noconfirm -S grub
-grub-install --target=i386-pc --reinstall "$DISK"
+grub-install --target=i386-pc --recheck --force "$DISK"
 sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="${loader_cmdline}"/' /etc/default/grub
 sed -i 's/^#GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=true/' /etc/default/grub
 grub-mkconfig -o /boot/grub/grub.cfg
@@ -592,7 +632,9 @@ install_masonos() {
   run mkdir -p "$target"
   # The checkout is copied in: ~/.local/bin symlinks point at it, so it stays.
   tar -C "$REPO_DIR" -cf - . | tar -C "$target" -xf -
-  run chown -R "$USERNAME:$USERNAME" "$MOUNT_POINT/home/$USERNAME"
+  # The account only exists inside the new system, so resolve it there; on the
+  # live ISO "mason" is an unknown user and chown would abort.
+  run arch-chroot "$MOUNT_POINT" chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 
   # install.sh insists on a Plasma 6 version string; inside the chroot there is
   # no session bus for the real plasmashell to answer on, so /usr/local/bin gets
