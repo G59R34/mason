@@ -133,7 +133,11 @@ disk_labels() {
   while read -r dev type; do
     [[ "$type" == "disk" ]] || continue
     [[ "$dev" == "$skip" ]] && continue
+    # Floppy, loop, zram and optical entries show up as "disk" and are not
+    # install targets; a device with no size cannot hold a system either.
+    case "$dev" in /dev/fd*|/dev/loop*|/dev/zram*|/dev/sr*) continue ;; esac
     size="$(lsblk -dno SIZE "$dev" 2>/dev/null | tr -d ' ')"
+    [[ -n "$size" && "$size" != "0B" ]] || continue
     model="$(lsblk -dno MODEL "$dev" 2>/dev/null | sed 's/[[:space:]]*$//')"
     printf '%s\0%s %s\0' "$dev" "${size:-?}" "${model:-unknown}"
   done < <(lsblk -dpno NAME,TYPE 2>/dev/null)
