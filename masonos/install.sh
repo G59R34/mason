@@ -6,7 +6,7 @@ set -euo pipefail
 # MasonOS release. The update check reads this line (`masonosctl check-update` and
 # Mason Bot's "MasonOS is out of date!" card), so keep it one
 # MASONOS_VERSION="x.y.z" assignment and bump it with every release.
-MASONOS_VERSION="1.0.0"
+MASONOS_VERSION="1.0.1test"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 data="${XDG_DATA_HOME:-$HOME/.local/share}"
