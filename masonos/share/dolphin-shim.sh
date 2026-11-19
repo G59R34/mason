@@ -16,8 +16,12 @@ done
 
 usable() {
   [[ -x "$app" ]] || return 1
-  command -v python3 >/dev/null 2>&1 || return 1
-  python3 -c "import PySide6" >/dev/null 2>&1 || return 1
+  # install.sh records the Python that has PySide6 (the distro's, or the
+  # virtualenv it installed); fall back to a system python3 if there is none.
+  local py="${MASONOS_PYTHON:-$HOME/.local/share/masonos/pyside-python}"
+  [[ -x "$py" ]] || py="$(command -v python3 || true)"
+  [[ -n "$py" ]] || return 1
+  "$py" -c "import PySide6" >/dev/null 2>&1 || return 1
 }
 
 # Dolphin's own flags (--new-window, --split, --select …) have no equivalent;

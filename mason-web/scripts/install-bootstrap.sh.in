@@ -19,6 +19,9 @@
 set -euo pipefail
 
 BASE_URL="${MASONOS_BASE_URL:-__BASE_URL__}"
+# Substituted from masonos/install.sh by bundle-masonos.sh; `masonosctl update`
+# reads this line to tell an installed MasonOS from the published one.
+MASONOS_VERSION="__MASONOS_VERSION__"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/masonos.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -36,6 +39,7 @@ fetch() {
 }
 
 printf '\n  MasonOS installer\n'
+say "version: $MASONOS_VERSION"
 say "source: $BASE_URL"
 
 # Running from the Arch ISO? Then there is no desktop to theme yet, and this

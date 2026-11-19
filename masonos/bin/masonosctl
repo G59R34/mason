@@ -10,6 +10,8 @@ overrides, GTK accent and the Mason Bot widget.
     masonosctl reload     off + on, after editing assets (what the desktop icon runs)
     masonosctl toggle
     masonosctl status     what is applied, and what would be restored
+    masonosctl check-update   is the published MasonOS newer than this one?
+    masonosctl update     download and run the published installer
     masonosctl transform --dry-run
 
 Every setting it changes is recorded in
@@ -52,6 +54,13 @@ BOT_LOG = CACHE_DIR / "bot.log"
 
 WALLPAPER = DATA_DIR / "wallpapers" / "masonos.png"
 BOT_HEALTH_URL = "http://127.0.0.1:8765/health"
+
+# Where the published installer lives, and what this install thinks it is. The
+# version is a MASONOS_VERSION="x.y.z" line inside install.sh on both ends.
+UPDATE_URL = "https://sexwithmason.com/masonos/install.sh"
+VERSION_FILE = STATE_DIR / "version"
+UPDATE_CHECK_FILE = CACHE_DIR / "update-check.json"
+UPDATE_CHECK_TTL = 6 * 3600
 
 APP_ID = "com.mason.masonos.bot"
 SCHEME = "MasonOS"
@@ -241,6 +250,18 @@ def run(cmd: list[str], timeout: float = 45) -> subprocess.CompletedProcess:
 
 def have(binary: str) -> bool:
     return shutil.which(binary) is not None
+
+
+def pyside_python() -> str:
+    """The Python that has PySide6: the one install.sh recorded, else this one."""
+    shim = DATA_DIR / "masonos" / "pyside-python"
+    if shim.is_file() and os.access(shim, os.X_OK):
+        return str(shim)
+    return sys.executable
+
+
+def have_pyside(module: str = "PySide6") -> bool:
+    return run([pyside_python(), "-c", f"import {module}"]).returncode == 0
 
 
 def session_type() -> str:
@@ -1224,9 +1245,140 @@ def revert(quiet: bool = False) -> int:
     return 0
 
 
+# ── updates ──────────────────────────────────────────────────────────────────
+
+
+def parse_version(text: str) -> str:
+    """The MASONOS_VERSION="x.y.z" line of an install.sh, or ""."""
+    match = re.search(r'^MASONOS_VERSION="([^"]+)"', text, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def installed_version() -> str:
+    try:
+        version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        version = ""
+    if version:
+        return version
+    # Older installs wrote no state file: read the checkout this script lives in.
+    try:
+        return parse_version((ROOT / "install.sh").read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return ""
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    """1.2.10 sorts after 1.2.9; anything odd sorts below everything."""
+    parts = [int(part) for part in re.findall(r"\d+", version)[:4]]
+    if not parts:
+        return (0,)
+    return tuple(parts + [0] * (3 - len(parts)))
+
+
+def fetch_installer() -> str:
+    """The published install.sh at UPDATE_URL, as text."""
+    request = urllib.request.Request(
+        UPDATE_URL,
+        headers={"User-Agent": f"MasonOS/{installed_version() or '0'} update-check"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.read().decode("utf-8", "replace")
+
+
+def remote_version(refresh: bool = False) -> tuple[str, str]:
+    """(published version, error). Cached for six hours so the panel can poll."""
+    now = int(time.time())
+    try:
+        cached = json.loads(UPDATE_CHECK_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cached = {}
+    if not isinstance(cached, dict):
+        cached = {}
+    cached_version = str(cached.get("version") or "")
+    if not refresh and cached_version and now - int(cached.get("checked") or 0) < UPDATE_CHECK_TTL:
+        return cached_version, ""
+
+    try:
+        version = parse_version(fetch_installer())
+    except Exception as err:  # offline, DNS, TLS, server error — none are fatal
+        # A stale answer beats an error: the release did not get older.
+        if cached_version:
+            return cached_version, ""
+        return "", f"could not read {UPDATE_URL}: {err}"
+    if not version:
+        return "", "the published installer has no MASONOS_VERSION line"
+
+    try:
+        UPDATE_CHECK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        UPDATE_CHECK_FILE.write_text(json.dumps({"version": version, "checked": now}) + "\n")
+    except OSError:
+        pass
+    return version, ""
+
+
+def check_update(as_json: bool = False, refresh: bool = False) -> int:
+    current = installed_version()
+    latest, error = remote_version(refresh)
+    outdated = bool(latest and current) and version_key(latest) > version_key(current)
+
+    if as_json:
+        print(json.dumps({
+            "current": current,
+            "latest": latest,
+            "outdated": outdated,
+            "url": UPDATE_URL,
+            "error": error,
+        }))
+        return 0
+
+    if not latest:
+        print(f"masonosctl: {error or 'could not check for updates'}.", file=sys.stderr)
+        return 1
+    if outdated:
+        print(f"MasonOS {latest} is published; this install is {current or 'unknown'}.")
+        print("masonosctl: run `masonosctl update` to install it.")
+    else:
+        print(f"MasonOS is up to date ({current or 'unknown'}, latest {latest}).")
+    return 0
+
+
+def perform_update() -> int:
+    """Download the published installer and run it — the same path as a fresh install."""
+    try:
+        text = fetch_installer()
+    except Exception as err:
+        print(f"masonosctl: could not download the update from {UPDATE_URL}: {err}", file=sys.stderr)
+        return 1
+    if "MASONOS_VERSION" not in text or "MasonOS" not in text:
+        print("masonosctl: the downloaded file does not look like the MasonOS installer; "
+              "not running it.", file=sys.stderr)
+        return 1
+
+    latest = parse_version(text)
+    target = CACHE_DIR / "update" / "install.sh"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    target.chmod(0o755)
+
+    current = installed_version()
+    notify("MasonOS", f"Updating to {latest or 'the latest release'}…")
+    print(f"masonosctl: installing MasonOS {latest or 'latest'}"
+          + (f" (was {current})" if current else "") + f" from {target}")
+    code = subprocess.call(["bash", str(target)])
+    if code == 0:
+        notify("MasonOS", "Updated — the shell is now on the new release.")
+        print("masonosctl: updated.")
+        return 0
+    notify("MasonOS", "The update did not finish — see the terminal or ~/.cache/masonos/update.log.")
+    print(f"masonosctl: the update installer exited with {code}.", file=sys.stderr)
+    return code
+
+
 def status() -> int:
     manifest = read_manifest()
     health = bot_health()
+    print(f"version         : {installed_version() or 'unknown'}")
     print(f"active          : {'yes' if manifest.get('active') else 'no'}")
     print(f"installed       : {'yes' if ensure_installed() else 'no'}")
     print(f"session         : {session_type() or 'unknown'} · Plasma {plasma_version_text()}")
@@ -1364,18 +1516,25 @@ def main(argv: list[str]) -> int:
     parser.add_argument("command", nargs="?", default="toggle",
                         choices=["on", "off", "reload", "toggle", "status", "display",
                                  "lockscreen", "bot", "settings", "software", "files",
-                                 "terminal", "launcher", "transform", "revert"])
+                                 "terminal", "launcher", "transform", "revert",
+                                 "check-update", "update"])
     parser.add_argument("action", nargs="?", default="status",
                         help="with bot: status | start | stop | restart")
     parser.add_argument("--quiet", action="store_true", help="no notifications")
     parser.add_argument("--dry-run", action="store_true", help="show what transform would do")
     parser.add_argument("--fix", action="store_true", help="with display: apply the recommended scaling")
+    parser.add_argument("--json", action="store_true", help="with check-update: one JSON line")
+    parser.add_argument("--refresh", action="store_true", help="with check-update: ignore the cache")
     args = parser.parse_args(argv)
 
     command = {"transform": "on", "revert": "off"}.get(args.command, args.command)
 
     if command == "status":
         return status()
+    if command == "check-update":
+        return check_update(args.json, args.refresh)
+    if command == "update":
+        return perform_update()
     if command == "display":
         return display_report(args.fix)
     if command == "lockscreen":
@@ -1389,10 +1548,10 @@ def main(argv: list[str]) -> int:
             print("masonosctl: masonos-settings is not installed — run masonos/install.sh.",
                   file=sys.stderr)
             return 1
-        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+        if not have_pyside():
             print(
-                "masonosctl: MasonOS Settings needs PySide6 — install it "
-                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                "masonosctl: MasonOS Settings needs PySide6 — run masonos/install.sh, "
+                "which installs it into ~/.local/share/masonos/venv.",
                 file=sys.stderr,
             )
             return 1
@@ -1406,10 +1565,10 @@ def main(argv: list[str]) -> int:
                       file=sys.stderr)
                 return 1
             binary = Path(found)
-        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+        if not have_pyside():
             print(
-                "masonosctl: Mason's Software needs PySide6 — install it "
-                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                "masonosctl: Mason's Software needs PySide6 — run masonos/install.sh, "
+                "which installs it into ~/.local/share/masonos/venv.",
                 file=sys.stderr,
             )
             return 1
@@ -1425,10 +1584,10 @@ def main(argv: list[str]) -> int:
                       file=sys.stderr)
                 return 1
             binary = Path(found)
-        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+        if not have_pyside():
             print(
-                "masonosctl: Mason's Launcher needs PySide6 — install it "
-                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                "masonosctl: Mason's Launcher needs PySide6 — run masonos/install.sh, "
+                "which installs it into ~/.local/share/masonos/venv.",
                 file=sys.stderr,
             )
             return 1
@@ -1450,10 +1609,10 @@ def main(argv: list[str]) -> int:
                       file=sys.stderr)
                 return 1
             binary = Path(found)
-        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+        if not have_pyside():
             print(
-                "masonosctl: Mason's Terminal needs PySide6 — install it "
-                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                "masonosctl: Mason's Terminal needs PySide6 — run masonos/install.sh, "
+                "which installs it into ~/.local/share/masonos/venv.",
                 file=sys.stderr,
             )
             return 1
@@ -1470,10 +1629,10 @@ def main(argv: list[str]) -> int:
                       file=sys.stderr)
                 return 1
             binary = Path(found)
-        if run([sys.executable, "-c", "import PySide6"]).returncode != 0:
+        if not have_pyside():
             print(
-                "masonosctl: Mason's Files needs PySide6 — install it "
-                "(python3-pyside6 on Fedora, python-pyside6 on Arch/Debian, pyside6 on openSUSE).",
+                "masonosctl: Mason's Files needs PySide6 — run masonos/install.sh, "
+                "which installs it into ~/.local/share/masonos/venv.",
                 file=sys.stderr,
             )
             return 1

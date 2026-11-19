@@ -3,6 +3,11 @@
 # puts KDE Plasma back the way it was.
 set -euo pipefail
 
+# MasonOS release. The update check reads this line (`masonosctl check-update` and
+# Mason Bot's "MasonOS is out of date!" card), so keep it one
+# MASONOS_VERSION="x.y.z" assignment and bump it with every release.
+MASONOS_VERSION="1.0.0"
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 data="${XDG_DATA_HOME:-$HOME/.local/share}"
 config="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -41,6 +46,16 @@ done
 say() { printf ' · %s\n' "$*"; }
 die() { printf 'MasonOS: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# MasonOS belongs to whoever runs it: everything goes into their own ~/.local, so
+# sudo would install it into /root, where the Plasma session never looks. Refuse
+# rather than half-install; MASONOS_ALLOW_ROOT=1 overrides it for scripted setups.
+if [[ ${EUID:-$(id -u)} -eq 0 && "${MASONOS_ALLOW_ROOT:-0}" != 1 ]]; then
+  die "run this without sudo — MasonOS installs into YOUR ~/.local, so root would
+  put it in /root where Plasma never sees it. Run it as yourself:
+
+    ./install.sh"
+fi
 
 # ── Preflight: any distro, any desktop hardware, Plasma 6 ────────────────────
 have plasmashell || die "KDE Plasma is required (plasmashell not found)."
@@ -174,14 +189,161 @@ chmod +x "$here/bin/masonosctl" "$here/tools/make-assets.sh"
 ln -sf "$here/bin/masonosctl" "$bin/masonosctl"
 ln -sf "$here/bin/masonosctl" "$bin/masondectl"   # compatibility alias
 say "masonosctl -> $bin/masonosctl"
+# What this install is, for the update check to compare against the published one.
+printf '%s\n' "$MASONOS_VERSION" > "$state/masonos/version"
 
-# 5b. MasonOS Settings (needs PySide6; skipped cleanly when it is absent) ------
-if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
-  chmod +x "$here/bin/masonos-settings"
-  ln -sf "$here/bin/masonos-settings" "$bin/masonos-settings"
+# 5a. PySide6 — the Qt binding every app below is written in ------------------
+# Use the distro's PySide6 when python3 already imports it; otherwise install it
+# into a private virtualenv at ~/.local/share/masonos/venv, which needs no root
+# password and leaves the system Python alone. A stock Kubuntu/Fedora/Arch box
+# therefore gets every app on the first run, and nothing here is fatal: if the
+# download cannot happen the apps are skipped and the message says how to fix it.
+pyside_python=""
+pyside_shim="$data/masonos/pyside-python"
+venv="$data/masonos/venv"
+pyside_crashed=0
+mkdir -p "$data/masonos"
+
+# 0 = imports fine, 1 = not installed, 2 = installed but this machine kills the
+# interpreter on import (SIGILL — an emulated or very old CPU that cannot run
+# that Qt build). The probe runs under a nested bash, so a SIGILL is captured
+# instead of spraying "Illegal instruction (core dumped)" on the terminal, and
+# core dumps are off so a VM's disk is not filled by a 200 MB python core.
+py_pyside_state() {
+  local py="${1:-}" probe_out rc=0
+  [[ -n "$py" && -x "$py" ]] || return 1
+  probe_out="$( bash -c 'ulimit -c 0 2>/dev/null || true; "$@"' _ "$py" \
+    -c "import PySide6.QtWidgets" 2>&1 )" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    return 0
+  elif [[ "$rc" -gt 128 ]]; then
+    return 2
+  fi
+  return 1
+}
+
+pip_install() { python3 -m pip install --disable-pip-version-check --no-input --quiet "$@"; }
+try_user_pip() {
+  # Ubuntu 23.04+ marks its Python as "externally managed" (PEP 668); --user only
+  # writes into ~/.local, so the override touches nothing that belongs to the OS.
+  pip_install --user PySide6 >/dev/null 2>&1 \
+    || pip_install --user --break-system-packages PySide6 >/dev/null 2>&1
+}
+
+if ! have python3; then
+  say "PySide6: python3 is missing — install python3 and run this again"
+else
+  sys_python="$(command -v python3)"
+  sys_state=0
+  venv_state=0
+  py_pyside_state "$sys_python" || sys_state=$?
+  py_pyside_state "$venv/bin/python" || venv_state=$?
+
+  if [[ "$sys_state" -eq 0 ]]; then
+    pyside_python="$sys_python"
+    say "PySide6 ready (system python3)"
+  elif [[ "$venv_state" -eq 0 ]]; then
+    pyside_python="$venv/bin/python"
+    say "PySide6 ready ($venv)"
+  else
+    if [[ "$sys_state" -eq 2 || "$venv_state" -eq 2 ]]; then
+      pyside_crashed=1
+      say "PySide6 is installed but it crashes Python here — fetching a clean copy into ~/.local"
+    else
+      say "PySide6 is missing — installing it into ~/.local (no root, one-off download)"
+    fi
+
+    if python3 -m venv "$venv" >/dev/null 2>&1 \
+       && "$venv/bin/python" -m pip install --disable-pip-version-check --no-input \
+            --quiet PySide6 >/dev/null 2>&1
+    then
+      if py_pyside_state "$venv/bin/python"; then
+        pyside_python="$venv/bin/python"
+        say "PySide6 installed in $venv"
+      else
+        if [[ $? -eq 2 ]]; then pyside_crashed=1; fi
+        rm -rf "$venv"
+      fi
+    else
+      rm -rf "$venv"
+    fi
+
+    # No python3-venv on this box (Debian/Kubuntu ship it separately): pip --user.
+    if [[ -z "$pyside_python" ]] && python3 -m pip --version >/dev/null 2>&1 && try_user_pip; then
+      if py_pyside_state "$sys_python"; then
+        pyside_python="$sys_python"
+        say "PySide6 installed for python3 (pip --user)"
+      else
+        if [[ $? -eq 2 ]]; then pyside_crashed=1; fi
+      fi
+    fi
+
+    # No pip either: fetch pip itself the same rootless way, then retry.
+    if [[ -z "$pyside_python" ]] && have curl; then
+      boot="$(mktemp -d)"
+      if curl -fsSL --max-time 60 https://bootstrap.pypa.io/get-pip.py -o "$boot/get-pip.py" 2>/dev/null; then
+        python3 "$boot/get-pip.py" --user --break-system-packages >/dev/null 2>&1 \
+          || python3 "$boot/get-pip.py" --user >/dev/null 2>&1 || true
+        if try_user_pip; then
+          if py_pyside_state "$sys_python"; then
+            pyside_python="$sys_python"
+            say "PySide6 installed for python3 (pip bootstrapped into ~/.local)"
+          else
+            if [[ $? -eq 2 ]]; then pyside_crashed=1; fi
+          fi
+        fi
+      fi
+      rm -rf "$boot"
+    fi
+  fi
+fi
+
+if [[ -n "$pyside_python" ]]; then
+  # The one place that knows which Python has PySide6; the shims and masonosctl
+  # read this rather than guessing at `python3`.
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf '# Written by masonos/install.sh — this Python has PySide6.\n'
+    printf 'exec %q "$@"\n' "$pyside_python"
+  } > "$pyside_shim"
+  chmod 755 "$pyside_shim"
+else
+  rm -f "$pyside_shim"
+  say "PySide6 could not be installed — the MasonOS apps are skipped until it is:"
+  say "  Kubuntu/Ubuntu: sudo apt install python3-pyside6.qtwidgets python3-venv"
+  say "  Fedora: sudo dnf install python3-pyside6  ·  Arch: sudo pacman -S pyside6"
+  if [[ "$pyside_crashed" == 1 ]]; then
+    say "  PySide6 also crashed Python on this machine ('Illegal instruction'): that is"
+    say "  this CPU (usually an emulated VM), not the install — Qt 6 needs a CPU that can"
+    say "  run it, so use a native (arm64) Kubuntu VM or real hardware."
+  fi
+fi
+
+# ~/.local/bin/<name> runs the repo script with the Python that has PySide6, so
+# the apps work whether PySide6 came from the distro or from our virtualenv.
+app_launcher() {
+  local name="$1"
+  chmod +x "$here/bin/$name"
+  rm -f "$bin/$name"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf '# Written by masonos/install.sh — runs %s with the Python that has PySide6.\n' "$name"
+    printf 'exec %q %q "$@"\n' "$pyside_python" "$here/bin/$name"
+  } > "$bin/$name"
+  chmod 755 "$bin/$name"
+}
+
+install_qt_app() {
+  local name="$1" template="$2"
+  app_launcher "$name"
   sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" -e "s|@ICON@|masonos|g" \
-    "$here/share/masonos-settings.desktop.in" > "$data/applications/masonos-settings.desktop"
-  chmod +x "$data/applications/masonos-settings.desktop"
+    "$here/share/$template" > "$data/applications/$name.desktop"
+  chmod +x "$data/applications/$name.desktop"
+}
+
+# 5b. MasonOS Settings -------------------------------------------------------
+if [[ -n "$pyside_python" ]]; then
+  install_qt_app masonos-settings masonos-settings.desktop.in
   say "MasonOS Settings -> $bin/masonos-settings (app grid)"
 
   # Stand in for KDE System Settings: shadow its launcher entry and put a shim
@@ -192,17 +354,11 @@ if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
   chmod +x "$data/applications/systemsettings.desktop"
   install -m 755 "$here/share/systemsettings-shim.sh" "$bin/systemsettings"
   say "System Settings -> MasonOS Settings (KDE panels inside)"
-else
-  say "MasonOS Settings skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
 fi
 
-# 5c. Mason's Software (Discover replacement; PySide6 again) ------------------
-if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
-  chmod +x "$here/bin/mason-software"
-  ln -sf "$here/bin/mason-software" "$bin/mason-software"
-  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
-    "$here/share/masons-software.desktop.in" > "$data/applications/masons-software.desktop"
-  chmod +x "$data/applications/masons-software.desktop"
+# 5c. Mason's Software (Discover replacement) --------------------------------
+if [[ -n "$pyside_python" ]]; then
+  install_qt_app mason-software masons-software.desktop.in
   say "Mason's Software -> $bin/mason-software (app grid)"
   if [[ -f /usr/share/applications/org.kde.discover.desktop ]]; then
     install -m 644 "$here/share/discover-shadow.desktop.in" \
@@ -210,17 +366,11 @@ if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
     install -m 755 "$here/share/plasma-discover-shim.sh" "$bin/plasma-discover"
     say "Discover hidden; plasma-discover -> Mason's Software"
   fi
-else
-  say "Mason's Software skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
 fi
 
 # 5d. Mason's Files ----------------------------------------------------------
-if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
-  chmod +x "$here/bin/masons-files"
-  ln -sf "$here/bin/masons-files" "$bin/masons-files"
-  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
-    "$here/share/masons-files.desktop.in" > "$data/applications/masons-files.desktop"
-  chmod +x "$data/applications/masons-files.desktop"
+if [[ -n "$pyside_python" ]]; then
+  install_qt_app masons-files masons-files.desktop.in
   if [[ -f /usr/share/applications/org.kde.dolphin.desktop ]]; then
     sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
       "$here/share/dolphin-shadow.desktop.in" > "$data/applications/org.kde.dolphin.desktop"
@@ -228,33 +378,24 @@ if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
     say "Dolphin hidden; dolphin -> Mason's Files"
   fi
   say "Mason's Files -> $bin/masons-files (app grid)"
-else
-  say "Mason's Files skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
 fi
 
 # 5e. Mason's Launcher (Super key) ------------------------------------------
-if have python3 && python3 -c "import PySide6.QtDBus" >/dev/null 2>&1; then
-  chmod +x "$here/bin/masons-launcher"
-  ln -sf "$here/bin/masons-launcher" "$bin/masons-launcher"
+if [[ -n "$pyside_python" ]] && "$pyside_python" -c "import PySide6.QtDBus" >/dev/null 2>&1; then
+  app_launcher masons-launcher
   mkdir -p "$data/dbus-1/services"
   sed -e "s|@LAUNCHER@|$bin/masons-launcher|g" \
     "$here/share/org.masonos.Launcher.service.in" \
     > "$data/dbus-1/services/org.masonos.Launcher.service"
   say "Mason's Launcher -> Super key (D-Bus service installed)"
-else
-  say "Mason's Launcher skipped: PySide6 (with QtDBus) is missing"
+elif [[ -n "$pyside_python" ]]; then
+  say "Mason's Launcher skipped: this PySide6 has no QtDBus"
 fi
 
 # 5f. Mason's Terminal -------------------------------------------------------
-if have python3 && python3 -c "import PySide6" >/dev/null 2>&1; then
-  chmod +x "$here/bin/masons-terminal"
-  ln -sf "$here/bin/masons-terminal" "$bin/masons-terminal"
-  sed -e "s|@MASONOSCTL@|$bin/masonosctl|g" \
-    "$here/share/masons-terminal.desktop.in" > "$data/applications/masons-terminal.desktop"
-  chmod +x "$data/applications/masons-terminal.desktop"
+if [[ -n "$pyside_python" ]]; then
+  install_qt_app masons-terminal masons-terminal.desktop.in
   say "Mason's Terminal -> $bin/masons-terminal (app grid)"
-else
-  say "Mason's Terminal skipped: PySide6 is missing (python3-pyside6 / python-pyside6 / pyside6)"
 fi
 
 # 6. Desktop icon + app grid -------------------------------------------------

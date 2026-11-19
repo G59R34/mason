@@ -28,6 +28,17 @@ PlasmoidItem {
     property var thread: []
     property bool busy: false
 
+    // Update check. The bridge on :8765 compares this install's version with the
+    // MASONOS_VERSION line of the published install.sh (it caches that for six
+    // hours), so polling it is cheap.
+    property bool updateAvailable: false
+    property bool updateAnnounced: false
+    property bool updating: false
+    property string currentVersion: ""
+    property string latestVersion: ""
+    property string updateError: ""
+    property string updateNotice: ""
+
     function pushMessage(role, content) {
         const next = root.thread.slice();
         next.push({ role: role, content: content });
@@ -69,6 +80,69 @@ PlasmoidItem {
             }
         };
         xhr.send(JSON.stringify({ messages: outgoing }));
+    }
+
+    function checkForUpdate() {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", "http://127.0.0.1:8765/update");
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4 || xhr.status !== 200) {
+                return;
+            }
+            let payload = null;
+            try {
+                payload = JSON.parse(xhr.responseText);
+            } catch (error) {
+                return;
+            }
+            if (!payload) {
+                return;
+            }
+            root.currentVersion = payload.current || "";
+            root.latestVersion = payload.latest || "";
+            root.updateError = payload.error || "";
+            root.updateAvailable = payload.outdated === true;
+            // Pop the card out of the Mason Bot button the first time a release
+            // appears; after that the dot on the pill is the reminder.
+            if (root.updateAvailable && !root.updateAnnounced) {
+                root.updateAnnounced = true;
+                root.expanded = true;
+            }
+        };
+        xhr.send();
+    }
+
+    function runUpdate() {
+        if (root.updating) {
+            return;
+        }
+        root.updating = true;
+        root.updateNotice = "";
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "http://127.0.0.1:8765/update");
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) {
+                return;
+            }
+            root.updating = false;
+            if (xhr.status === 200) {
+                root.updateAvailable = false;
+                root.updateNotice = "Downloading the new MasonOS — the bar restarts when it's done.";
+            } else {
+                root.updateNotice = "The update didn't start. Run `masonosctl update`.";
+            }
+        };
+        xhr.send("{}");
+    }
+
+    Timer {
+        interval: 30 * 60 * 1000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.checkForUpdate()
     }
 
     Component.onCompleted: root.pushMessage("assistant", root.greeting)
@@ -137,6 +211,18 @@ PlasmoidItem {
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
                 font.family: root.bodyFamily
+            }
+
+            // A quiet marker that the popup has a release waiting in it.
+            Rectangle {
+                visible: root.updateAvailable
+                width: 8
+                height: 8
+                radius: 4
+                color: root.accentStrong
+                anchors.right: parent.right
+                anchors.rightMargin: 9
+                anchors.verticalCenter: parent.verticalCenter
             }
         }
     }
@@ -271,10 +357,121 @@ PlasmoidItem {
                 }
             }
 
+            // ── "MasonOS is out of date!" ──────────────────────────────────
+            Rectangle {
+                id: updateCard
+                visible: root.updateAvailable || root.updateNotice !== ""
+                height: visible ? cardBody.implicitHeight + 24 : 0
+                anchors {
+                    top: header.bottom
+                    left: parent.left
+                    right: parent.right
+                    leftMargin: 12
+                    rightMargin: 12
+                    topMargin: 10
+                }
+                radius: 12
+                clip: true
+                color: Qt.rgba(0.545, 0.361, 0.965, 0.14)
+                border.width: 1
+                border.color: Qt.rgba(0.768, 0.709, 0.992, 0.45)
+
+                ColumnLayout {
+                    id: cardBody
+                    anchors {
+                        left: parent.left
+                        right: parent.right
+                        top: parent.top
+                        margins: 12
+                    }
+                    spacing: 3
+
+                    Text {
+                        text: root.updateAvailable ? "MasonOS is out of date!" : "Updating MasonOS"
+                        color: root.inkColor
+                        font.pixelSize: 13
+                        font.bold: true
+                        font.family: root.displayFamily
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.updateNotice !== ""
+                            ? root.updateNotice
+                            : (root.currentVersion !== "" && root.latestVersion !== ""
+                                ? "Installed " + root.currentVersion + " · latest is " + root.latestVersion
+                                : "A newer MasonOS is published.")
+                        color: root.mutedColor
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 11
+                        font.family: root.bodyFamily
+                    }
+
+                    RowLayout {
+                        spacing: 8
+                        visible: root.updateAvailable
+
+                        Rectangle {
+                            width: 84
+                            height: 28
+                            radius: 14
+                            color: updateArea.containsMouse || root.updating
+                                ? Qt.rgba(0.768, 0.709, 0.992, 0.85)
+                                : root.accentColor
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.updating ? "Updating…" : "Update"
+                                color: "#0b0b0d"
+                                font.pixelSize: 11
+                                font.bold: true
+                                font.family: root.bodyFamily
+                            }
+
+                            MouseArea {
+                                id: updateArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: !root.updating
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.runUpdate()
+                            }
+                        }
+
+                        Rectangle {
+                            width: 64
+                            height: 28
+                            radius: 14
+                            color: "transparent"
+                            border.width: 1
+                            border.color: root.lineColor
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Later"
+                                color: root.accentColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                font.family: root.bodyFamily
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.updateAvailable = false;
+                                    root.updateNotice = "";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             ListView {
                 id: transcript
                 anchors {
-                    top: header.bottom
+                    top: updateCard.visible ? updateCard.bottom : header.bottom
                     left: parent.left
                     right: parent.right
                     bottom: starters.top

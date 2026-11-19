@@ -34,13 +34,17 @@ notch sits: launcher on the left, bot + tray + clock on the right.
 | **Session** | Wayland or X11. Fractional scaling is applied on Wayland only; on X11 the scale is left as you set it. |
 | **Hardware** | Intel, AMD, NVIDIA and Apple Silicon. The notch is read from Asahi's devicetree; without one the bar uses the centred-clock layout. |
 | **Tools** | `plasmashell` + `kpackagetool6` (Frameworks 6) are required. `busctl` **or** `gdbus` for scripting, `kscreen-doctor` for display checks, `kwriteconfig6`/`kreadconfig6` for settings, `python3` for the bot bridge. Each one only disables its own feature when missing. |
-| **Optional** | PySide6 for MasonOS Settings, `magick` to re-render artwork, `curl` to fetch fonts, `notify-send` for toasts. |
+| **Python** | `python3`. **PySide6** — the Qt binding every MasonOS app is written in — is installed by `install.sh` itself: if the distro's Python does not already have it, it is fetched into `~/.local/share/masonos/venv` with pip, so no root password and no `apt`/`dnf` step is needed. |
+| **Optional** | `magick` to re-render artwork, `curl` to fetch fonts and PySide6, `notify-send` for toasts. |
 
 Missing pieces are reported, never fatal: no `kscreen-doctor` means no display
-check, no PySide6 means no settings app, no notch means the centred clock.
+check, no `python3` (and no way to fetch PySide6) means no MasonOS apps, no notch
+means the centred clock.
 
 ```bash
-masonosctl status      # shows session, Plasma version and what is applied
+masonosctl status         # session, Plasma version, MasonOS version, what is applied
+masonosctl check-update   # is the published MasonOS newer than this one?
+masonosctl update         # download the published installer and run it
 ```
 
 ## Install it
@@ -61,10 +65,45 @@ On the **Arch Linux ISO** that same line is the whole install: there is no deskt
 to theme yet, so it runs `arch-install.sh` instead (see below). Arguments go
 through, so `| bash -s -- --disk /dev/nvme0n1 --yes --password …` works there too.
 
-Everything lands in `~/.local`; nothing needs root. `install.sh` checks the
-Plasma version and dependencies up front, and also migrates a pre-rename
-MasonDE install (removes the old widget, moves state and bot config, remembers
-your original settings).
+Run it as yourself, **not** with `sudo`: the installer refuses root, because
+everything belongs to your account and `/root/.local` is invisible to Plasma.
+
+Everything lands in `~/.local`; nothing needs root — including PySide6, which the
+installer fetches into `~/.local/share/masonos/venv` when the system Python does
+not have it (it uses `pip --user` instead if a virtualenv cannot be made).
+`install.sh` checks the Plasma version and dependencies up front, and also
+migrates a pre-rename MasonDE install (removes the old widget, moves state and
+bot config, remembers your original settings).
+
+## Updates
+
+`install.sh` carries the release name in one line — `MASONOS_VERSION="1.0.0"` — and
+writes it to `~/.local/state/masonos/version` when it installs. Bump that line for
+a release; `bundle-masonos.sh` copies it into the published
+`https://sexwithmason.com/masonos/install.sh`, so the script on the site always
+names its own version.
+
+Mason Bot checks that published script every 30 minutes through the local bridge
+(the bridge caches the answer for six hours, so it is one small GET):
+
+* newer version published → **“MasonOS is out of date!”** pops out of the Mason
+  Bot button, with the installed and published versions and an **Update** button;
+  a violet dot stays on the panel pill until it is updated or dismissed with
+  **Later**;
+* **Update** asks the bridge to run `masonosctl update` detached — it downloads
+  that same published installer and runs it, so an update is exactly a fresh
+  install, and the bar restarts on the new release. It logs to
+  `~/.cache/masonos/update.log`;
+* offline, or the site is down, nothing happens: the last known answer is kept
+  and the card stays quiet.
+
+The same two steps are available by hand:
+
+```bash
+masonosctl check-update           # "MasonOS 1.2.0 is published; this install is 1.0.0."
+masonosctl check-update --json    # one line, for scripts
+masonosctl update                 # install it
+```
 
 ## Install Arch from scratch
 
@@ -310,7 +349,7 @@ is touched:
   with `NoDisplay=true`, so the stock store disappears from the grid and search.
 * `~/.local/bin/plasma-discover` is a shim ahead of `/usr/bin` on `PATH`, so the
   update notifier and anything else that launches Discover open Mason's Software
-  — and fall back to the real binary if PySide6 is ever missing.
+  — and fall back to the real binary if the PySide6 Python is ever missing.
 
 `masonosctl off` removes all three and Discover comes back exactly as it was;
 `masonosctl on` puts them back. The store only reads and installs through system

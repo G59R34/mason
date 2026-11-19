@@ -28,7 +28,9 @@ rm -rf "$data/plasma/desktoptheme/com.mason.masonos" \
        "$data/plasma/look-and-feel/com.mason.masonos" \
        "$data/aurorae/themes/MasonOS" \
        "$data/icons/MasonOS" \
+       "$data/masonos/venv" \
        "$state/masonos"
+rmdir "$data/masonos" 2>/dev/null || true
 rm -f "$data/color-schemes/MasonOS.colors" \
       "$data/wallpapers/masonos.png" \
       "$data/icons/hicolor/scalable/apps/masonos.svg" \

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -36,6 +38,11 @@ OFFLINE_HINT = (
     "Mason Bot is not live on Supabase yet. Deploy the mason-bot function "
     "and it will answer."
 )
+
+# masonosctl owns the version comparison (it reads MASONOS_VERSION from the
+# published install.sh); the panel asks this bridge, and this bridge asks it.
+CTL_FALLBACK = Path.home() / ".local" / "bin" / "masonosctl"
+UPDATE_LOG = Path(os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")) / "masonos" / "update.log"
 
 
 class BotError(Exception):
@@ -129,6 +136,54 @@ def call_bot(messages: list[dict[str, str]]) -> str:
     return reply
 
 
+def masonosctl() -> str:
+    """The installed masonosctl, which knows what version this is."""
+    found = shutil.which("masonosctl") or str(CTL_FALLBACK)
+    if not os.path.isfile(found) or not os.access(found, os.X_OK):
+        raise BotError("masonosctl is not installed, so there is nothing to update with.")
+    return found
+
+
+def update_status() -> dict:
+    """`masonosctl check-update --json` — cached there for six hours."""
+    try:
+        proc = subprocess.run(
+            [masonosctl(), "check-update", "--json"],
+            capture_output=True, text=True, timeout=45, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as err:
+        raise BotError(f"could not check for updates: {err}") from err
+
+    lines = (proc.stdout or "").strip().splitlines()
+    if not lines:
+        detail = (proc.stderr or "masonosctl check-update said nothing.").strip()
+        raise BotError(detail[:300])
+    try:
+        payload = json.loads(lines[-1])
+    except ValueError as err:
+        raise BotError("masonosctl check-update sent something that was not JSON.") from err
+    if not isinstance(payload, dict):
+        raise BotError("masonosctl check-update sent something unexpected.")
+    return payload
+
+
+def start_update() -> dict:
+    """Run `masonosctl update` detached — it re-applies the shell, so it cannot
+    be a child of the panel it is replacing."""
+    ctl = masonosctl()
+    UPDATE_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with UPDATE_LOG.open("ab") as log:
+        subprocess.Popen(
+            [ctl, "update"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+            close_fds=True,
+        )
+    return {"started": True, "log": str(UPDATE_LOG)}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MasonOSBot/1.0"
 
@@ -142,7 +197,16 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802 - http.server API
-        if self.path.split("?")[0] != "/health":
+        path = self.path.split("?")[0]
+        if path == "/update":
+            # Always 200: the card in the panel shows `error` instead of dying.
+            try:
+                self._reply(200, update_status())
+            except BotError as err:
+                self._reply(200, {"current": "", "latest": "", "outdated": False,
+                                  "error": str(err)})
+            return
+        if path != "/health":
             self._reply(404, {"error": "Not found."})
             return
         try:
@@ -154,7 +218,17 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(200, {"ok": True, "configured": configured, "port": PORT})
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
-        if self.path.split("?")[0] != "/ask":
+        path = self.path.split("?")[0]
+        if path == "/update":
+            try:
+                self._reply(200, start_update())
+            except BotError as err:
+                self._reply(503, {"error": str(err)})
+            except Exception as err:  # keep the panel alive whatever happens
+                print(f"masonos-bot: could not start the update: {err!r}", file=sys.stderr, flush=True)
+                self._reply(500, {"error": "The update did not start. Try `masonosctl update`."})
+            return
+        if path != "/ask":
             self._reply(404, {"error": "Not found."})
             return
         length = int(self.headers.get("Content-Length") or 0)

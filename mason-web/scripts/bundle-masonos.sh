@@ -28,13 +28,19 @@ if command -v sha256sum >/dev/null 2>&1; then
   sha256sum "$out_dir/masonos.tar.gz" | awk '{print $1}' > "$out_dir/sha256.txt"
 fi
 
-sed "s|__BASE_URL__|$base_url|g" "$here/install-bootstrap.sh.in" > "$out_dir/install.sh"
+# The release name comes from the installer itself, so there is one place to
+# bump it and `masonosctl update` can compare the published script with its own.
+masonos_version="$(sed -n 's/^MASONOS_VERSION="\([^"]*\)".*/\1/p' "$source_dir/install.sh" | head -1)"
+[[ -n "$masonos_version" ]] || masonos_version="0.0.0"
+
+sed -e "s|__BASE_URL__|$base_url|g" -e "s|__MASONOS_VERSION__|$masonos_version|g" \
+  "$here/install-bootstrap.sh.in" > "$out_dir/install.sh"
 chmod +x "$out_dir/install.sh"
 
 preview="$source_dir/share/look-and-feel/com.mason.masonos/contents/previews/preview.png"
 [[ -f "$preview" ]] && cp -f "$preview" "$out_dir/preview.png"
 
-printf 'masonos %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$out_dir/version.txt"
+printf 'masonos %s %s\n' "$masonos_version" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$out_dir/version.txt"
 
 printf 'bundle-masonos: %s (%s)\n' \
   "$out_dir/masonos.tar.gz" "$(du -h "$out_dir/masonos.tar.gz" | cut -f1)"
